@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 
 import { Button } from "../components/ui/button";
 
@@ -29,10 +30,11 @@ export default function HomePage() {
           AI-Powered Multi-Sport Coaching Platform
         </p>
         <Button
+          asChild
           size="lg"
           className="mt-10 min-w-40 bg-primary text-primary-foreground shadow-glow transition-transform duration-300 hover:-translate-y-0.5 hover:bg-primary/90"
         >
-          Get Started
+          <Link href="/signup">Get Started</Link>
         </Button>
       </motion.section>
     </main>

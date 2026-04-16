@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.security import TokenDecodeError, decode_access_token
+from app.models.user import User
+from app.repositories.profile_repository import ProfileRepository
+from app.repositories.sport_repository import SportRepository
+from app.repositories.user_repository import UserRepository
+from app.services.auth_service import AuthService
+from app.services.profile_service import ProfileService
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_user_repository(db: Session = Depends(get_db)) -> UserRepository:
+    return UserRepository(db)
+
+
+def get_profile_repository(db: Session = Depends(get_db)) -> ProfileRepository:
+    return ProfileRepository(db)
+
+
+def get_sport_repository(db: Session = Depends(get_db)) -> SportRepository:
+    return SportRepository(db)
+
+
+def get_auth_service(
+    db: Session = Depends(get_db),
+    users: UserRepository = Depends(get_user_repository),
+) -> AuthService:
+    return AuthService(db=db, users=users)
+
+
+def get_profile_service(
+    db: Session = Depends(get_db),
+    profiles: ProfileRepository = Depends(get_profile_repository),
+    sports: SportRepository = Depends(get_sport_repository),
+) -> ProfileService:
+    return ProfileService(db=db, profiles=profiles, sports=sports)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    users: UserRepository = Depends(get_user_repository),
+) -> User:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = UUID(str(payload["sub"]))
+    except (TokenDecodeError, ValueError, KeyError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+
+    user = users.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authenticated user was not found.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
