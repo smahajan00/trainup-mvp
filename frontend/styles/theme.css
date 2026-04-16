@@ -1,0 +1,19 @@
+:root {
+  color-scheme: dark;
+  --background: 17 17 17;
+  --foreground: 255 255 255;
+  --card: 31 31 31;
+  --card-foreground: 255 255 255;
+  --primary: 255 122 0;
+  --primary-foreground: 255 255 255;
+  --secondary: 42 47 54;
+  --secondary-foreground: 255 255 255;
+  --muted: 42 47 54;
+  --muted-foreground: 167 167 167;
+  --accent: 42 47 54;
+  --accent-foreground: 255 255 255;
+  --border: 42 47 54;
+  --input: 42 47 54;
+  --ring: 255 122 0;
+  --radius: 0.875rem;
+}
