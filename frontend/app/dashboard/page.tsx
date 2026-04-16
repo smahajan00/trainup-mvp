@@ -1,222 +1,338 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  ClipboardCheck,
+  Compass,
+  Dumbbell,
+  Gauge,
+  Sparkles,
+  UserRound
+} from "lucide-react";
 
-import { Button } from "../../components/ui/button";
-import { ApiError, getErrorMessage } from "../../lib/api";
-import { clearAuthToken } from "../../lib/auth";
-import { ProtectedRoute } from "../../features/auth/components/ProtectedRoute";
-import { getCurrentUser } from "../../services/auth";
-import { getProfile } from "../../services/profile";
+import { CTAButton } from "../../components/ui/cta-button";
+import { SkeletonLoader } from "../../components/ui/skeleton-loader";
+import { EmptyState } from "../../features/app-shell/components/EmptyState";
+import { AppShell } from "../../features/app-shell/components/AppShell";
+import { InfoCard } from "../../features/app-shell/components/InfoCard";
+import { SectionTitle } from "../../features/app-shell/components/SectionTitle";
+import { StatCard } from "../../features/app-shell/components/StatCard";
+import { ProfileSummaryCard } from "../../features/dashboard/components/ProfileSummaryCard";
+import { QuickActionCard } from "../../features/dashboard/components/QuickActionCard";
+import { SportCard } from "../../features/sports/components/SportCard";
+import { calculateProfileCompletion } from "../../lib/formatters";
+import { sortSportsByPresetOrder } from "../../lib/sport-presets";
+import { getDrillsBySport } from "../../services/drills";
+import { getSports } from "../../services/sports";
 import type { CurrentUserResponse } from "../../types/auth";
 import type { ProfileResponse } from "../../types/profile";
+import type { SportOption } from "../../types/sports";
 
-function formatSkillLevel(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
+type SportSummary = SportOption & {
+  drillCount: number;
+};
 
-function DashboardContent() {
-  const router = useRouter();
-  const [user, setUser] = useState<CurrentUserResponse | null>(null);
-  const [profile, setProfile] = useState<ProfileResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+function DashboardContent({
+  user,
+  profile
+}: {
+  user: CurrentUserResponse | null;
+  profile: ProfileResponse | null;
+}) {
+  const [sportSummaries, setSportSummaries] = useState<SportSummary[]>([]);
+  const [isLoadingSports, setIsLoadingSports] = useState(true);
+  const [sportsError, setSportsError] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
 
-    async function loadDashboard() {
-      setError(null);
+    async function loadCatalog() {
+      setSportsError(null);
+
       try {
-        const [currentUser, profileResult] = await Promise.all([
-          getCurrentUser(),
-          getProfile()
-        ]);
+        const sports = await getSports();
+        const orderedSports = sortSportsByPresetOrder(sports);
+        const drillCollections = await Promise.all(
+          orderedSports.map((sport) => getDrillsBySport(sport.id))
+        );
 
         if (ignore) {
           return;
         }
 
-        setUser(currentUser);
-        setProfile(profileResult.profile);
-      } catch (loadError) {
-        if (loadError instanceof ApiError && loadError.status === 401) {
-          clearAuthToken();
-          router.replace("/login");
-          return;
-        }
-
+        setSportSummaries(
+          orderedSports.map((sport, index) => ({
+            ...sport,
+            drillCount: drillCollections[index].length
+          }))
+        );
+      } catch (error) {
         if (!ignore) {
-          setError(getErrorMessage(loadError));
+          setSportsError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load sports right now."
+          );
         }
       } finally {
         if (!ignore) {
-          setIsLoading(false);
+          setIsLoadingSports(false);
         }
       }
     }
 
-    loadDashboard();
+    loadCatalog();
 
     return () => {
       ignore = true;
     };
-  }, [router]);
+  }, []);
 
-  const handleLogout = () => {
-    clearAuthToken();
-    router.replace("/login");
-  };
-
-  if (isLoading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background-dark px-6 py-10">
-        <div className="rounded-2xl border border-white/10 bg-charcoal/70 px-6 py-5 text-sm text-muted-gray backdrop-blur">
-          Loading your dashboard...
-        </div>
-      </main>
-    );
-  }
+  const availableDrills = sportSummaries.reduce(
+    (total, sport) => total + sport.drillCount,
+    0
+  );
+  const profileCompletion = calculateProfileCompletion(profile);
+  const startTrainingHref = profile
+    ? `/sports/${profile.sport_id}/drills`
+    : "/profile";
+  const trainingReady = profile ? "Ready" : "Profile first";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background-dark px-6 py-10">
-      <div
-        className="absolute inset-0 bg-hero-grid opacity-60"
-        style={{ backgroundSize: "auto, 72px 72px, 72px 72px" }}
-      />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,122,0,0.16),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(255,255,255,0.05),_transparent_28%)]" />
-
-      <section className="relative z-10 mx-auto w-full max-w-5xl rounded-[2rem] border border-white/10 bg-charcoal/72 p-8 shadow-glow backdrop-blur lg:p-10">
-        <div className="flex flex-col gap-4 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-              Dashboard
+    <div className="space-y-8">
+      <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
+        <div className="absolute inset-y-0 right-0 hidden w-2/5 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.18),_transparent_55%)] lg:block" />
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+              Welcome back
             </p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-white">
-              Welcome back{user ? `, ${user.full_name}` : ""}.
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-gray sm:text-base">
-              This protected workspace is the baseline post-login landing page
-              for TrainUp. Your athlete profile is shown here until training,
-              analysis, and performance modules are added in later phases.
+            <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
+              {user?.full_name
+                ? `${user.full_name}, keep your movement work sharp.`
+                : "Build a clean training rhythm."}
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-muted-gray sm:text-base">
+              Browse sport-specific drills, reinforce technique expectations,
+              and get the platform ready for later live and upload-based
+              coaching analysis.
             </p>
-          </div>
-          <div className="flex gap-3">
-            <Button variant="outline" asChild>
-              <Link href="/profile">Edit Profile</Link>
-            </Button>
-            <Button variant="ghost" onClick={handleLogout}>
-              Logout
-            </Button>
-          </div>
-        </div>
-
-        {error ? (
-          <div className="mt-8 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[1.75rem] border border-white/10 bg-white/5 p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-              Account
-            </p>
-            <div className="mt-5 space-y-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                  Full name
-                </p>
-                <p className="mt-2 text-lg font-semibold text-white">
-                  {user?.full_name ?? "Unknown user"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                  Email
-                </p>
-                <p className="mt-2 text-base text-white/90">{user?.email}</p>
-              </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <CTAButton asChild>
+                <Link href={startTrainingHref}>Start Training</Link>
+              </CTAButton>
+              <CTAButton
+                asChild
+                className="border border-white/10 bg-white/[0.04] text-white shadow-none hover:bg-white/[0.07]"
+              >
+                <Link href="/sports">Browse Sports</Link>
+              </CTAButton>
             </div>
           </div>
-
-          <div className="rounded-[1.75rem] border border-white/10 bg-white/5 p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-              Athlete Context
-            </p>
-            {profile ? (
-              <div className="mt-5 space-y-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                    Selected sport
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-white">
-                    {profile.sport_name}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                    Skill level
-                  </p>
-                  <p className="mt-2 text-base text-white/90">
-                    {formatSkillLevel(profile.skill_level)}
-                  </p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                      Height
-                    </p>
-                    <p className="mt-2 text-base text-white/90">
-                      {profile.height_cm ? `${profile.height_cm} cm` : "Not set"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                      Weight
-                    </p>
-                    <p className="mt-2 text-base text-white/90">
-                      {profile.weight_kg ? `${profile.weight_kg} kg` : "Not set"}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                    Injury notes
-                  </p>
-                  <p className="mt-2 text-base leading-7 text-white/90">
-                    {profile.injury_notes ?? "No injury notes recorded."}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 space-y-4">
-                <p className="text-base leading-7 text-muted-gray">
-                  Your athlete profile is still empty. Complete it now so your
-                  later drill analysis has a clean sport and skill context.
-                </p>
-                <Button asChild>
-                  <Link href="/profile">Complete Profile</Link>
-                </Button>
-              </div>
-            )}
+          <div className="grid gap-3 sm:grid-cols-3 lg:w-[420px]">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Focus
+              </p>
+              <p className="mt-3 text-sm font-semibold text-white">
+                Catalog-driven drill selection
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Mode
+              </p>
+              <p className="mt-3 text-sm font-semibold text-white">
+                {trainingReady}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Sport
+              </p>
+              <p className="mt-3 text-sm font-semibold text-white">
+                {profile?.sport_name ?? "Set profile"}
+              </p>
+            </div>
           </div>
         </div>
-      </section>
-    </main>
+      </InfoCard>
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <ProfileSummaryCard profile={profile} />
+
+        {profile ? (
+          <InfoCard className="relative overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_42%)]" />
+            <div className="relative z-10">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
+                Readiness
+              </p>
+              <h3 className="mt-4 font-display text-3xl font-bold text-white">
+                Training mode ready
+              </h3>
+              <p className="mt-4 text-sm leading-7 text-muted-gray">
+                Your current sport and skill profile are set, so the drill
+                library can already surface the right movement context for this
+                athlete.
+              </p>
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Profile completion
+                  </p>
+                  <p className="mt-3 text-3xl font-bold text-white">
+                    {profileCompletion}%
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Next module
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-white">
+                    Live and upload analysis coming soon
+                  </p>
+                </div>
+              </div>
+            </div>
+          </InfoCard>
+        ) : (
+          <EmptyState
+            icon={ClipboardCheck}
+            title="Complete onboarding to unlock a sharper dashboard"
+            description="Your drill browsing flow already works, but adding athlete context makes later analysis and coaching feedback much more meaningful."
+            action={
+              <CTAButton asChild>
+                <Link href="/profile">Complete Profile</Link>
+              </CTAButton>
+            }
+          />
+        )}
+      </div>
+
+      <div className="space-y-5">
+        <SectionTitle
+          eyebrow="Quick Actions"
+          title="Move through the product fast"
+          description="These shortcuts keep the current phase focused on browsing sports, exploring drills, and maintaining athlete context."
+        />
+        <div className="grid gap-5 lg:grid-cols-3">
+          <QuickActionCard
+            title="Browse Sports"
+            description="Open the sports catalog and move straight into Gym, Football, or Basketball drill browsing."
+            href="/sports"
+            icon={Compass}
+            badge="Catalog"
+          />
+          <QuickActionCard
+            title="Continue Training"
+            description="Jump directly into your selected sport's drill library if your profile is configured."
+            href={startTrainingHref}
+            icon={Dumbbell}
+            badge={profile ? "Recommended" : "Set profile"}
+          />
+          <QuickActionCard
+            title="View Profile"
+            description="Keep sport context, skill level, and physical attributes current before training sessions begin."
+            href="/profile"
+            icon={UserRound}
+            badge="Athlete data"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        <SectionTitle
+          eyebrow="System Status"
+          title="Honest platform readiness"
+          description="These signals use real profile and catalog data available in the current TrainUp phase. No analytics are being faked."
+        />
+        <div className="grid gap-5 xl:grid-cols-4">
+          <StatCard
+            label="Available Sports"
+            value={String(sportSummaries.length || 0)}
+            description="Seeded sports currently available for browsing in the authenticated catalog."
+            icon={Compass}
+          />
+          <StatCard
+            label="Available Drills"
+            value={String(availableDrills)}
+            description="Real drill count derived from the seeded backend catalog across all sports."
+            icon={Dumbbell}
+          />
+          <StatCard
+            label="Profile Completion"
+            value={`${profileCompletion}%`}
+            description="Calculated from the fields currently configured in the athlete profile."
+            icon={ClipboardCheck}
+            tone={profile ? "success" : "warning"}
+          />
+          <StatCard
+            label="Training Mode Ready"
+            value={trainingReady}
+            description="Live analysis and upload review are not built yet, but the browsing and onboarding layer is ready."
+            icon={Gauge}
+            tone={profile ? "success" : "warning"}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        <SectionTitle
+          eyebrow="Featured Training"
+          title="Browse the current drill catalog"
+          description="Each sport card opens into a focused drill library powered by the seeded backend data."
+          action={
+            <CTAButton asChild className="rounded-2xl">
+              <Link href="/sports">Open Sports Hub</Link>
+            </CTAButton>
+          }
+        />
+
+        {isLoadingSports ? (
+          <div className="grid gap-5 lg:grid-cols-3">
+            <SkeletonLoader className="h-[340px]" />
+            <SkeletonLoader className="h-[340px]" />
+            <SkeletonLoader className="h-[340px]" />
+          </div>
+        ) : sportsError ? (
+          <EmptyState
+            icon={Sparkles}
+            title="Sports catalog unavailable"
+            description={sportsError}
+          />
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-3">
+            {sportSummaries.map((sport) => (
+              <SportCard
+                key={sport.id}
+                sport={sport}
+                drillCount={sport.drillCount}
+                highlighted={profile?.sport_id === sport.id}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
 export default function DashboardPage() {
   return (
-    <ProtectedRoute>
-      <DashboardContent />
-    </ProtectedRoute>
+    <AppShell
+      eyebrow="Performance Workspace"
+      title="Your training command center"
+      description="A premium overview of athlete context, catalog readiness, and the fastest paths into the sports and drill library."
+      capsule="Post-login shell"
+      actions={
+        <CTAButton asChild>
+          <Link href="/sports">Start Training</Link>
+        </CTAButton>
+      }
+    >
+      {({ user, profile }) => <DashboardContent user={user} profile={profile} />}
+    </AppShell>
   );
 }

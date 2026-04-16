@@ -10,9 +10,11 @@ from app.core.database import get_db
 from app.core.security import TokenDecodeError, decode_access_token
 from app.models.user import User
 from app.repositories.profile_repository import ProfileRepository
+from app.repositories.drill_repository import DrillRepository
 from app.repositories.sport_repository import SportRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
+from app.services.drill_service import DrillService
 from app.services.profile_service import ProfileService
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -24,6 +26,10 @@ def get_user_repository(db: Session = Depends(get_db)) -> UserRepository:
 
 def get_profile_repository(db: Session = Depends(get_db)) -> ProfileRepository:
     return ProfileRepository(db)
+
+
+def get_drill_repository(db: Session = Depends(get_db)) -> DrillRepository:
+    return DrillRepository(db)
 
 
 def get_sport_repository(db: Session = Depends(get_db)) -> SportRepository:
@@ -43,6 +49,13 @@ def get_profile_service(
     sports: SportRepository = Depends(get_sport_repository),
 ) -> ProfileService:
     return ProfileService(db=db, profiles=profiles, sports=sports)
+
+
+def get_drill_service(
+    drills: DrillRepository = Depends(get_drill_repository),
+    sports: SportRepository = Depends(get_sport_repository),
+) -> DrillService:
+    return DrillService(drills=drills, sports=sports)
 
 
 def get_current_user(

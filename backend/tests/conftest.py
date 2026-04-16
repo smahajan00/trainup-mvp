@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 from app.core.database import get_db
 from app.main import app
 from app.models import Base
-from app.scripts.seed_data import seed_sports
+from app.scripts.seed_data import seed_drills, seed_metric_types, seed_sports
 
 
 def _resolve_test_database_url() -> str:
@@ -53,7 +53,9 @@ def db_session_factory() -> Generator[sessionmaker, None, None]:
 
     with testing_session_factory() as session:
         with session.begin():
-            seed_sports(session)
+            sports_by_name, _ = seed_sports(session)
+            metrics_by_name, _ = seed_metric_types(session)
+            seed_drills(session, sports_by_name, set(metrics_by_name.keys()))
 
     try:
         yield testing_session_factory

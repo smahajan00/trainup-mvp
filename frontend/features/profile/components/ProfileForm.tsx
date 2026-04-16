@@ -1,17 +1,21 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { Activity, ShieldAlert, Sparkles } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Select } from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
+import { SkeletonLoader } from "../../../components/ui/skeleton-loader";
+import { EmptyState } from "../../app-shell/components/EmptyState";
+import { InfoCard } from "../../app-shell/components/InfoCard";
 import { ApiError, getErrorMessage } from "../../../lib/api";
 import { clearAuthToken } from "../../../lib/auth";
 import { getProfile, upsertProfile } from "../../../services/profile";
@@ -39,7 +43,7 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
-export function ProfileForm() {
+export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const [sports, setSports] = useState<SportOption[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -134,7 +138,15 @@ export function ProfileForm() {
   });
 
   if (isLoading) {
-    return (
+    return embedded ? (
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <SkeletonLoader className="h-[560px]" />
+        <div className="space-y-6">
+          <SkeletonLoader className="h-56" />
+          <SkeletonLoader className="h-56" />
+        </div>
+      </div>
+    ) : (
       <main className="flex min-h-screen items-center justify-center bg-background-dark px-6 py-10">
         <div className="rounded-2xl border border-white/10 bg-charcoal/70 px-6 py-5 text-sm text-muted-gray backdrop-blur">
           Loading your athlete profile...
@@ -143,37 +155,24 @@ export function ProfileForm() {
     );
   }
 
-  return (
-    <main className="relative min-h-screen overflow-hidden bg-background-dark px-6 py-10">
-      <div
-        className="absolute inset-0 bg-hero-grid opacity-60"
-        style={{ backgroundSize: "auto, 72px 72px, 72px 72px" }}
-      />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,122,0,0.16),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(255,255,255,0.05),_transparent_28%)]" />
-
-      <section className="relative z-10 mx-auto w-full max-w-3xl rounded-[2rem] border border-white/10 bg-charcoal/72 p-8 shadow-glow backdrop-blur lg:p-10">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">
-              Athlete Profile
-            </p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-white">
-              Build your sport context
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-gray sm:text-base">
-              TrainUp uses this profile to anchor future coaching logic around
-              the athlete’s sport, current level, and movement constraints.
-            </p>
+  const content = (
+    <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+      <InfoCard className="relative overflow-hidden border-primary/15">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_38%)]" />
+        <form className="relative z-10 space-y-6" onSubmit={onSubmit}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Badge variant="accent">Profile Setup</Badge>
+              <h2 className="mt-4 font-display text-3xl font-bold text-white">
+                Athlete setup that supports later analysis
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-gray">
+                Set the sport, level, and physical context TrainUp should use
+                as the baseline for drill browsing and future coaching logic.
+              </p>
+            </div>
           </div>
-          <Link
-            href="/dashboard"
-            className="text-sm font-semibold text-primary transition-colors hover:text-primary/80"
-          >
-            Back to dashboard
-          </Link>
-        </div>
 
-        <form className="mt-8 space-y-6" onSubmit={onSubmit}>
           <div className="grid gap-6 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="sport_id">Sport</Label>
@@ -279,17 +278,92 @@ export function ProfileForm() {
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-gray">
-              Your profile remains editable, so you can adjust sport context and
-              physical data as training needs change.
+          <div className="flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-7 text-muted-gray">
+              This profile stays editable, so the athlete context can evolve as
+              the training focus changes.
             </p>
             <Button size="lg" disabled={isSubmitting}>
               {isSubmitting ? "Saving profile..." : "Save Profile"}
             </Button>
           </div>
         </form>
-      </section>
+      </InfoCard>
+
+      <div className="space-y-6">
+        <InfoCard>
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+              <Activity className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
+                Why it matters
+              </p>
+              <h3 className="mt-3 font-display text-2xl font-bold text-white">
+                Better athlete context creates a cleaner product experience
+              </h3>
+              <p className="mt-4 text-sm leading-7 text-muted-gray">
+                Sport and skill level shape the most relevant drills. Height,
+                weight, and injury notes prepare the platform for later scoring
+                and coaching feedback without pretending analytics already exist.
+              </p>
+            </div>
+          </div>
+        </InfoCard>
+
+        <InfoCard>
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white">
+              <ShieldAlert className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
+                Injury awareness
+              </p>
+              <h3 className="mt-3 font-display text-2xl font-bold text-white">
+                Capture constraints honestly
+              </h3>
+              <p className="mt-4 text-sm leading-7 text-muted-gray">
+                Use injury notes for current restrictions, rehab context, or
+                return-to-play considerations. This keeps the product grounded
+                in the athlete's real situation.
+              </p>
+            </div>
+          </div>
+        </InfoCard>
+
+        <InfoCard>
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
+                Current phase
+              </p>
+              <h3 className="mt-3 font-display text-2xl font-bold text-white">
+                Drill browsing is ready now
+              </h3>
+              <p className="mt-4 text-sm leading-7 text-muted-gray">
+                Once this profile is saved, the dashboard and sports flow can
+                use the athlete context immediately. Live and upload analysis
+                interfaces arrive in a later phase.
+              </p>
+            </div>
+          </div>
+        </InfoCard>
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-background-dark px-6 py-10">
+      {content}
     </main>
   );
 }
