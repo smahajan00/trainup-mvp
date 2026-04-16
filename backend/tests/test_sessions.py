@@ -6,7 +6,9 @@ from sqlalchemy import select
 
 from app.models.drill import Drill
 from app.models.feedback import Feedback
+from app.models.progress_record import ProgressRecord
 from app.models.session_artifact import SessionArtifact
+from app.models.session_summary import SessionSummary
 
 
 def _register_user(client, *, full_name: str, email: str) -> str:
@@ -196,6 +198,19 @@ def test_upload_validation_accepts_and_rejects_metadata(client, db_session) -> N
         == valid_payload["evaluation_result"]["feedback_count"]
         == len(valid_payload["evaluation_result"]["issues"])
     )
+    metric_scores = valid_payload["evaluation_result"]["metric_scores"]
+    expected_accuracy = round(
+        (sum(metric_scores.values()) / len(metric_scores)) * 100,
+        2,
+    )
+    assert valid_payload["session_summary"]["session_id"] == upload_session["id"]
+    assert valid_payload["session_summary"]["overall_accuracy"] == expected_accuracy
+    assert valid_payload["session_summary"]["summary_text"].startswith(
+        "Your Basic Shooting Form session"
+    )
+    assert "metrics" in valid_payload["session_summary"]["strengths"]
+    assert "issues" in valid_payload["session_summary"]["weaknesses"]
+    assert "actions" in valid_payload["session_summary"]["recommendations"]
     assert valid_payload["artifacts_persisted"] == [
         "perception_payload",
         "cognition_result",
@@ -243,6 +258,14 @@ def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
             select(Feedback).where(Feedback.session_id == upload_session["id"])
         )
     )
+    stored_summary = db_session.scalar(
+        select(SessionSummary).where(SessionSummary.session_id == upload_session["id"])
+    )
+    stored_progress = list(
+        db_session.scalars(
+            select(ProgressRecord).where(ProgressRecord.summary_id == stored_summary.id)
+        )
+    ) if stored_summary is not None else []
     assert len(stored_artifacts) == 3
     assert {artifact.artifact_type for artifact in stored_artifacts} == {
         "perception_payload",
@@ -250,6 +273,9 @@ def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
         "evaluation_result",
     }
     assert len(stored_feedback) == upload_response.json()["evaluation_result"]["feedback_count"]
+    assert stored_summary is not None
+    assert float(stored_summary.overall_accuracy) == upload_response.json()["session_summary"]["overall_accuracy"]
+    assert len(stored_progress) == len(upload_response.json()["evaluation_result"]["metric_scores"])
 
     artifacts_response = client.get(
         f"/api/sessions/{upload_session['id']}/artifacts",
@@ -262,6 +288,7 @@ def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
     assert payload["perception_result"]["processing_summary"]["processing_mode"] == "scaffold"
     assert payload["cognition_result"]["analysis_mode"] == "scaffold"
     assert payload["evaluation_result"]["evaluation_mode"] == "deterministic_scaffold"
+    assert payload["session_summary"]["session_id"] == upload_session["id"]
     assert payload["cognition_result"]["diagnostic_flags"][0].startswith(
         "Scaffold cognition result"
     )
@@ -299,9 +326,19 @@ def test_feedback_rows_are_replaced_on_reprocess(client, db_session) -> None:
             select(Feedback).where(Feedback.session_id == upload_session["id"])
         )
     )
+    stored_summary = db_session.scalar(
+        select(SessionSummary).where(SessionSummary.session_id == upload_session["id"])
+    )
+    stored_progress = list(
+        db_session.scalars(
+            select(ProgressRecord).where(ProgressRecord.summary_id == stored_summary.id)
+        )
+    ) if stored_summary is not None else []
 
     assert len(stored_artifacts) == 3
     assert len(stored_feedback) == second_payload["evaluation_result"]["feedback_count"]
+    assert stored_summary is not None
+    assert len(stored_progress) == len(second_payload["evaluation_result"]["metric_scores"])
     assert len(stored_feedback) <= max(
         first_payload["evaluation_result"]["feedback_count"],
         second_payload["evaluation_result"]["feedback_count"],

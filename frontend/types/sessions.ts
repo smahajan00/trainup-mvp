@@ -1,3 +1,5 @@
+import type { SessionSummary } from "./progress";
+
 export type SessionInputType = "UPLOAD" | "LIVE";
 export type SessionStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 
@@ -141,6 +143,7 @@ export type SessionArtifactsResponse = {
   perception_result?: PerceptionResult;
   cognition_result?: CognitionResult;
   evaluation_result?: DrillEvaluationResult;
+  session_summary?: SessionSummary;
   feedback: SessionFeedback[];
 };
 
@@ -152,6 +155,7 @@ export type UploadProcessingResponse = {
   perception_result?: PerceptionResult;
   cognition_result?: CognitionResult;
   evaluation_result?: DrillEvaluationResult;
+  session_summary?: SessionSummary;
   feedback: SessionFeedback[];
   artifacts_persisted: ArtifactType[];
   next_step: string;

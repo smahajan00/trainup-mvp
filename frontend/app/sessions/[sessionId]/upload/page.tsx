@@ -146,6 +146,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     uploadResult?.cognition_result ?? artifactSnapshot?.cognition_result ?? null;
   const evaluationResult =
     uploadResult?.evaluation_result ?? artifactSnapshot?.evaluation_result ?? null;
+  const sessionSummary =
+    uploadResult?.session_summary ?? artifactSnapshot?.session_summary ?? null;
   const feedbackItems: SessionFeedback[] =
     uploadResult?.feedback ?? artifactSnapshot?.feedback ?? [];
   const artifactsPersisted =
@@ -846,6 +848,128 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                     </div>
                   </div>
                 ) : null}
+              </InfoCard>
+            ) : null}
+
+            {sessionSummary ? (
+              <InfoCard>
+                <SectionTitle
+                  eyebrow="Session Summary"
+                  title="Deterministic session recap"
+                  description="This summary is derived from the stored drill evaluation and feedback records. It reflects the current rule-based pipeline and avoids invented AI interpretation."
+                />
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-[0.8fr_1.2fr]">
+                  <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
+                    <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
+                      Overall Accuracy
+                    </p>
+                    <p className="mt-4 font-display text-5xl font-bold text-white">
+                      {sessionSummary.overall_accuracy.toFixed(1)}%
+                    </p>
+                    <p className="mt-3 text-sm leading-7 text-emerald-50/90">
+                      Calculated as the average of the current drill-aware
+                      metric scores.
+                    </p>
+                  </div>
+
+                  <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+                    <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                      Summary Text
+                    </p>
+                    <p className="mt-4 text-sm leading-7 text-white/90">
+                      {sessionSummary.summary_text}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-5 lg:grid-cols-3">
+                  <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
+                    <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
+                      Strengths
+                    </p>
+                    {sessionSummary.strengths.metrics.length ? (
+                      <div className="mt-4 space-y-3">
+                        {sessionSummary.strengths.metrics.map((metric) => (
+                          <div
+                            key={metric.name}
+                            className="rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-4"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">
+                                {formatEnumLabel(metric.name)}
+                              </p>
+                              <Badge variant="success">
+                                {(metric.score * 100).toFixed(0)}%
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm leading-7 text-emerald-50/90">
+                        No metrics crossed the current high-confidence strength
+                        band in this pass.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-3xl border border-amber-400/25 bg-amber-500/10 p-5">
+                    <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
+                      Weaknesses
+                    </p>
+                    {sessionSummary.weaknesses.issues.length ? (
+                      <div className="mt-4 space-y-3">
+                        {sessionSummary.weaknesses.issues.map((issue) => (
+                          <div
+                            key={`${issue.metric}-${issue.issue_label}`}
+                            className="rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-4"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">
+                                {issue.issue_label}
+                              </p>
+                              <Badge variant={getSeverityVariant(issue.severity)}>
+                                {formatEnumLabel(issue.severity)}
+                              </Badge>
+                            </div>
+                            <p className="mt-3 text-sm text-white/80">
+                              {formatEnumLabel(issue.metric)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm leading-7 text-amber-50/90">
+                        No seeded issue thresholds were triggered in this
+                        session.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-3xl border border-primary/20 bg-primary/10 p-5">
+                    <p className="text-xs uppercase tracking-[0.22em] text-primary">
+                      Recommendations
+                    </p>
+                    {sessionSummary.recommendations.actions.length ? (
+                      <div className="mt-4 space-y-3">
+                        {sessionSummary.recommendations.actions.map((action) => (
+                          <div
+                            key={action}
+                            className="rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-4"
+                          >
+                            <p className="text-sm leading-7 text-white/90">{action}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm leading-7 text-white/85">
+                        No extra corrective actions were needed for this
+                        evaluation pass.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </InfoCard>
             ) : null}
           </div>

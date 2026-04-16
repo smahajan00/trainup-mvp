@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from app.models.enums import InputType, SessionStatus, SeverityLevel
+from app.schemas.progress import SessionSummaryResponse
 from app.schemas.base import APIBaseModel
 
 
@@ -146,6 +147,7 @@ class SessionArtifactsResponse(APIBaseModel):
     perception_result: PerceptionResult | None = None
     cognition_result: CognitionResult | None = None
     evaluation_result: DrillEvaluationResult | None = None
+    session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
 
 
@@ -157,6 +159,7 @@ class UploadProcessingResponse(APIBaseModel):
     perception_result: PerceptionResult | None = None
     cognition_result: CognitionResult | None = None
     evaluation_result: DrillEvaluationResult | None = None
+    session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
     artifacts_persisted: list[ArtifactType] = Field(default_factory=list)
     next_step: str

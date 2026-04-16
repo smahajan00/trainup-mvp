@@ -13,15 +13,20 @@ from app.engines.perception_interface.perception_service import PerceptionServic
 from app.models.user import User
 from app.repositories.drill_repository import DrillRepository
 from app.repositories.feedback_repository import FeedbackRepository
+from app.repositories.metric_type_repository import MetricTypeRepository
 from app.repositories.profile_repository import ProfileRepository
+from app.repositories.progress_repository import ProgressRepository
 from app.repositories.session_artifact_repository import SessionArtifactRepository
 from app.repositories.session_repository import SessionRepository
+from app.repositories.session_summary_repository import SessionSummaryRepository
 from app.repositories.sport_repository import SportRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.drill_service import DrillService
 from app.services.profile_service import ProfileService
+from app.services.progress_service import ProgressService
 from app.services.session_service import SessionService
+from app.services.summary_service import SummaryService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -56,12 +61,30 @@ def get_feedback_repository(db: Session = Depends(get_db)) -> FeedbackRepository
     return FeedbackRepository(db)
 
 
+def get_metric_type_repository(db: Session = Depends(get_db)) -> MetricTypeRepository:
+    return MetricTypeRepository(db)
+
+
+def get_session_summary_repository(
+    db: Session = Depends(get_db),
+) -> SessionSummaryRepository:
+    return SessionSummaryRepository(db)
+
+
+def get_progress_repository(db: Session = Depends(get_db)) -> ProgressRepository:
+    return ProgressRepository(db)
+
+
 def get_perception_service() -> PerceptionService:
     return PerceptionService()
 
 
 def get_cognition_service() -> CognitionService:
     return CognitionService()
+
+
+def get_summary_service() -> SummaryService:
+    return SummaryService()
 
 
 def get_auth_service(
@@ -86,23 +109,38 @@ def get_drill_service(
     return DrillService(drills=drills, sports=sports)
 
 
+def get_progress_service(
+    summaries: SessionSummaryRepository = Depends(get_session_summary_repository),
+    progress_records: ProgressRepository = Depends(get_progress_repository),
+) -> ProgressService:
+    return ProgressService(summaries=summaries, progress_records=progress_records)
+
+
 def get_session_service(
     db: Session = Depends(get_db),
     sessions: SessionRepository = Depends(get_session_repository),
     artifacts: SessionArtifactRepository = Depends(get_session_artifact_repository),
     feedback: FeedbackRepository = Depends(get_feedback_repository),
+    metric_types: MetricTypeRepository = Depends(get_metric_type_repository),
+    summaries: SessionSummaryRepository = Depends(get_session_summary_repository),
+    progress_records: ProgressRepository = Depends(get_progress_repository),
     drills: DrillRepository = Depends(get_drill_repository),
     perception: PerceptionService = Depends(get_perception_service),
     cognition: CognitionService = Depends(get_cognition_service),
+    summary_service: SummaryService = Depends(get_summary_service),
 ) -> SessionService:
     return SessionService(
         db=db,
         sessions=sessions,
         artifacts=artifacts,
         feedback=feedback,
+        metric_types=metric_types,
+        summaries=summaries,
+        progress_records=progress_records,
         drills=drills,
         perception=perception,
         cognition=cognition,
+        summary_service=summary_service,
     )
 
 

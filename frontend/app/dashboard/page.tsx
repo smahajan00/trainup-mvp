@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
+  BarChart3,
   ClipboardCheck,
   Compass,
   History,
@@ -23,14 +24,21 @@ import { ProfileSummaryCard } from "../../features/dashboard/components/ProfileS
 import { QuickActionCard } from "../../features/dashboard/components/QuickActionCard";
 import { RecentSessionCard } from "../../features/sessions/components/RecentSessionCard";
 import { SportCard } from "../../features/sports/components/SportCard";
-import { calculateProfileCompletion } from "../../lib/formatters";
+import {
+  calculateProfileCompletion,
+  formatDateTime,
+  formatEnumLabel
+} from "../../lib/formatters";
 import { sortSportsByPresetOrder } from "../../lib/sport-presets";
 import { getDrillsBySport } from "../../services/drills";
-import { getRecentSessions } from "../../services/sessions";
+import { getRecentProgress } from "../../services/progress";
 import { getSports } from "../../services/sports";
 import type { CurrentUserResponse } from "../../types/auth";
 import type { ProfileResponse } from "../../types/profile";
-import type { TrainingSession } from "../../types/sessions";
+import type {
+  RecentMetricProgress,
+  RecentProgressSession
+} from "../../types/progress";
 import type { SportOption } from "../../types/sports";
 
 type SportSummary = SportOption & {
@@ -47,21 +55,22 @@ function DashboardContent({
   const [sportSummaries, setSportSummaries] = useState<SportSummary[]>([]);
   const [isLoadingSports, setIsLoadingSports] = useState(true);
   const [sportsError, setSportsError] = useState<string | null>(null);
-  const [recentSessions, setRecentSessions] = useState<TrainingSession[]>([]);
-  const [isLoadingRecentSessions, setIsLoadingRecentSessions] = useState(true);
-  const [recentSessionsError, setRecentSessionsError] = useState<string | null>(null);
+  const [recentSessions, setRecentSessions] = useState<RecentProgressSession[]>([]);
+  const [recentMetrics, setRecentMetrics] = useState<RecentMetricProgress[]>([]);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+  const [progressError, setProgressError] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
 
     async function loadCatalog() {
       setSportsError(null);
-      setRecentSessionsError(null);
+      setProgressError(null);
 
       try {
-        const [sports, recentSessionsResult] = await Promise.all([
+        const [sports, progressResult] = await Promise.all([
           getSports(),
-          getRecentSessions(4)
+          getRecentProgress(4, 20)
         ]);
         const orderedSports = sortSportsByPresetOrder(sports);
         const drillCollections = await Promise.all(
@@ -78,7 +87,8 @@ function DashboardContent({
             drillCount: drillCollections[index].length
           }))
         );
-        setRecentSessions(recentSessionsResult);
+        setRecentSessions(progressResult.recent_sessions);
+        setRecentMetrics(progressResult.recent_metrics);
       } catch (error) {
         if (!ignore) {
           setSportsError(
@@ -86,16 +96,16 @@ function DashboardContent({
               ? error.message
               : "Unable to load sports right now."
           );
-          setRecentSessionsError(
+          setProgressError(
             error instanceof Error
               ? error.message
-              : "Unable to load recent sessions right now."
+              : "Unable to load recent progress right now."
           );
         }
       } finally {
         if (!ignore) {
           setIsLoadingSports(false);
-          setIsLoadingRecentSessions(false);
+          setIsLoadingProgress(false);
         }
       }
     }
@@ -115,7 +125,32 @@ function DashboardContent({
   const startTrainingHref = profile
     ? `/sports/${profile.sport_id}/drills`
     : "/profile";
-  const trainingReady = profile ? "Ready" : "Profile first";
+  const latestMetricsByName = recentMetrics.reduce<Record<string, RecentMetricProgress>>(
+    (accumulator, metric) => {
+      if (!accumulator[metric.metric_name]) {
+        accumulator[metric.metric_name] = metric;
+      }
+      return accumulator;
+    },
+    {}
+  );
+  const performanceSnapshot = Object.values(latestMetricsByName).slice(0, 6);
+  const metricGroups = recentMetrics.reduce<Record<string, RecentMetricProgress[]>>(
+    (accumulator, metric) => {
+      if (!accumulator[metric.metric_name]) {
+        accumulator[metric.metric_name] = [];
+      }
+      accumulator[metric.metric_name].push(metric);
+      return accumulator;
+    },
+    {}
+  );
+  const trendCandidate = Object.values(metricGroups)
+    .sort((left, right) => right.length - left.length)[0] ?? [];
+  const trendMetricName = trendCandidate[0]?.metric_name ?? null;
+  const trendSeries = [...trendCandidate].reverse().slice(-5);
+  const processedSessionCount = recentSessions.length;
+  const trackedMetricCount = performanceSnapshot.length;
 
   return (
     <div className="space-y-8">
@@ -154,15 +189,15 @@ function DashboardContent({
                 Focus
               </p>
               <p className="mt-3 text-sm font-semibold text-white">
-                Catalog-driven drill selection
+                Evaluation-backed upload review
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Mode
+                Progress
               </p>
               <p className="mt-3 text-sm font-semibold text-white">
-                {trainingReady}
+                {processedSessionCount} processed
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -209,7 +244,7 @@ function DashboardContent({
                     Next module
                   </p>
                   <p className="mt-3 text-sm font-semibold text-white">
-                    Live and upload analysis coming soon
+                    Session summaries and progress tracking live
                   </p>
                 </div>
               </div>
@@ -263,38 +298,38 @@ function DashboardContent({
       <div className="space-y-5">
         <SectionTitle
           eyebrow="Recent Sessions"
-          title="Track the execution flow you have already opened"
-          description="These are real training sessions created through the new live and upload lifecycle scaffolding."
+          title="Review processed training sessions"
+          description="These cards are backed by stored session summaries and real overall accuracy values from completed upload evaluation passes."
         />
 
-        {isLoadingRecentSessions ? (
+        {isLoadingProgress ? (
           <div className="grid gap-5 xl:grid-cols-4">
             <SkeletonLoader className="h-[240px]" />
             <SkeletonLoader className="h-[240px]" />
             <SkeletonLoader className="h-[240px]" />
             <SkeletonLoader className="h-[240px]" />
           </div>
-        ) : recentSessionsError ? (
+        ) : progressError ? (
           <EmptyState
             icon={History}
             title="Recent sessions unavailable"
-            description={recentSessionsError}
+            description={progressError}
           />
         ) : recentSessions.length === 0 ? (
           <EmptyState
             icon={History}
-            title="No sessions have started yet"
-            description="Open any drill and launch a live or upload session to begin the training execution flow."
+            title="No processed sessions yet"
+            description="Upload a drill clip to generate a session summary and start building a real progress history."
             action={
               <CTAButton asChild>
-                <Link href="/sports">Browse Drills</Link>
+                <Link href="/sports">Start With a Drill</Link>
               </CTAButton>
             }
           />
         ) : (
           <div className="grid gap-5 xl:grid-cols-4">
             {recentSessions.map((session) => (
-              <RecentSessionCard key={session.id} session={session} />
+              <RecentSessionCard key={session.session_id} session={session} />
             ))}
           </div>
         )}
@@ -302,22 +337,22 @@ function DashboardContent({
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="System Status"
-          title="Honest platform readiness"
-          description="These signals use real profile and catalog data available in the current TrainUp phase. No analytics are being faked."
+          eyebrow="Performance Snapshot"
+          title="Latest tracked metrics"
+          description="These values come directly from stored progress records created when upload evaluation completes."
         />
         <div className="grid gap-5 xl:grid-cols-4">
           <StatCard
-            label="Available Sports"
-            value={String(sportSummaries.length || 0)}
-            description="Seeded sports currently available for browsing in the authenticated catalog."
-            icon={Compass}
+            label="Processed Sessions"
+            value={String(processedSessionCount)}
+            description="Summary-backed upload sessions currently available for review."
+            icon={History}
           />
           <StatCard
-            label="Available Drills"
-            value={String(availableDrills)}
-            description="Real drill count derived from the seeded backend catalog across all sports."
-            icon={Dumbbell}
+            label="Tracked Metrics"
+            value={String(trackedMetricCount)}
+            description="Latest metric types with at least one persisted progress record."
+            icon={Gauge}
           />
           <StatCard
             label="Profile Completion"
@@ -327,13 +362,123 @@ function DashboardContent({
             tone={profile ? "success" : "warning"}
           />
           <StatCard
-            label="Training Mode Ready"
-            value={trainingReady}
-            description="Live analysis and upload review are not built yet, but the browsing and onboarding layer is ready."
-            icon={Gauge}
-            tone={profile ? "success" : "warning"}
+            label="Available Drills"
+            value={String(availableDrills)}
+            description="Real drill count derived from the seeded backend catalog across all sports."
+            icon={Dumbbell}
           />
         </div>
+
+        {isLoadingProgress ? (
+          <div className="grid gap-5 lg:grid-cols-2">
+            <SkeletonLoader className="h-[260px]" />
+            <SkeletonLoader className="h-[260px]" />
+          </div>
+        ) : progressError ? (
+          <EmptyState
+            icon={BarChart3}
+            title="Progress snapshot unavailable"
+            description={progressError}
+          />
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+            <InfoCard>
+              <SectionTitle
+                eyebrow="Latest Metrics"
+                title="Current performance anchors"
+                description="Each value below is the latest recorded progress value for that metric."
+              />
+              {performanceSnapshot.length ? (
+                <div className="mt-6 grid gap-3">
+                  {performanceSnapshot.map((metric) => (
+                    <div
+                      key={metric.progress_id}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {formatEnumLabel(metric.metric_name)}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-gray">
+                            {metric.drill_name} · {formatDateTime(metric.created_at)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-white">
+                            {metric.metric_value.toFixed(2)}
+                          </p>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                            {metric.metric_unit}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-4 h-2 rounded-full bg-white/10">
+                        <div
+                          className="h-2 rounded-full bg-primary"
+                          style={{ width: `${Math.max(metric.metric_value * 100, 8)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-6 text-sm leading-7 text-muted-gray">
+                  Process an upload session to start collecting stored metric
+                  values.
+                </p>
+              )}
+            </InfoCard>
+
+            <InfoCard>
+              <SectionTitle
+                eyebrow="Progress Trend"
+                title={
+                  trendMetricName
+                    ? formatEnumLabel(trendMetricName)
+                    : "Metric trend not available yet"
+                }
+                description="A simple view of the last few stored values for one recurring metric. No fabricated trendline is being shown."
+              />
+              {trendSeries.length ? (
+                <div className="mt-6 space-y-3">
+                  {trendSeries.map((metric, index) => (
+                    <div
+                      key={metric.progress_id}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white">
+                          Session {index + 1}
+                        </p>
+                        <p className="text-sm text-muted-gray">
+                          {formatDateTime(metric.created_at)}
+                        </p>
+                      </div>
+                      <p className="mt-3 text-2xl font-bold text-white">
+                        {metric.metric_value.toFixed(2)}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-gray">
+                        {metric.drill_name}
+                      </p>
+                      <div className="mt-4 h-2 rounded-full bg-white/10">
+                        <div
+                          className="h-2 rounded-full bg-primary"
+                          style={{ width: `${Math.max(metric.metric_value * 100, 8)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-6 text-sm leading-7 text-muted-gray">
+                  Once a metric has multiple recorded values, this section will
+                  show the last five stored points.
+                </p>
+              )}
+            </InfoCard>
+          </div>
+        )}
       </div>
 
       <div className="space-y-5">

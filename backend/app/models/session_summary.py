@@ -26,13 +26,12 @@ class SessionSummary(BaseModel):
     )
     summary_text: Mapped[str] = mapped_column(Text, nullable=False)
     overall_accuracy: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
-    strengths: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
-    weaknesses: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
-    recommendations: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    strengths: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    weaknesses: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    recommendations: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
     session: Mapped[TrainingSession] = relationship(back_populates="summary")
     progress_records: Mapped[list[ProgressRecord]] = relationship(
         back_populates="summary",
         cascade="all, delete-orphan",
     )
-

@@ -3,18 +3,29 @@ import { ArrowUpRight, UploadCloud, Video } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { formatDateTime, formatEnumLabel } from "../../../lib/formatters";
+import type { RecentProgressSession } from "../../../types/progress";
 import type { TrainingSession } from "../../../types/sessions";
 import { InfoCard } from "../../app-shell/components/InfoCard";
 import { SessionStatusBadge } from "./SessionStatusBadge";
 
-function getSessionHref(session: TrainingSession) {
-  return session.input_type === "LIVE"
-    ? `/sessions/${session.id}/live`
-    : `/sessions/${session.id}/upload`;
+type RecentSessionCardModel =
+  | TrainingSession
+  | RecentProgressSession;
+
+function getSessionId(session: RecentSessionCardModel) {
+  return "session_id" in session ? session.session_id : session.id;
 }
 
-export function RecentSessionCard({ session }: { session: TrainingSession }) {
+function getSessionHref(session: RecentSessionCardModel) {
+  const sessionId = getSessionId(session);
+  return session.input_type === "LIVE"
+    ? `/sessions/${sessionId}/live`
+    : `/sessions/${sessionId}/upload`;
+}
+
+export function RecentSessionCard({ session }: { session: RecentSessionCardModel }) {
   const Icon = session.input_type === "LIVE" ? Video : UploadCloud;
+  const overallAccuracy = "overall_accuracy" in session ? session.overall_accuracy : null;
 
   return (
     <Link href={getSessionHref(session)} className="block">
@@ -40,6 +51,17 @@ export function RecentSessionCard({ session }: { session: TrainingSession }) {
             Started {formatDateTime(session.start_time)}
           </p>
         </div>
+
+        {overallAccuracy !== null ? (
+          <div className="mt-6 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
+              Accuracy
+            </p>
+            <p className="mt-3 text-3xl font-bold text-white">
+              {overallAccuracy.toFixed(1)}%
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-6 flex items-center justify-between text-sm font-semibold text-white/80">
           <span>Open Session</span>
