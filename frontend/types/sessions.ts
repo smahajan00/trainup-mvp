@@ -27,7 +27,10 @@ export type UploadValidation = {
   errors: string[];
 };
 
-export type ArtifactType = "perception_payload" | "cognition_result";
+export type ArtifactType =
+  | "perception_payload"
+  | "cognition_result"
+  | "evaluation_result";
 
 export type PerceptionFileMetadata = {
   file_name: string;
@@ -90,6 +93,41 @@ export type CognitionResult = {
   diagnostic_flags: string[];
 };
 
+export type SeverityLevel = "MINOR" | "MODERATE" | "SEVERE";
+
+export type EvaluationIssue = {
+  metric: string;
+  actual_score: number;
+  expected_min?: number | null;
+  expected_max?: number | null;
+  deviation: number;
+  severity_level: SeverityLevel;
+  issue_label: string;
+  coaching_cue: string;
+};
+
+export type DrillEvaluationResult = {
+  evaluation_mode: "deterministic_scaffold";
+  session_id: string;
+  drill_id: string;
+  drill_name: string;
+  evaluator_name: string;
+  metric_scores: Record<string, number>;
+  issues: EvaluationIssue[];
+  summary_flags: string[];
+  feedback_count: number;
+};
+
+export type SessionFeedback = {
+  id: string;
+  session_id: string;
+  severity_level: SeverityLevel;
+  technique_issue: string;
+  coaching_cue: string;
+  metric_snapshot: Record<string, unknown>;
+  created_at: string;
+};
+
 export type SessionArtifact = {
   id: string;
   session_id: string;
@@ -102,6 +140,8 @@ export type SessionArtifactsResponse = {
   artifacts: SessionArtifact[];
   perception_result?: PerceptionResult;
   cognition_result?: CognitionResult;
+  evaluation_result?: DrillEvaluationResult;
+  feedback: SessionFeedback[];
 };
 
 export type UploadProcessingResponse = {
@@ -111,6 +151,8 @@ export type UploadProcessingResponse = {
   validation: UploadValidation;
   perception_result?: PerceptionResult;
   cognition_result?: CognitionResult;
+  evaluation_result?: DrillEvaluationResult;
+  feedback: SessionFeedback[];
   artifacts_persisted: ArtifactType[];
   next_step: string;
 };

@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.models.drill import Drill
+from app.models.feedback import Feedback
 from app.models.session_artifact import SessionArtifact
 
 
@@ -177,9 +178,28 @@ def test_upload_validation_accepts_and_rejects_metadata(client, db_session) -> N
         "motion_stability_score",
         "payload_completeness_score",
     }
+    assert set(valid_payload["evaluation_result"].keys()) == {
+        "evaluation_mode",
+        "session_id",
+        "drill_id",
+        "drill_name",
+        "evaluator_name",
+        "metric_scores",
+        "issues",
+        "summary_flags",
+        "feedback_count",
+    }
+    assert valid_payload["evaluation_result"]["evaluation_mode"] == "deterministic_scaffold"
+    assert valid_payload["evaluation_result"]["drill_name"] == "Basic Shooting Form"
+    assert (
+        len(valid_payload["feedback"])
+        == valid_payload["evaluation_result"]["feedback_count"]
+        == len(valid_payload["evaluation_result"]["issues"])
+    )
     assert valid_payload["artifacts_persisted"] == [
         "perception_payload",
         "cognition_result",
+        "evaluation_result",
     ]
 
     invalid_response = client.post(
@@ -218,11 +238,18 @@ def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
             select(SessionArtifact).where(SessionArtifact.session_id == upload_session["id"])
         )
     )
-    assert len(stored_artifacts) == 2
+    stored_feedback = list(
+        db_session.scalars(
+            select(Feedback).where(Feedback.session_id == upload_session["id"])
+        )
+    )
+    assert len(stored_artifacts) == 3
     assert {artifact.artifact_type for artifact in stored_artifacts} == {
         "perception_payload",
         "cognition_result",
+        "evaluation_result",
     }
+    assert len(stored_feedback) == upload_response.json()["evaluation_result"]["feedback_count"]
 
     artifacts_response = client.get(
         f"/api/sessions/{upload_session['id']}/artifacts",
@@ -231,12 +258,59 @@ def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
 
     assert artifacts_response.status_code == 200
     payload = artifacts_response.json()
-    assert len(payload["artifacts"]) == 2
+    assert len(payload["artifacts"]) == 3
     assert payload["perception_result"]["processing_summary"]["processing_mode"] == "scaffold"
     assert payload["cognition_result"]["analysis_mode"] == "scaffold"
+    assert payload["evaluation_result"]["evaluation_mode"] == "deterministic_scaffold"
     assert payload["cognition_result"]["diagnostic_flags"][0].startswith(
         "Scaffold cognition result"
     )
+    assert len(payload["feedback"]) == payload["evaluation_result"]["feedback_count"]
+
+
+def test_feedback_rows_are_replaced_on_reprocess(client, db_session) -> None:
+    token = _register_user(client, full_name="Taylor Bloom", email="reprocess@example.com")
+    drill_id = _get_drill_id(db_session, "Bodyweight Squat")
+    upload_session = _create_session(client, token, drill_id=drill_id, input_type="UPLOAD")
+
+    first_response = client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("squat-a.mp4", b"1" * 4096, "video/mp4")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+
+    second_response = client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("squat-b.mp4", b"2" * 8192, "video/mp4")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+
+    stored_artifacts = list(
+        db_session.scalars(
+            select(SessionArtifact).where(SessionArtifact.session_id == upload_session["id"])
+        )
+    )
+    stored_feedback = list(
+        db_session.scalars(
+            select(Feedback).where(Feedback.session_id == upload_session["id"])
+        )
+    )
+
+    assert len(stored_artifacts) == 3
+    assert len(stored_feedback) == second_payload["evaluation_result"]["feedback_count"]
+    assert len(stored_feedback) <= max(
+        first_payload["evaluation_result"]["feedback_count"],
+        second_payload["evaluation_result"]["feedback_count"],
+    )
+    assert {artifact.artifact_type for artifact in stored_artifacts} == {
+        "perception_payload",
+        "cognition_result",
+        "evaluation_result",
+    }
 
 
 def test_get_session_artifacts_rejected_for_other_user(client, db_session) -> None:

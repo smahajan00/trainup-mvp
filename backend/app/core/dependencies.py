@@ -12,6 +12,7 @@ from app.engines.cognition_engine.cognition_service import CognitionService
 from app.engines.perception_interface.perception_service import PerceptionService
 from app.models.user import User
 from app.repositories.drill_repository import DrillRepository
+from app.repositories.feedback_repository import FeedbackRepository
 from app.repositories.profile_repository import ProfileRepository
 from app.repositories.session_artifact_repository import SessionArtifactRepository
 from app.repositories.session_repository import SessionRepository
@@ -51,6 +52,10 @@ def get_session_artifact_repository(
     return SessionArtifactRepository(db)
 
 
+def get_feedback_repository(db: Session = Depends(get_db)) -> FeedbackRepository:
+    return FeedbackRepository(db)
+
+
 def get_perception_service() -> PerceptionService:
     return PerceptionService()
 
@@ -85,6 +90,7 @@ def get_session_service(
     db: Session = Depends(get_db),
     sessions: SessionRepository = Depends(get_session_repository),
     artifacts: SessionArtifactRepository = Depends(get_session_artifact_repository),
+    feedback: FeedbackRepository = Depends(get_feedback_repository),
     drills: DrillRepository = Depends(get_drill_repository),
     perception: PerceptionService = Depends(get_perception_service),
     cognition: CognitionService = Depends(get_cognition_service),
@@ -93,6 +99,7 @@ def get_session_service(
         db=db,
         sessions=sessions,
         artifacts=artifacts,
+        feedback=feedback,
         drills=drills,
         perception=perception,
         cognition=cognition,

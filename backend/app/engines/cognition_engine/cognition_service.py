@@ -3,17 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.engines.cognition_engine.evaluators import build_diagnostic_flags
 from app.engines.cognition_engine.metrics import (
     compute_coverage_score,
     compute_frame_consistency_score,
     compute_motion_stability_score,
     compute_payload_completeness_score,
 )
+from app.engines.cognition_engine.registry import get_evaluator_for_drill
+from app.models.drill import Drill
+from app.models.training_session import TrainingSession
 from app.schemas.session import (
     CognitionDerivedMetrics,
     CognitionProcessingReadiness,
     CognitionResult,
+    DrillEvaluationResult,
     PerceptionResult,
 )
 
@@ -50,9 +53,51 @@ class CognitionService:
             drill_id=drill_id,
             processing_readiness=readiness,
             derived_metrics=metrics,
-            diagnostic_flags=build_diagnostic_flags(
+            diagnostic_flags=self._build_diagnostic_flags(
                 payload=perception_result,
                 metrics=metrics,
                 minimum_frames_met=readiness.minimum_frames_met,
             ),
         )
+
+    def evaluate_drill_payload(
+        self,
+        *,
+        perception_result: PerceptionResult,
+        drill: Drill,
+        session: TrainingSession,
+    ) -> DrillEvaluationResult:
+        evaluator = get_evaluator_for_drill(drill.drill_name)
+        return evaluator.evaluate(
+            perception_payload=perception_result,
+            drill=drill,
+            session=session,
+        )
+
+    @staticmethod
+    def _build_diagnostic_flags(
+        *,
+        payload: PerceptionResult,
+        metrics: CognitionDerivedMetrics,
+        minimum_frames_met: bool,
+    ) -> list[str]:
+        flags = [
+            "Scaffold cognition result; drill-specific biomechanical scoring comes next.",
+        ]
+
+        if not minimum_frames_met:
+            flags.append(
+                "Upload clip is short for richer drill-specific temporal evaluation."
+            )
+
+        if payload.derived_motion_features.missing_frame_ratio > 0.08:
+            flags.append(
+                "Payload coverage is limited; perception continuity should improve before final scoring."
+            )
+
+        if metrics.frame_consistency_score < 0.75:
+            flags.append(
+                "Frame confidence is moderate; positioning and lighting may need improvement."
+            )
+
+        return flags

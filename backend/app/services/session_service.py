@@ -12,10 +12,13 @@ from app.engines.perception_interface.perception_service import PerceptionServic
 from app.models.enums import InputType, SessionStatus
 from app.models.training_session import TrainingSession
 from app.repositories.drill_repository import DrillRepository
+from app.repositories.feedback_repository import FeedbackRepository
 from app.repositories.session_artifact_repository import SessionArtifactRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.session import (
     CognitionResult,
+    DrillEvaluationResult,
+    FeedbackResponse,
     FrameBatchRequest,
     FrameBatchResponse,
     LiveEndRequest,
@@ -31,6 +34,7 @@ from app.schemas.session import (
 
 PERCEPTION_ARTIFACT_TYPE = "perception_payload"
 COGNITION_ARTIFACT_TYPE = "cognition_result"
+EVALUATION_ARTIFACT_TYPE = "evaluation_result"
 
 
 @dataclass
@@ -38,6 +42,7 @@ class SessionService:
     db: Session
     sessions: SessionRepository
     artifacts: SessionArtifactRepository
+    feedback: FeedbackRepository
     drills: DrillRepository
     perception: PerceptionService
     cognition: CognitionService
@@ -120,6 +125,11 @@ class SessionService:
             drill_id=session.drill_id,
             perception_result=perception_result,
         )
+        evaluation_result = self.cognition.evaluate_drill_payload(
+            perception_result=perception_result,
+            drill=session.drill,
+            session=session,
+        )
 
         self.artifacts.upsert(
             session_id=session.id,
@@ -131,6 +141,30 @@ class SessionService:
             artifact_type=COGNITION_ARTIFACT_TYPE,
             payload_json=cognition_result.model_dump(mode="json"),
         )
+        self.artifacts.upsert(
+            session_id=session.id,
+            artifact_type=EVALUATION_ARTIFACT_TYPE,
+            payload_json=evaluation_result.model_dump(mode="json"),
+        )
+        self.feedback.delete_by_session_id(session_id=session.id)
+        feedback_rows = [
+            self.feedback.create(
+                session_id=session.id,
+                severity_level=issue.severity_level,
+                technique_issue=issue.issue_label,
+                coaching_cue=issue.coaching_cue,
+                metric_snapshot={
+                    "metric": issue.metric,
+                    "actual_score": issue.actual_score,
+                    "expected_min": issue.expected_min,
+                    "expected_max": issue.expected_max,
+                    "deviation": issue.deviation,
+                    "evaluator_name": evaluation_result.evaluator_name,
+                    "drill_name": evaluation_result.drill_name,
+                },
+            )
+            for issue in evaluation_result.issues
+        ]
         self.db.commit()
 
         return UploadProcessingResponse(
@@ -140,8 +174,14 @@ class SessionService:
             validation=validation,
             perception_result=perception_result,
             cognition_result=cognition_result,
-            artifacts_persisted=[PERCEPTION_ARTIFACT_TYPE, COGNITION_ARTIFACT_TYPE],
-            next_step=next_step,
+            evaluation_result=evaluation_result,
+            feedback=[self._build_feedback_response(row) for row in feedback_rows],
+            artifacts_persisted=[
+                PERCEPTION_ARTIFACT_TYPE,
+                COGNITION_ARTIFACT_TYPE,
+                EVALUATION_ARTIFACT_TYPE,
+            ],
+            next_step="Session summary and progress tracking will be connected next.",
         )
 
     def get_session_artifacts(
@@ -152,15 +192,19 @@ class SessionService:
     ) -> SessionArtifactsResponse:
         session = self._get_owned_session(user_id=user_id, session_id=session_id)
         artifacts = self.artifacts.list_by_session_id(session_id=session.id)
+        feedback_rows = self.feedback.list_by_session_id(session_id=session.id)
 
         perception_result: PerceptionResult | None = None
         cognition_result: CognitionResult | None = None
+        evaluation_result: DrillEvaluationResult | None = None
 
         for artifact in artifacts:
             if artifact.artifact_type == PERCEPTION_ARTIFACT_TYPE:
                 perception_result = PerceptionResult(**artifact.payload_json)
             elif artifact.artifact_type == COGNITION_ARTIFACT_TYPE:
                 cognition_result = CognitionResult(**artifact.payload_json)
+            elif artifact.artifact_type == EVALUATION_ARTIFACT_TYPE:
+                evaluation_result = DrillEvaluationResult(**artifact.payload_json)
 
         return SessionArtifactsResponse(
             artifacts=[
@@ -175,6 +219,8 @@ class SessionService:
             ],
             perception_result=perception_result,
             cognition_result=cognition_result,
+            evaluation_result=evaluation_result,
+            feedback=[self._build_feedback_response(row) for row in feedback_rows],
         )
 
     def start_live_session(
@@ -296,4 +342,16 @@ class SessionService:
             end_time=session.end_time,
             drill_name=session.drill.drill_name,
             sport_name=sport.sport_name if sport is not None else "",
+        )
+
+    @staticmethod
+    def _build_feedback_response(feedback_row) -> FeedbackResponse:
+        return FeedbackResponse(
+            id=feedback_row.id,
+            session_id=feedback_row.session_id,
+            severity_level=feedback_row.severity_level,
+            technique_issue=feedback_row.technique_issue,
+            coaching_cue=feedback_row.coaching_cue,
+            metric_snapshot=feedback_row.metric_snapshot,
+            created_at=feedback_row.created_at,
         )

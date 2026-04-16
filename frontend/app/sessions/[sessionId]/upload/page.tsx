@@ -4,10 +4,13 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   BrainCircuit,
   FileCheck2,
+  Gauge,
   ScanSearch,
+  Target,
   UploadCloud
 } from "lucide-react";
 
@@ -29,6 +32,8 @@ import {
 } from "../../../../services/sessions";
 import type {
   SessionArtifactsResponse,
+  SessionFeedback,
+  SeverityLevel,
   TrainingSession,
   UploadProcessingResponse
 } from "../../../../types/sessions";
@@ -64,6 +69,18 @@ function ProcessingStep({
       <p className="mt-3 text-sm leading-7 text-muted-gray">{description}</p>
     </div>
   );
+}
+
+function getSeverityVariant(severity: SeverityLevel) {
+  if (severity === "SEVERE") {
+    return "danger" as const;
+  }
+
+  if (severity === "MODERATE") {
+    return "warning" as const;
+  }
+
+  return "slate" as const;
 }
 
 function UploadSessionContent({ sessionId }: { sessionId: string }) {
@@ -127,17 +144,26 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     uploadResult?.perception_result ?? artifactSnapshot?.perception_result ?? null;
   const cognitionResult =
     uploadResult?.cognition_result ?? artifactSnapshot?.cognition_result ?? null;
+  const evaluationResult =
+    uploadResult?.evaluation_result ?? artifactSnapshot?.evaluation_result ?? null;
+  const feedbackItems: SessionFeedback[] =
+    uploadResult?.feedback ?? artifactSnapshot?.feedback ?? [];
   const artifactsPersisted =
     uploadResult?.artifacts_persisted.length ??
     artifactSnapshot?.artifacts.length ??
     0;
   const uploadAccepted =
-    uploadResult?.upload_received ?? Boolean(perceptionResult || cognitionResult);
+    uploadResult?.upload_received ??
+    Boolean(perceptionResult || cognitionResult || evaluationResult);
   const validationComplete =
-    uploadResult?.validation.is_valid ?? Boolean(perceptionResult || cognitionResult);
+    uploadResult?.validation.is_valid ??
+    Boolean(perceptionResult || cognitionResult || evaluationResult);
   const keypointPreview = perceptionResult?.keypoint_series.slice(0, 3) ?? [];
   const cognitionMetricEntries = cognitionResult
     ? Object.entries(cognitionResult.derived_metrics)
+    : [];
+  const evaluationMetricEntries = evaluationResult
+    ? Object.entries(evaluationResult.metric_scores)
     : [];
   const motionFeatureEntries = perceptionResult
     ? Object.entries(perceptionResult.derived_motion_features)
@@ -262,9 +288,11 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               {session.drill_name}
             </h2>
             <p className="mt-4 text-sm leading-7 text-muted-gray sm:text-base">
-              Validate a recorded drill clip and hand it into the upload
-              processing scaffold. TrainUp is checking file hygiene now; the
-              future Perception stage will attach extraction and analysis next.
+              Validate a recorded drill clip and run it through TrainUp&apos;s
+              first deterministic upload pipeline. This phase generates a
+              scaffold perception payload, payload-quality diagnostics, and a
+              drill-aware rule evaluation without pretending full pose
+              intelligence exists yet.
             </p>
           </div>
 
@@ -418,9 +446,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                       : "Video received but not cleared for the next stage"}
                   </p>
                 </div>
-                <p className="mt-3 text-sm leading-7 text-emerald-50">
+              <p className="mt-3 text-sm leading-7 text-emerald-50">
                   {uploadResult.next_step}
-                </p>
+              </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white/85">
                     <span className="block text-xs uppercase tracking-[0.2em] text-white/50">
@@ -443,8 +471,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
             ) : (
               <p className="mt-6 text-sm leading-7 text-muted-gray">
                 Once a valid video is submitted, this panel will show the
-                generated perception payload and initial cognition scaffold
-                results. No fake coaching feedback is displayed here.
+                generated perception payload, cognition scaffold metrics, and
+                deterministic drill-aware evaluation results. TrainUp is still
+                explicit about what is scaffold-derived versus final analysis.
               </p>
             )}
           </InfoCard>
@@ -469,9 +498,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         <SectionTitle
           eyebrow="Pipeline Progress"
           title="TrainUp upload processing stages"
-          description="These stages reflect real backend processing steps. The current phase produces scaffolded movement data and deterministic diagnostics, not final coaching insight."
+          description="These stages reflect real backend processing steps. The current phase produces scaffolded movement data, deterministic diagnostics, and seeded rule evaluation, not final AI coaching."
         />
-        <div className="grid gap-5 xl:grid-cols-4">
+        <div className="grid gap-5 xl:grid-cols-5">
           <ProcessingStep
             title="Upload accepted"
             description="The media reached the authenticated session pipeline."
@@ -495,6 +524,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
             description="Deterministic readiness and diagnostic metrics are available."
             complete={Boolean(cognitionResult)}
             icon={BrainCircuit}
+          />
+          <ProcessingStep
+            title="Drill evaluation ready"
+            description="Seeded coaching rules were applied to drill-specific metric scores."
+            complete={Boolean(evaluationResult)}
+            icon={Target}
           />
         </div>
       </div>
@@ -677,6 +712,142 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 </div>
               </InfoCard>
             ) : null}
+
+            {evaluationResult ? (
+              <InfoCard>
+                <SectionTitle
+                  eyebrow="Deterministic Evaluation"
+                  title="Drill-aware rule evaluation complete"
+                  description="These outputs are generated from the current scaffold payload and the seeded drill rule set. They are deterministic, explainable, and intentionally labeled as non-LLM evaluation."
+                />
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <Badge variant="accent">{evaluationResult.evaluation_mode}</Badge>
+                  <Badge variant="slate">{evaluationResult.evaluator_name}</Badge>
+                  <Badge
+                    variant={
+                      evaluationResult.feedback_count > 0 ? "warning" : "success"
+                    }
+                  >
+                    {evaluationResult.feedback_count} issue
+                    {evaluationResult.feedback_count === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  {evaluationMetricEntries.map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                          {formatEnumLabel(key)}
+                        </p>
+                        <p className="text-sm font-semibold text-white">
+                          {(value * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div className="mt-4 h-2 rounded-full bg-white/10">
+                        <div
+                          className="h-2 rounded-full bg-primary transition-all duration-500"
+                          style={{ width: `${Math.max(value * 100, 8)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Evaluation Notes
+                  </p>
+                  <ul className="mt-3 space-y-2 text-sm leading-7 text-white/85">
+                    {evaluationResult.summary_flags.map((flag) => (
+                      <li key={flag}>{flag}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mt-6">
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle className="h-5 w-5 text-primary" />
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-gray">
+                      Detected Technique Issues
+                    </p>
+                  </div>
+
+                  {evaluationResult.issues.length ? (
+                    <div className="mt-4 space-y-3">
+                      {evaluationResult.issues.map((issue) => (
+                        <div
+                          key={`${issue.metric}-${issue.issue_label}`}
+                          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-white">
+                                {issue.issue_label}
+                              </p>
+                              <p className="mt-2 text-sm leading-7 text-muted-gray">
+                                {formatEnumLabel(issue.metric)} scored{" "}
+                                {(issue.actual_score * 100).toFixed(0)}%
+                                {issue.expected_min !== null &&
+                                issue.expected_min !== undefined
+                                  ? ` against a minimum of ${(issue.expected_min * 100).toFixed(0)}%.`
+                                  : "."}
+                              </p>
+                            </div>
+                            <Badge variant={getSeverityVariant(issue.severity_level)}>
+                              {formatEnumLabel(issue.severity_level)}
+                            </Badge>
+                          </div>
+                          <p className="mt-4 text-sm leading-7 text-white/85">
+                            {issue.coaching_cue}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm leading-7 text-muted-gray">
+                      No seeded coaching rule thresholds were triggered in this
+                      evaluation pass.
+                    </p>
+                  )}
+                </div>
+
+                {feedbackItems.length ? (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <Gauge className="h-5 w-5 text-primary" />
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                        Coaching Cues
+                      </p>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {feedbackItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border border-white/10 bg-background-dark/60 px-4 py-4"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-white">
+                              {item.technique_issue}
+                            </p>
+                            <Badge variant={getSeverityVariant(item.severity_level)}>
+                              {formatEnumLabel(item.severity_level)}
+                            </Badge>
+                          </div>
+                          <p className="mt-3 text-sm leading-7 text-white/85">
+                            {item.coaching_cue}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </InfoCard>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -691,7 +862,7 @@ export default function UploadSessionPage() {
     <AppShell
       eyebrow="Upload Session"
       title="Recorded video intake"
-      description="Validate a drill video and route it into TrainUp's Perception-layer scaffold."
+      description="Validate a drill video, generate a scaffold movement payload, and review deterministic drill-aware evaluation output."
       capsule="Upload pipeline"
       actions={
         <CTAButton asChild>

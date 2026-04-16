@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
-from app.models.enums import InputType, SessionStatus
+from app.models.enums import InputType, SessionStatus, SeverityLevel
 from app.schemas.base import APIBaseModel
 
 
@@ -97,7 +97,30 @@ class CognitionResult(APIBaseModel):
     diagnostic_flags: list[str] = Field(default_factory=list)
 
 
-ArtifactType = Literal["perception_payload", "cognition_result"]
+class EvaluationIssueResponse(APIBaseModel):
+    metric: str
+    actual_score: float = Field(ge=0, le=1)
+    expected_min: float | None = Field(default=None, ge=0, le=1)
+    expected_max: float | None = Field(default=None, ge=0, le=1)
+    deviation: float = Field(ge=0)
+    severity_level: SeverityLevel
+    issue_label: str
+    coaching_cue: str
+
+
+class DrillEvaluationResult(APIBaseModel):
+    evaluation_mode: Literal["deterministic_scaffold"]
+    session_id: UUID
+    drill_id: UUID
+    drill_name: str
+    evaluator_name: str
+    metric_scores: dict[str, float] = Field(default_factory=dict)
+    issues: list[EvaluationIssueResponse] = Field(default_factory=list)
+    summary_flags: list[str] = Field(default_factory=list)
+    feedback_count: int = Field(ge=0)
+
+
+ArtifactType = Literal["perception_payload", "cognition_result", "evaluation_result"]
 
 
 class SessionArtifactResponse(APIBaseModel):
@@ -108,10 +131,22 @@ class SessionArtifactResponse(APIBaseModel):
     created_at: datetime
 
 
+class FeedbackResponse(APIBaseModel):
+    id: UUID
+    session_id: UUID
+    severity_level: SeverityLevel
+    technique_issue: str
+    coaching_cue: str
+    metric_snapshot: dict[str, Any]
+    created_at: datetime
+
+
 class SessionArtifactsResponse(APIBaseModel):
     artifacts: list[SessionArtifactResponse]
     perception_result: PerceptionResult | None = None
     cognition_result: CognitionResult | None = None
+    evaluation_result: DrillEvaluationResult | None = None
+    feedback: list[FeedbackResponse] = Field(default_factory=list)
 
 
 class UploadProcessingResponse(APIBaseModel):
@@ -121,6 +156,8 @@ class UploadProcessingResponse(APIBaseModel):
     validation: UploadValidationResult
     perception_result: PerceptionResult | None = None
     cognition_result: CognitionResult | None = None
+    evaluation_result: DrillEvaluationResult | None = None
+    feedback: list[FeedbackResponse] = Field(default_factory=list)
     artifacts_persisted: list[ArtifactType] = Field(default_factory=list)
     next_step: str
 
