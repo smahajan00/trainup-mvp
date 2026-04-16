@@ -115,31 +115,31 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
           </div>
 
           <div className="grid w-full gap-3 xl:max-w-sm">
+            <CTAButton asChild className="justify-between rounded-2xl px-5 py-6">
+              <Link href={`/sessions/new?drillId=${drill.id}&mode=LIVE`}>
+                <span className="flex items-center gap-2">
+                  <PlayCircle className="h-4 w-4" />
+                  Start Live Session
+                </span>
+              </Link>
+            </CTAButton>
             <Button
-              disabled
-              className="justify-between rounded-2xl bg-primary/80 px-5 py-6 text-primary-foreground opacity-100 disabled:cursor-not-allowed disabled:opacity-65"
-            >
-              <span className="flex items-center gap-2">
-                <PlayCircle className="h-4 w-4" />
-                Start Live Session
-              </span>
-              <Badge variant="warning">Soon</Badge>
-            </Button>
-            <Button
-              disabled
+              asChild
               variant="outline"
-              className="justify-between rounded-2xl px-5 py-6 text-white/90 opacity-100 disabled:cursor-not-allowed disabled:opacity-65"
+              className="justify-between rounded-2xl px-5 py-6 text-white/90"
             >
-              <span className="flex items-center gap-2">
-                <UploadCloud className="h-4 w-4" />
-                Upload Video
-              </span>
-              <Badge variant="warning">Soon</Badge>
+              <Link href={`/sessions/new?drillId=${drill.id}&mode=UPLOAD`}>
+                <span className="flex items-center gap-2">
+                  <UploadCloud className="h-4 w-4" />
+                  Upload Video
+                </span>
+                <Badge variant="slate">Scaffold</Badge>
+              </Link>
             </Button>
             <p className="text-sm leading-7 text-muted-gray">
-              Live analysis and upload-based review are coming soon. This page
-              currently explains what the drill trains and what the later engine
-              will evaluate.
+              Each path creates a real training session record and opens the
+              first execution scaffold. Pose extraction and movement analysis
+              connect in the next phase.
             </p>
           </div>
         </div>

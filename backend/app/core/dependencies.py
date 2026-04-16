@@ -8,14 +8,17 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import TokenDecodeError, decode_access_token
+from app.engines.perception_interface.perception_service import PerceptionService
 from app.models.user import User
-from app.repositories.profile_repository import ProfileRepository
 from app.repositories.drill_repository import DrillRepository
+from app.repositories.profile_repository import ProfileRepository
+from app.repositories.session_repository import SessionRepository
 from app.repositories.sport_repository import SportRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.drill_service import DrillService
 from app.services.profile_service import ProfileService
+from app.services.session_service import SessionService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -34,6 +37,14 @@ def get_drill_repository(db: Session = Depends(get_db)) -> DrillRepository:
 
 def get_sport_repository(db: Session = Depends(get_db)) -> SportRepository:
     return SportRepository(db)
+
+
+def get_session_repository(db: Session = Depends(get_db)) -> SessionRepository:
+    return SessionRepository(db)
+
+
+def get_perception_service() -> PerceptionService:
+    return PerceptionService()
 
 
 def get_auth_service(
@@ -56,6 +67,20 @@ def get_drill_service(
     sports: SportRepository = Depends(get_sport_repository),
 ) -> DrillService:
     return DrillService(drills=drills, sports=sports)
+
+
+def get_session_service(
+    db: Session = Depends(get_db),
+    sessions: SessionRepository = Depends(get_session_repository),
+    drills: DrillRepository = Depends(get_drill_repository),
+    perception: PerceptionService = Depends(get_perception_service),
+) -> SessionService:
+    return SessionService(
+        db=db,
+        sessions=sessions,
+        drills=drills,
+        perception=perception,
+    )
 
 
 def get_current_user(

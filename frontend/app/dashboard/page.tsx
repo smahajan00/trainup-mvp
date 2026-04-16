@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   ClipboardCheck,
   Compass,
+  History,
   Dumbbell,
   Gauge,
   Sparkles,
@@ -20,13 +21,16 @@ import { SectionTitle } from "../../features/app-shell/components/SectionTitle";
 import { StatCard } from "../../features/app-shell/components/StatCard";
 import { ProfileSummaryCard } from "../../features/dashboard/components/ProfileSummaryCard";
 import { QuickActionCard } from "../../features/dashboard/components/QuickActionCard";
+import { RecentSessionCard } from "../../features/sessions/components/RecentSessionCard";
 import { SportCard } from "../../features/sports/components/SportCard";
 import { calculateProfileCompletion } from "../../lib/formatters";
 import { sortSportsByPresetOrder } from "../../lib/sport-presets";
 import { getDrillsBySport } from "../../services/drills";
+import { getRecentSessions } from "../../services/sessions";
 import { getSports } from "../../services/sports";
 import type { CurrentUserResponse } from "../../types/auth";
 import type { ProfileResponse } from "../../types/profile";
+import type { TrainingSession } from "../../types/sessions";
 import type { SportOption } from "../../types/sports";
 
 type SportSummary = SportOption & {
@@ -43,15 +47,22 @@ function DashboardContent({
   const [sportSummaries, setSportSummaries] = useState<SportSummary[]>([]);
   const [isLoadingSports, setIsLoadingSports] = useState(true);
   const [sportsError, setSportsError] = useState<string | null>(null);
+  const [recentSessions, setRecentSessions] = useState<TrainingSession[]>([]);
+  const [isLoadingRecentSessions, setIsLoadingRecentSessions] = useState(true);
+  const [recentSessionsError, setRecentSessionsError] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
 
     async function loadCatalog() {
       setSportsError(null);
+      setRecentSessionsError(null);
 
       try {
-        const sports = await getSports();
+        const [sports, recentSessionsResult] = await Promise.all([
+          getSports(),
+          getRecentSessions(4)
+        ]);
         const orderedSports = sortSportsByPresetOrder(sports);
         const drillCollections = await Promise.all(
           orderedSports.map((sport) => getDrillsBySport(sport.id))
@@ -67,6 +78,7 @@ function DashboardContent({
             drillCount: drillCollections[index].length
           }))
         );
+        setRecentSessions(recentSessionsResult);
       } catch (error) {
         if (!ignore) {
           setSportsError(
@@ -74,10 +86,16 @@ function DashboardContent({
               ? error.message
               : "Unable to load sports right now."
           );
+          setRecentSessionsError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load recent sessions right now."
+          );
         }
       } finally {
         if (!ignore) {
           setIsLoadingSports(false);
+          setIsLoadingRecentSessions(false);
         }
       }
     }
@@ -240,6 +258,46 @@ function DashboardContent({
             badge="Athlete data"
           />
         </div>
+      </div>
+
+      <div className="space-y-5">
+        <SectionTitle
+          eyebrow="Recent Sessions"
+          title="Track the execution flow you have already opened"
+          description="These are real training sessions created through the new live and upload lifecycle scaffolding."
+        />
+
+        {isLoadingRecentSessions ? (
+          <div className="grid gap-5 xl:grid-cols-4">
+            <SkeletonLoader className="h-[240px]" />
+            <SkeletonLoader className="h-[240px]" />
+            <SkeletonLoader className="h-[240px]" />
+            <SkeletonLoader className="h-[240px]" />
+          </div>
+        ) : recentSessionsError ? (
+          <EmptyState
+            icon={History}
+            title="Recent sessions unavailable"
+            description={recentSessionsError}
+          />
+        ) : recentSessions.length === 0 ? (
+          <EmptyState
+            icon={History}
+            title="No sessions have started yet"
+            description="Open any drill and launch a live or upload session to begin the training execution flow."
+            action={
+              <CTAButton asChild>
+                <Link href="/sports">Browse Drills</Link>
+              </CTAButton>
+            }
+          />
+        ) : (
+          <div className="grid gap-5 xl:grid-cols-4">
+            {recentSessions.map((session) => (
+              <RecentSessionCard key={session.id} session={session} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="space-y-5">

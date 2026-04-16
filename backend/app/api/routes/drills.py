@@ -12,7 +12,11 @@ from app.services.drill_service import DrillService
 router = APIRouter(prefix="/drills", tags=["drills"])
 
 
-@router.get("/{drill_id}", response_model=DrillDetailResponse)
+@router.get(
+    "/{drill_id}",
+    response_model=DrillDetailResponse,
+    response_model_exclude_none=True,
+)
 def get_drill_detail(
     drill_id: UUID,
     _: User = Depends(get_current_user),

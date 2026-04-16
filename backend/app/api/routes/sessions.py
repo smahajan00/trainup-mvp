@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+
+from app.core.dependencies import get_current_user, get_session_service
+from app.models.user import User
+from app.schemas.session import (
+    FrameBatchRequest,
+    FrameBatchResponse,
+    LiveEndRequest,
+    LiveReadinessRequest,
+    LiveStartResponse,
+    SessionCreateRequest,
+    SessionResponse,
+    UploadValidationResponse,
+)
+from app.services.session_service import SessionService
+
+router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+def _get_upload_file_size(upload: UploadFile) -> int:
+    upload.file.seek(0, 2)
+    size = upload.file.tell()
+    upload.file.seek(0)
+    return size
+
+
+@router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+def create_session(
+    payload: SessionCreateRequest,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> SessionResponse:
+    return session_service.create_session(user_id=current_user.id, payload=payload)
+
+
+@router.get("/recent", response_model=list[SessionResponse])
+def list_recent_sessions(
+    limit: int = Query(default=10, ge=1, le=25),
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> list[SessionResponse]:
+    return session_service.list_recent_sessions(user_id=current_user.id, limit=limit)
+
+
+@router.get("/{session_id}", response_model=SessionResponse)
+def get_session(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> SessionResponse:
+    return session_service.get_session(user_id=current_user.id, session_id=session_id)
+
+
+@router.post("/{session_id}/upload", response_model=UploadValidationResponse)
+def upload_session_media(
+    session_id: UUID,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> UploadValidationResponse:
+    return session_service.process_upload(
+        user_id=current_user.id,
+        session_id=session_id,
+        file_name=file.filename,
+        content_type=file.content_type,
+        file_size_bytes=_get_upload_file_size(file),
+    )
+
+
+@router.post("/{session_id}/live/start", response_model=LiveStartResponse)
+def start_live_session(
+    session_id: UUID,
+    payload: LiveReadinessRequest,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> LiveStartResponse:
+    return session_service.start_live_session(
+        user_id=current_user.id,
+        session_id=session_id,
+        payload=payload,
+    )
+
+
+@router.post("/{session_id}/live/frame-batch", response_model=FrameBatchResponse)
+def submit_frame_batch(
+    session_id: UUID,
+    payload: FrameBatchRequest,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> FrameBatchResponse:
+    return session_service.accept_live_frame_batch(
+        user_id=current_user.id,
+        session_id=session_id,
+        payload=payload,
+    )
+
+
+@router.post("/{session_id}/live/end", response_model=SessionResponse)
+def end_live_session(
+    session_id: UUID,
+    payload: LiveEndRequest,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> SessionResponse:
+    return session_service.end_live_session(
+        user_id=current_user.id,
+        session_id=session_id,
+        payload=payload,
+    )

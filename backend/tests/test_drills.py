@@ -56,5 +56,15 @@ def test_get_drill_detail_success(client, db_session) -> None:
     payload = response.json()
     assert payload["drill_name"] == "Set Shot Form"
     assert payload["sport_name"] == "Basketball"
-    assert "reference_payload" in payload
-    assert "coaching_rules" in payload
+    assert payload["reference_payload"] == drill.reference_payload
+    assert payload["coaching_rules"] == drill.coaching_rules
+    assert payload["coaching_rules"]["thresholds"] == drill.coaching_rules["thresholds"]
+    assert payload["coaching_rules"]["rule_checks"] == drill.coaching_rules["rule_checks"]
+    assert set(payload["reference_payload"].keys()) == {
+        "movement_type",
+        "phases",
+        "tracked_joints",
+        "ideal_ranges",
+        "stability_expectations",
+        "notes",
+    }
