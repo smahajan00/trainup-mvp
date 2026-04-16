@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.models.drill import Drill
+from app.models.session_artifact import SessionArtifact
 
 
 def _register_user(client, *, full_name: str, email: str) -> str:
@@ -150,6 +151,36 @@ def test_upload_validation_accepts_and_rejects_metadata(client, db_session) -> N
     assert valid_payload["upload_received"] is True
     assert valid_payload["validation"]["is_valid"] is True
     assert valid_payload["validation"]["errors"] == []
+    assert set(valid_payload["perception_result"].keys()) == {
+        "source_type",
+        "file_metadata",
+        "processing_summary",
+        "keypoint_series",
+        "derived_motion_features",
+    }
+    assert valid_payload["perception_result"]["processing_summary"]["processing_mode"] == "scaffold"
+    assert valid_payload["perception_result"]["source_type"] == "upload"
+    assert valid_payload["perception_result"]["processing_summary"]["frame_count"] >= 48
+    assert len(valid_payload["perception_result"]["keypoint_series"]) > 0
+    assert set(valid_payload["cognition_result"].keys()) == {
+        "analysis_mode",
+        "session_id",
+        "drill_id",
+        "processing_readiness",
+        "derived_metrics",
+        "diagnostic_flags",
+    }
+    assert valid_payload["cognition_result"]["analysis_mode"] == "scaffold"
+    assert set(valid_payload["cognition_result"]["derived_metrics"].keys()) == {
+        "frame_consistency_score",
+        "coverage_score",
+        "motion_stability_score",
+        "payload_completeness_score",
+    }
+    assert valid_payload["artifacts_persisted"] == [
+        "perception_payload",
+        "cognition_result",
+    ]
 
     invalid_response = client.post(
         f"/api/sessions/{upload_session['id']}/upload",
@@ -165,6 +196,68 @@ def test_upload_validation_accepts_and_rejects_metadata(client, db_session) -> N
         "Uploaded media must be a supported video file (MP4, MOV, WEBM, or MKV)."
         in invalid_payload["validation"]["errors"]
     )
+    assert "perception_result" not in invalid_payload
+    assert "cognition_result" not in invalid_payload
+
+
+def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
+    token = _register_user(client, full_name="Quinn Rivera", email="artifactsave@example.com")
+    drill_id = _get_drill_id(db_session, "Bodyweight Squat")
+    upload_session = _create_session(client, token, drill_id=drill_id, input_type="UPLOAD")
+
+    upload_response = client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("squat.mp4", b"1" * 4096, "video/mp4")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert upload_response.status_code == 200
+
+    stored_artifacts = list(
+        db_session.scalars(
+            select(SessionArtifact).where(SessionArtifact.session_id == upload_session["id"])
+        )
+    )
+    assert len(stored_artifacts) == 2
+    assert {artifact.artifact_type for artifact in stored_artifacts} == {
+        "perception_payload",
+        "cognition_result",
+    }
+
+    artifacts_response = client.get(
+        f"/api/sessions/{upload_session['id']}/artifacts",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert artifacts_response.status_code == 200
+    payload = artifacts_response.json()
+    assert len(payload["artifacts"]) == 2
+    assert payload["perception_result"]["processing_summary"]["processing_mode"] == "scaffold"
+    assert payload["cognition_result"]["analysis_mode"] == "scaffold"
+    assert payload["cognition_result"]["diagnostic_flags"][0].startswith(
+        "Scaffold cognition result"
+    )
+
+
+def test_get_session_artifacts_rejected_for_other_user(client, db_session) -> None:
+    owner_token = _register_user(client, full_name="Owner Upload", email="ownerupload@example.com")
+    other_token = _register_user(client, full_name="Other Upload", email="otherupload@example.com")
+    drill_id = _get_drill_id(db_session, "Set Shot Form")
+    upload_session = _create_session(client, owner_token, drill_id=drill_id, input_type="UPLOAD")
+
+    client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("shot.mp4", b"1" * 2048, "video/mp4")},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+
+    response = client.get(
+        f"/api/sessions/{upload_session['id']}/artifacts",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Requested session was not found."
 
 
 def test_live_start_works_for_live_session(client, db_session) -> None:

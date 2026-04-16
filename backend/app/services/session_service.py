@@ -7,29 +7,40 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.engines.cognition_engine.cognition_service import CognitionService
 from app.engines.perception_interface.perception_service import PerceptionService
 from app.models.enums import InputType, SessionStatus
 from app.models.training_session import TrainingSession
 from app.repositories.drill_repository import DrillRepository
+from app.repositories.session_artifact_repository import SessionArtifactRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.session import (
+    CognitionResult,
     FrameBatchRequest,
     FrameBatchResponse,
     LiveEndRequest,
     LiveReadinessRequest,
     LiveStartResponse,
+    PerceptionResult,
     SessionCreateRequest,
+    SessionArtifactsResponse,
+    SessionArtifactResponse,
     SessionResponse,
-    UploadValidationResponse,
+    UploadProcessingResponse,
 )
+
+PERCEPTION_ARTIFACT_TYPE = "perception_payload"
+COGNITION_ARTIFACT_TYPE = "cognition_result"
 
 
 @dataclass
 class SessionService:
     db: Session
     sessions: SessionRepository
+    artifacts: SessionArtifactRepository
     drills: DrillRepository
     perception: PerceptionService
+    cognition: CognitionService
 
     def create_session(self, *, user_id: UUID, payload: SessionCreateRequest) -> SessionResponse:
         drill = self.drills.get_by_id(payload.drill_id)
@@ -67,7 +78,8 @@ class SessionService:
         file_name: str | None,
         content_type: str | None,
         file_size_bytes: int,
-    ) -> UploadValidationResponse:
+        file_bytes: bytes,
+    ) -> UploadProcessingResponse:
         session = self._get_owned_session(user_id=user_id, session_id=session_id)
         self._ensure_input_type(session, InputType.UPLOAD)
         self._ensure_session_open(session)
@@ -79,17 +91,90 @@ class SessionService:
         )
 
         next_step = (
-            "Perception pipeline scaffold ready for extraction stage."
+            "Drill-specific analysis and coaching feedback will be connected next."
             if validation.is_valid
             else "Upload validation failed. Resolve the file issues and retry."
         )
 
-        return UploadValidationResponse(
+        if not validation.is_valid:
+            return UploadProcessingResponse(
+                session_id=session.id,
+                status=session.status,
+                upload_received=False,
+                validation=validation,
+                next_step=next_step,
+            )
+
+        tracked_joints = self._resolve_tracked_joints(session)
+        perception_result = self.perception.process_uploaded_file(
+            session_id=session.id,
+            drill_id=session.drill_id,
+            file_name=file_name or "uploaded-video",
+            content_type=validation.content_type or "application/octet-stream",
+            file_size_bytes=file_size_bytes,
+            tracked_joints=tracked_joints,
+            file_bytes=file_bytes,
+        )
+        cognition_result = self.cognition.analyze_perception_payload(
+            session_id=session.id,
+            drill_id=session.drill_id,
+            perception_result=perception_result,
+        )
+
+        self.artifacts.upsert(
+            session_id=session.id,
+            artifact_type=PERCEPTION_ARTIFACT_TYPE,
+            payload_json=perception_result.model_dump(mode="json"),
+        )
+        self.artifacts.upsert(
+            session_id=session.id,
+            artifact_type=COGNITION_ARTIFACT_TYPE,
+            payload_json=cognition_result.model_dump(mode="json"),
+        )
+        self.db.commit()
+
+        return UploadProcessingResponse(
             session_id=session.id,
             status=session.status,
-            upload_received=validation.is_valid,
+            upload_received=True,
             validation=validation,
+            perception_result=perception_result,
+            cognition_result=cognition_result,
+            artifacts_persisted=[PERCEPTION_ARTIFACT_TYPE, COGNITION_ARTIFACT_TYPE],
             next_step=next_step,
+        )
+
+    def get_session_artifacts(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> SessionArtifactsResponse:
+        session = self._get_owned_session(user_id=user_id, session_id=session_id)
+        artifacts = self.artifacts.list_by_session_id(session_id=session.id)
+
+        perception_result: PerceptionResult | None = None
+        cognition_result: CognitionResult | None = None
+
+        for artifact in artifacts:
+            if artifact.artifact_type == PERCEPTION_ARTIFACT_TYPE:
+                perception_result = PerceptionResult(**artifact.payload_json)
+            elif artifact.artifact_type == COGNITION_ARTIFACT_TYPE:
+                cognition_result = CognitionResult(**artifact.payload_json)
+
+        return SessionArtifactsResponse(
+            artifacts=[
+                SessionArtifactResponse(
+                    id=artifact.id,
+                    session_id=artifact.session_id,
+                    artifact_type=artifact.artifact_type,
+                    payload_json=artifact.payload_json,
+                    created_at=artifact.created_at,
+                )
+                for artifact in artifacts
+            ],
+            perception_result=perception_result,
+            cognition_result=cognition_result,
         )
 
     def start_live_session(
@@ -188,6 +273,14 @@ class SessionService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This session has already ended.",
             )
+
+    @staticmethod
+    def _resolve_tracked_joints(session: TrainingSession) -> list[str]:
+        reference_payload = session.drill.reference_payload or {}
+        tracked_joints = reference_payload.get("tracked_joints")
+        if isinstance(tracked_joints, list) and tracked_joints:
+            return [str(joint) for joint in tracked_joints]
+        return ["shoulders", "hips", "knees", "ankles"]
 
     @staticmethod
     def _build_session_response(session: TrainingSession) -> SessionResponse:

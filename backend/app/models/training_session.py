@@ -19,6 +19,7 @@ from app.models.enums import (
 if TYPE_CHECKING:
     from app.models.drill import Drill
     from app.models.feedback import Feedback
+    from app.models.session_artifact import SessionArtifact
     from app.models.session_summary import SessionSummary
     from app.models.user import User
 
@@ -54,4 +55,7 @@ class TrainingSession(BaseModel):
         uselist=False,
         cascade="all, delete-orphan",
     )
-
+    artifacts: Mapped[list[SessionArtifact]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )

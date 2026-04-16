@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
-import { ArrowLeft, FileCheck2, UploadCloud } from "lucide-react";
+import {
+  ArrowLeft,
+  BrainCircuit,
+  FileCheck2,
+  ScanSearch,
+  UploadCloud
+} from "lucide-react";
 
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
@@ -16,22 +22,62 @@ import { SectionTitle } from "../../../../features/app-shell/components/SectionT
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
 import { formatDateTime, formatEnumLabel, formatFileSize } from "../../../../lib/formatters";
 import { validateVideoFile } from "../../../../lib/session-validation";
-import { getSession, submitSessionUpload } from "../../../../services/sessions";
+import {
+  getSession,
+  getSessionArtifacts,
+  submitSessionUpload
+} from "../../../../services/sessions";
 import type {
+  SessionArtifactsResponse,
   TrainingSession,
-  UploadValidationResponse
+  UploadProcessingResponse
 } from "../../../../types/sessions";
+
+function ProcessingStep({
+  title,
+  description,
+  complete,
+  icon: Icon
+}: {
+  title: string;
+  description: string;
+  complete: boolean;
+  icon: typeof UploadCloud;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-4 transition-all duration-300 ${
+        complete
+          ? "border-emerald-400/25 bg-emerald-500/10"
+          : "border-white/10 bg-white/[0.04]"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-white">
+          <Icon className="h-5 w-5" />
+        </div>
+        <Badge variant={complete ? "success" : "slate"}>
+          {complete ? "Complete" : "Pending"}
+        </Badge>
+      </div>
+      <h3 className="mt-5 text-base font-semibold text-white">{title}</h3>
+      <p className="mt-3 text-sm leading-7 text-muted-gray">{description}</p>
+    </div>
+  );
+}
 
 function UploadSessionContent({ sessionId }: { sessionId: string }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [session, setSession] = useState<TrainingSession | null>(null);
+  const [artifactSnapshot, setArtifactSnapshot] =
+    useState<SessionArtifactsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [localErrors, setLocalErrors] = useState<string[]>([]);
   const [localWarnings, setLocalWarnings] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [uploadResult, setUploadResult] = useState<UploadValidationResponse | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadProcessingResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
 
@@ -42,9 +88,13 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       setLoadError(null);
 
       try {
-        const sessionDetail = await getSession(sessionId);
+        const [sessionDetail, artifactsDetail] = await Promise.all([
+          getSession(sessionId),
+          getSessionArtifacts(sessionId)
+        ]);
         if (!ignore) {
           setSession(sessionDetail);
+          setArtifactSnapshot(artifactsDetail);
         }
       } catch (error) {
         if (!ignore) {
@@ -73,6 +123,25 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     ...(uploadResult?.validation.warnings ?? [])
   ];
   const displayErrors = [...localErrors, ...(uploadResult?.validation.errors ?? [])];
+  const perceptionResult =
+    uploadResult?.perception_result ?? artifactSnapshot?.perception_result ?? null;
+  const cognitionResult =
+    uploadResult?.cognition_result ?? artifactSnapshot?.cognition_result ?? null;
+  const artifactsPersisted =
+    uploadResult?.artifacts_persisted.length ??
+    artifactSnapshot?.artifacts.length ??
+    0;
+  const uploadAccepted =
+    uploadResult?.upload_received ?? Boolean(perceptionResult || cognitionResult);
+  const validationComplete =
+    uploadResult?.validation.is_valid ?? Boolean(perceptionResult || cognitionResult);
+  const keypointPreview = perceptionResult?.keypoint_series.slice(0, 3) ?? [];
+  const cognitionMetricEntries = cognitionResult
+    ? Object.entries(cognitionResult.derived_metrics)
+    : [];
+  const motionFeatureEntries = perceptionResult
+    ? Object.entries(perceptionResult.derived_motion_features)
+    : [];
 
   function handleSelectedFile(file: File | null) {
     setSelectedFile(file);
@@ -120,6 +189,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       setIsSubmitting(true);
       const result = await submitSessionUpload(sessionId, selectedFile);
       setUploadResult(result);
+      const artifactsDetail = await getSessionArtifacts(sessionId);
+      setArtifactSnapshot(artifactsDetail);
     } catch (error) {
       setSubmitError(
         error instanceof Error ? error.message : "Unable to submit this video."
@@ -136,6 +207,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
           <SkeletonLoader className="h-[440px]" />
           <SkeletonLoader className="h-[440px]" />
+        </div>
+        <div className="grid gap-5 xl:grid-cols-4">
+          <SkeletonLoader className="h-40" />
+          <SkeletonLoader className="h-40" />
+          <SkeletonLoader className="h-40" />
+          <SkeletonLoader className="h-40" />
         </div>
       </div>
     );
@@ -284,10 +361,10 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               className="rounded-2xl px-6"
               disabled={!selectedFile || isSubmitting}
             >
-              {isSubmitting ? "Validating Video" : "Submit Video"}
+              {isSubmitting ? "Processing Upload" : "Submit Video"}
             </Button>
             <Badge variant="slate">100 MB max</Badge>
-            <Badge variant="slate">No analysis yet</Badge>
+            <Badge variant="slate">Scaffold processing only</Badge>
           </div>
         </InfoCard>
 
@@ -337,7 +414,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                   <FileCheck2 className="h-5 w-5 text-emerald-200" />
                   <p className="text-sm font-semibold text-white">
                     {uploadResult.upload_received
-                      ? "Video accepted"
+                      ? "Processing scaffold complete"
                       : "Video received but not cleared for the next stage"}
                   </p>
                 </div>
@@ -365,7 +442,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               </div>
             ) : (
               <p className="mt-6 text-sm leading-7 text-muted-gray">
-                Video accepted. Perception extraction stage will be connected next.
+                Once a valid video is submitted, this panel will show the
+                generated perception payload and initial cognition scaffold
+                results. No fake coaching feedback is displayed here.
               </p>
             )}
           </InfoCard>
@@ -385,6 +464,222 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
           </InfoCard>
         </div>
       </div>
+
+      <div className="space-y-5">
+        <SectionTitle
+          eyebrow="Pipeline Progress"
+          title="TrainUp upload processing stages"
+          description="These stages reflect real backend processing steps. The current phase produces scaffolded movement data and deterministic diagnostics, not final coaching insight."
+        />
+        <div className="grid gap-5 xl:grid-cols-4">
+          <ProcessingStep
+            title="Upload accepted"
+            description="The media reached the authenticated session pipeline."
+            complete={uploadAccepted}
+            icon={UploadCloud}
+          />
+          <ProcessingStep
+            title="Validation complete"
+            description="Metadata and supported-format checks passed."
+            complete={validationComplete}
+            icon={FileCheck2}
+          />
+          <ProcessingStep
+            title="Perception payload generated"
+            description="A structured movement payload scaffold was built and persisted."
+            complete={Boolean(perceptionResult)}
+            icon={ScanSearch}
+          />
+          <ProcessingStep
+            title="Cognition scaffold complete"
+            description="Deterministic readiness and diagnostic metrics are available."
+            complete={Boolean(cognitionResult)}
+            icon={BrainCircuit}
+          />
+        </div>
+      </div>
+
+      {perceptionResult ? (
+        <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <InfoCard>
+            <SectionTitle
+              eyebrow="Perception Result"
+              title="Initial movement payload generated"
+              description="This payload is scaffold-generated from the uploaded file and session context. It is intentionally labeled as scaffold mode."
+            />
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Badge variant="accent">{perceptionResult.source_type}</Badge>
+              <Badge variant="slate">
+                {perceptionResult.processing_summary.processing_mode}
+              </Badge>
+              <Badge variant="slate">{artifactsPersisted} artifacts persisted</Badge>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                  Frame Count
+                </p>
+                <p className="mt-3 text-2xl font-bold text-white">
+                  {perceptionResult.processing_summary.frame_count}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                  Duration
+                </p>
+                <p className="mt-3 text-2xl font-bold text-white">
+                  {perceptionResult.processing_summary.duration_seconds.toFixed(2)}s
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                  FPS Estimate
+                </p>
+                <p className="mt-3 text-2xl font-bold text-white">
+                  {perceptionResult.processing_summary.fps_estimate.toFixed(1)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                  File Size
+                </p>
+                <p className="mt-3 text-2xl font-bold text-white">
+                  {formatFileSize(perceptionResult.file_metadata.file_size_bytes)}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                File Metadata
+              </p>
+              <p className="mt-3 text-sm font-semibold text-white">
+                {perceptionResult.file_metadata.file_name}
+              </p>
+              <p className="mt-2 text-sm text-muted-gray">
+                {perceptionResult.file_metadata.content_type}
+              </p>
+            </div>
+
+            <div className="mt-6">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Sampled keypoint frames
+              </p>
+              <div className="mt-4 space-y-3">
+                {keypointPreview.map((frame) => (
+                  <div
+                    key={`${frame.frame_index}-${frame.timestamp}`}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-white">
+                        Frame {frame.frame_index}
+                      </p>
+                      <Badge variant="slate">
+                        confidence {frame.confidence.toFixed(2)}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-gray">
+                      Timestamp {frame.timestamp.toFixed(3)}s ·{" "}
+                      {Object.keys(frame.keypoints).length} keypoints
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </InfoCard>
+
+          <div className="space-y-5">
+            <InfoCard>
+              <SectionTitle
+                eyebrow="Motion Features"
+                title="Foundational motion descriptors"
+                description="These are scaffold-level motion descriptors derived from the generated payload."
+              />
+              <div className="mt-6 grid gap-3">
+                {motionFeatureEntries.map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                  >
+                    <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                      {formatEnumLabel(key)}
+                    </p>
+                    <p className="mt-3 text-lg font-semibold text-white">
+                      {typeof value === "number" ? value.toFixed(3) : String(value)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </InfoCard>
+
+            {cognitionResult ? (
+              <InfoCard>
+                <SectionTitle
+                  eyebrow="Cognition Result"
+                  title="Foundational diagnostic metrics available"
+                  description="These metrics are deterministic and honest. They describe payload quality and readiness, not final drill correctness."
+                />
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <Badge variant="accent">{cognitionResult.analysis_mode}</Badge>
+                  <Badge
+                    variant={
+                      cognitionResult.processing_readiness.payload_usable
+                        ? "success"
+                        : "warning"
+                    }
+                  >
+                    {cognitionResult.processing_readiness.payload_usable
+                      ? "Payload usable"
+                      : "Payload limited"}
+                  </Badge>
+                  <Badge
+                    variant={
+                      cognitionResult.processing_readiness.minimum_frames_met
+                        ? "success"
+                        : "warning"
+                    }
+                  >
+                    {cognitionResult.processing_readiness.minimum_frames_met
+                      ? "Minimum frames met"
+                      : "Short clip"}
+                  </Badge>
+                </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  {cognitionMetricEntries.map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                        {formatEnumLabel(key)}
+                      </p>
+                      <p className="mt-3 text-2xl font-bold text-white">
+                        {(value * 100).toFixed(0)}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Diagnostic Flags
+                  </p>
+                  <ul className="mt-3 space-y-2 text-sm leading-7 text-white/85">
+                    {cognitionResult.diagnostic_flags.map((flag) => (
+                      <li key={flag}>{flag}</li>
+                    ))}
+                  </ul>
+                </div>
+              </InfoCard>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

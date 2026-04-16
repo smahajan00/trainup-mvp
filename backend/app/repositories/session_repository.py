@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.drill import Drill
 from app.models.enums import InputType, SessionStatus
+from app.models.session_artifact import SessionArtifact
 from app.models.training_session import TrainingSession
 
 
@@ -47,6 +48,7 @@ class SessionRepository:
             select(TrainingSession)
             .options(
                 selectinload(TrainingSession.drill).selectinload(Drill.sport),
+                selectinload(TrainingSession.artifacts),
             )
             .where(
                 TrainingSession.id == session_id,
@@ -65,6 +67,7 @@ class SessionRepository:
             select(TrainingSession)
             .options(
                 selectinload(TrainingSession.drill).selectinload(Drill.sport),
+                selectinload(TrainingSession.artifacts),
             )
             .where(TrainingSession.user_id == user_id)
             .order_by(TrainingSession.start_time.desc(), TrainingSession.created_at.desc())

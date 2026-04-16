@@ -5,9 +5,10 @@ import type {
   LiveEndRequest,
   LiveReadinessRequest,
   LiveStartResponse,
+  SessionArtifactsResponse,
   SessionCreateRequest,
   TrainingSession,
-  UploadValidationResponse
+  UploadProcessingResponse
 } from "../types/sessions";
 
 export function createSession(payload: SessionCreateRequest) {
@@ -25,11 +26,15 @@ export function getRecentSessions(limit = 10) {
   return apiRequest<TrainingSession[]>(`/sessions/recent?limit=${limit}`);
 }
 
+export function getSessionArtifacts(sessionId: string) {
+  return apiRequest<SessionArtifactsResponse>(`/sessions/${sessionId}/artifacts`);
+}
+
 export function submitSessionUpload(sessionId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
 
-  return apiRequest<UploadValidationResponse>(`/sessions/${sessionId}/upload`, {
+  return apiRequest<UploadProcessingResponse>(`/sessions/${sessionId}/upload`, {
     method: "POST",
     body: formData
   });

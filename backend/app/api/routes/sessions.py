@@ -13,19 +13,13 @@ from app.schemas.session import (
     LiveReadinessRequest,
     LiveStartResponse,
     SessionCreateRequest,
+    SessionArtifactsResponse,
     SessionResponse,
-    UploadValidationResponse,
+    UploadProcessingResponse,
 )
 from app.services.session_service import SessionService
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
-
-
-def _get_upload_file_size(upload: UploadFile) -> int:
-    upload.file.seek(0, 2)
-    size = upload.file.tell()
-    upload.file.seek(0)
-    return size
 
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
@@ -55,19 +49,41 @@ def get_session(
     return session_service.get_session(user_id=current_user.id, session_id=session_id)
 
 
-@router.post("/{session_id}/upload", response_model=UploadValidationResponse)
+@router.get(
+    "/{session_id}/artifacts",
+    response_model=SessionArtifactsResponse,
+    response_model_exclude_none=True,
+)
+def get_session_artifacts(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> SessionArtifactsResponse:
+    return session_service.get_session_artifacts(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/upload",
+    response_model=UploadProcessingResponse,
+    response_model_exclude_none=True,
+)
 def upload_session_media(
     session_id: UUID,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     session_service: SessionService = Depends(get_session_service),
-) -> UploadValidationResponse:
+) -> UploadProcessingResponse:
+    file_bytes = file.file.read()
     return session_service.process_upload(
         user_id=current_user.id,
         session_id=session_id,
         file_name=file.filename,
         content_type=file.content_type,
-        file_size_bytes=_get_upload_file_size(file),
+        file_size_bytes=len(file_bytes),
+        file_bytes=file_bytes,
     )
 
 

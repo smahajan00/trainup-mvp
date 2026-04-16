@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import TokenDecodeError, decode_access_token
+from app.engines.cognition_engine.cognition_service import CognitionService
 from app.engines.perception_interface.perception_service import PerceptionService
 from app.models.user import User
 from app.repositories.drill_repository import DrillRepository
 from app.repositories.profile_repository import ProfileRepository
+from app.repositories.session_artifact_repository import SessionArtifactRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.sport_repository import SportRepository
 from app.repositories.user_repository import UserRepository
@@ -43,8 +45,18 @@ def get_session_repository(db: Session = Depends(get_db)) -> SessionRepository:
     return SessionRepository(db)
 
 
+def get_session_artifact_repository(
+    db: Session = Depends(get_db),
+) -> SessionArtifactRepository:
+    return SessionArtifactRepository(db)
+
+
 def get_perception_service() -> PerceptionService:
     return PerceptionService()
+
+
+def get_cognition_service() -> CognitionService:
+    return CognitionService()
 
 
 def get_auth_service(
@@ -72,14 +84,18 @@ def get_drill_service(
 def get_session_service(
     db: Session = Depends(get_db),
     sessions: SessionRepository = Depends(get_session_repository),
+    artifacts: SessionArtifactRepository = Depends(get_session_artifact_repository),
     drills: DrillRepository = Depends(get_drill_repository),
     perception: PerceptionService = Depends(get_perception_service),
+    cognition: CognitionService = Depends(get_cognition_service),
 ) -> SessionService:
     return SessionService(
         db=db,
         sessions=sessions,
+        artifacts=artifacts,
         drills=drills,
         perception=perception,
+        cognition=cognition,
     )
 
 
