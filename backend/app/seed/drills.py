@@ -1,0 +1,606 @@
+from __future__ import annotations
+
+from app.models.enums import SkillLevel
+
+
+def _target_metrics(*metrics: str) -> dict[str, list[str]]:
+    return {"metrics": list(metrics)}
+
+
+def _coaching_rules(
+    primary_focus: list[str],
+    rule_checks: list[dict[str, object]],
+    positive_cues: list[str],
+    recommendation_templates: list[str],
+    thresholds: dict[str, float] | None = None,
+) -> dict[str, object]:
+    return {
+        "primary_focus": primary_focus,
+        "thresholds": thresholds or {"minor": 0.15, "moderate": 0.30, "severe": 0.45},
+        "rule_checks": rule_checks,
+        "positive_cues": positive_cues,
+        "recommendation_templates": recommendation_templates,
+    }
+
+
+DRILL_SEEDS_BY_SPORT = {
+    "Gym": [
+        {
+            "drill_name": "Bodyweight Squat",
+            "description": (
+                "The bodyweight squat trains coordinated flexion through the hips, knees, and ankles "
+                "while teaching the athlete to control depth without losing posture. "
+                "It matters because squat mechanics underpin jumping, acceleration, deceleration, and lower-body strength work across sports. "
+                "The drill emphasizes even knee tracking, centered foot pressure, and consistent torso position from rep to rep."
+            ),
+            "difficulty_level": SkillLevel.BEGINNER,
+            "target_metrics": _target_metrics(
+                "posture_accuracy",
+                "knee_alignment_score",
+                "torso_alignment",
+                "hip_stability",
+                "repetition_consistency",
+            ),
+            "reference_payload": {
+                "movement_type": "dynamic",
+                "phases": ["setup", "descent", "ascent"],
+                "tracked_joints": ["shoulders", "hips", "knees", "ankles"],
+                "ideal_ranges": {
+                    "left_knee_angle": {"min": 78, "max": 108},
+                    "right_knee_angle": {"min": 78, "max": 108},
+                    "hip_hinge_angle": {"min": 45, "max": 70},
+                    "torso_lean": {"min": 8, "max": 22},
+                    "ankle_dorsiflexion": {"min": 10, "max": 20},
+                },
+                "stability_expectations": {
+                    "lateral_sway_max": 0.12,
+                    "tempo_consistency_min": 0.78,
+                    "pelvic_shift_max": 0.10,
+                },
+                "notes": (
+                    "Sit between the hips with the ribs stacked over the pelvis and keep the knees "
+                    "tracking over the middle toes throughout the rep."
+                ),
+            },
+            "coaching_rules": _coaching_rules(
+                primary_focus=[
+                    "knee tracking",
+                    "torso alignment",
+                    "hip stability",
+                    "repeatable depth",
+                ],
+                rule_checks=[
+                    {
+                        "metric": "posture_accuracy",
+                        "condition": "below_threshold",
+                        "expected_min": 0.82,
+                        "severity_weight": 0.88,
+                        "issue_label": "Chest dropping early in the squat",
+                        "coaching_cue": "Brace before you descend and keep your chest stacked over your hips.",
+                    },
+                    {
+                        "metric": "knee_alignment_score",
+                        "condition": "below_threshold",
+                        "expected_min": 0.78,
+                        "severity_weight": 0.93,
+                        "issue_label": "Knees collapsing inward",
+                        "coaching_cue": "Drive both knees over the middle toes and keep full-foot pressure.",
+                    },
+                    {
+                        "metric": "torso_alignment",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.84,
+                        "issue_label": "Torso angle changing too much through the rep",
+                        "coaching_cue": "Keep your ribs stacked and let the hips and knees share the load evenly.",
+                    },
+                    {
+                        "metric": "hip_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.76,
+                        "severity_weight": 0.86,
+                        "issue_label": "Hips shifting side to side",
+                        "coaching_cue": "Descend evenly and keep your hips centered between your heels.",
+                    },
+                    {
+                        "metric": "repetition_consistency",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.74,
+                        "issue_label": "Depth and tempo changing between repetitions",
+                        "coaching_cue": "Use a steady tempo and finish every rep at the same controlled depth.",
+                    },
+                ],
+                positive_cues=[
+                    "Good control through the bottom position.",
+                    "Your rep rhythm is staying consistent.",
+                ],
+                recommendation_templates=[
+                    "Repeat the squat at a slower tempo and match the same depth on every rep.",
+                    "Add a brief pause at the bottom to reinforce hip control and knee tracking.",
+                ],
+            ),
+        },
+        {
+            "drill_name": "Dumbbell Shoulder Press",
+            "description": (
+                "The dumbbell shoulder press trains vertical pressing mechanics while challenging the athlete "
+                "to stabilize through the trunk and shoulder girdle. "
+                "It matters because safe overhead strength depends on stacked joints, controlled elbow travel, and the ability to resist compensation through the spine. "
+                "The drill emphasizes smooth pressing paths, consistent lockout, and balance from the first rep to the last."
+            ),
+            "difficulty_level": SkillLevel.INTERMEDIATE,
+            "target_metrics": _target_metrics(
+                "posture_accuracy",
+                "elbow_angle_consistency",
+                "shoulder_control",
+                "torso_alignment",
+                "balance_stability",
+            ),
+            "reference_payload": {
+                "movement_type": "dynamic",
+                "phases": ["setup", "drive", "lockout"],
+                "tracked_joints": ["shoulders", "elbows", "wrists", "hips"],
+                "ideal_ranges": {
+                    "left_elbow_angle": {"min": 82, "max": 172},
+                    "right_elbow_angle": {"min": 82, "max": 172},
+                    "shoulder_abduction": {"min": 35, "max": 55},
+                    "torso_lean": {"min": 0, "max": 10},
+                    "press_path_deviation": {"min": 0, "max": 0.10},
+                },
+                "stability_expectations": {
+                    "lateral_sway_max": 0.08,
+                    "tempo_consistency_min": 0.76,
+                    "lockout_hold_min": 0.20,
+                },
+                "notes": (
+                    "Press the dumbbells vertically with elbows under wrists, shoulders controlled, "
+                    "and the ribcage stacked over the pelvis."
+                ),
+            },
+            "coaching_rules": _coaching_rules(
+                primary_focus=[
+                    "vertical press path",
+                    "elbow stacking",
+                    "shoulder control",
+                    "trunk stability",
+                ],
+                rule_checks=[
+                    {
+                        "metric": "posture_accuracy",
+                        "condition": "below_threshold",
+                        "expected_min": 0.83,
+                        "severity_weight": 0.82,
+                        "issue_label": "Press initiated from a broken setup posture",
+                        "coaching_cue": "Stand tall before pressing and keep your ribcage quiet as the weights move.",
+                    },
+                    {
+                        "metric": "elbow_angle_consistency",
+                        "condition": "below_threshold",
+                        "expected_min": 0.79,
+                        "severity_weight": 0.90,
+                        "issue_label": "Elbows drifting out of a repeatable pressing path",
+                        "coaching_cue": "Keep your elbows slightly in front of the shoulders and press straight up.",
+                    },
+                    {
+                        "metric": "shoulder_control",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.92,
+                        "issue_label": "Shoulders shrugging during the press",
+                        "coaching_cue": "Set your shoulders down before each rep and finish with controlled upward rotation.",
+                    },
+                    {
+                        "metric": "torso_alignment",
+                        "condition": "below_threshold",
+                        "expected_min": 0.82,
+                        "severity_weight": 0.88,
+                        "issue_label": "Lower back arching to finish the rep",
+                        "coaching_cue": "Brace your trunk and keep your ribs stacked as you drive overhead.",
+                    },
+                    {
+                        "metric": "balance_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.77,
+                        "severity_weight": 0.75,
+                        "issue_label": "Weight rocking backward during the press",
+                        "coaching_cue": "Stay rooted through the midfoot and squeeze the glutes to stay centered.",
+                    },
+                ],
+                positive_cues=[
+                    "The dumbbells are tracking vertically with good control.",
+                    "Your lockout position looks stable and balanced.",
+                ],
+                recommendation_templates=[
+                    "Reduce the load slightly and press with a slower tempo to reinforce elbow tracking.",
+                    "Pause at forehead height to rehearse shoulder control before finishing overhead.",
+                ],
+            ),
+        },
+    ],
+    "Football": [
+        {
+            "drill_name": "Instep Pass",
+            "description": (
+                "The instep pass trains clean ball striking mechanics for accurate, repeatable short-to-midrange passing. "
+                "It matters because reliable passing depends on a quiet support leg, coordinated hip rotation, and a controlled follow-through rather than pure leg speed. "
+                "The drill emphasizes plant-foot stability, balanced trunk position, and consistent contact through the center of the foot."
+            ),
+            "difficulty_level": SkillLevel.BEGINNER,
+            "target_metrics": _target_metrics(
+                "posture_accuracy",
+                "balance_stability",
+                "hip_stability",
+                "torso_alignment",
+                "repetition_consistency",
+            ),
+            "reference_payload": {
+                "movement_type": "dynamic",
+                "phases": ["approach", "plant", "strike", "follow_through"],
+                "tracked_joints": ["hips", "knees", "ankles", "shoulders"],
+                "ideal_ranges": {
+                    "plant_knee_flexion": {"min": 20, "max": 45},
+                    "hip_rotation": {"min": 25, "max": 55},
+                    "torso_lean": {"min": 2, "max": 16},
+                    "support_ankle_inversion": {"min": 0, "max": 12},
+                    "follow_through_angle": {"min": 25, "max": 55},
+                },
+                "stability_expectations": {
+                    "lateral_sway_max": 0.14,
+                    "tempo_consistency_min": 0.74,
+                    "plant_stability_min": 0.78,
+                },
+                "notes": (
+                    "Plant beside the ball, rotate through the hips, and let the passing leg continue "
+                    "toward the target without the torso falling away."
+                ),
+            },
+            "coaching_rules": _coaching_rules(
+                primary_focus=[
+                    "support-leg stability",
+                    "hip rotation timing",
+                    "torso control",
+                    "repeatable contact",
+                ],
+                rule_checks=[
+                    {
+                        "metric": "posture_accuracy",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.80,
+                        "issue_label": "Approach posture is inconsistent into contact",
+                        "coaching_cue": "Stay tall in the approach and keep your chest facing the target line.",
+                    },
+                    {
+                        "metric": "balance_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.76,
+                        "severity_weight": 0.91,
+                        "issue_label": "Support leg is unstable at plant",
+                        "coaching_cue": "Freeze the plant foot beside the ball and let the strike happen around it.",
+                    },
+                    {
+                        "metric": "hip_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.78,
+                        "severity_weight": 0.88,
+                        "issue_label": "Pelvis opens too early before contact",
+                        "coaching_cue": "Rotate through the hip at strike, not before the foot reaches the ball.",
+                    },
+                    {
+                        "metric": "torso_alignment",
+                        "condition": "below_threshold",
+                        "expected_min": 0.79,
+                        "severity_weight": 0.84,
+                        "issue_label": "Torso leaning away from the pass line",
+                        "coaching_cue": "Keep the sternum over the plant leg and finish the chest toward the target.",
+                    },
+                    {
+                        "metric": "repetition_consistency",
+                        "condition": "below_threshold",
+                        "expected_min": 0.77,
+                        "severity_weight": 0.73,
+                        "issue_label": "Contact mechanics changing from pass to pass",
+                        "coaching_cue": "Use the same approach steps and strike through the same part of the ball each rep.",
+                    },
+                ],
+                positive_cues=[
+                    "Your support leg is staying calm through contact.",
+                    "The follow-through is matching the intended pass line.",
+                ],
+                recommendation_templates=[
+                    "Slow the approach and rehearse planting beside the ball before increasing speed.",
+                    "Repeat the pass with a shorter backswing and emphasize finishing through the target.",
+                ],
+            ),
+        },
+        {
+            "drill_name": "Basic Shooting Form",
+            "description": (
+                "Basic shooting form trains the mechanics of generating a clean strike on goal with repeatable body shape and balance. "
+                "It matters because finishing quality drops quickly when the plant foot, hip drive, and trunk position break down under speed. "
+                "The drill emphasizes an organized approach, stable support-leg positioning, and a direct strike path through the ball."
+            ),
+            "difficulty_level": SkillLevel.INTERMEDIATE,
+            "target_metrics": _target_metrics(
+                "posture_accuracy",
+                "hip_stability",
+                "balance_stability",
+                "torso_alignment",
+                "knee_alignment_score",
+            ),
+            "reference_payload": {
+                "movement_type": "dynamic",
+                "phases": ["approach", "plant", "strike", "follow_through"],
+                "tracked_joints": ["hips", "knees", "ankles", "shoulders"],
+                "ideal_ranges": {
+                    "approach_torso_lean": {"min": 4, "max": 18},
+                    "plant_foot_angle": {"min": -10, "max": 15},
+                    "plant_knee_flexion": {"min": 30, "max": 55},
+                    "hip_drive_angle": {"min": 28, "max": 60},
+                    "strike_knee_extension": {"min": 135, "max": 175},
+                },
+                "stability_expectations": {
+                    "lateral_sway_max": 0.13,
+                    "tempo_consistency_min": 0.72,
+                    "plant_stability_min": 0.76,
+                },
+                "notes": (
+                    "Use a composed approach, place the support foot beside the ball, and strike through "
+                    "with the hips leading while the torso stays organized."
+                ),
+            },
+            "coaching_rules": _coaching_rules(
+                primary_focus=[
+                    "approach posture",
+                    "plant-foot alignment",
+                    "hip drive",
+                    "stable support leg",
+                ],
+                rule_checks=[
+                    {
+                        "metric": "posture_accuracy",
+                        "condition": "below_threshold",
+                        "expected_min": 0.81,
+                        "severity_weight": 0.79,
+                        "issue_label": "Approach shape breaking down before the strike",
+                        "coaching_cue": "Keep the final steps compact and arrive at the ball in a controlled posture.",
+                    },
+                    {
+                        "metric": "hip_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.78,
+                        "severity_weight": 0.89,
+                        "issue_label": "Hip drive leaking sideways through the strike",
+                        "coaching_cue": "Drive the kicking hip through the ball and finish it toward the target.",
+                    },
+                    {
+                        "metric": "balance_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.75,
+                        "severity_weight": 0.92,
+                        "issue_label": "Support-leg balance lost at contact",
+                        "coaching_cue": "Stabilize the plant leg first and let the striking leg accelerate around it.",
+                    },
+                    {
+                        "metric": "torso_alignment",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.84,
+                        "issue_label": "Torso drifting off the shooting line",
+                        "coaching_cue": "Keep the chest slightly over the ball and finish facing the target.",
+                    },
+                    {
+                        "metric": "knee_alignment_score",
+                        "condition": "below_threshold",
+                        "expected_min": 0.77,
+                        "severity_weight": 0.87,
+                        "issue_label": "Plant knee collapsing inward",
+                        "coaching_cue": "Set the support knee over the middle of the foot before striking through.",
+                    },
+                ],
+                positive_cues=[
+                    "Your support leg is giving you a stable striking platform.",
+                    "Hip drive is carrying through the ball cleanly.",
+                ],
+                recommendation_templates=[
+                    "Rehearse the last two approach steps and the plant position before adding more pace.",
+                    "Use a slower strike to clean up plant-knee alignment and torso position before increasing power.",
+                ],
+            ),
+        },
+    ],
+    "Basketball": [
+        {
+            "drill_name": "Set Shot Form",
+            "description": (
+                "The set shot form drill trains a repeatable release pattern from a balanced base with the ball traveling on a straight line through the shooting pocket. "
+                "It matters because consistent shot making depends on stacked joints, controlled elbow positioning, and a stable center of mass through release. "
+                "The drill emphasizes alignment from feet to fingertips, smooth elbow extension, and quiet body balance."
+            ),
+            "difficulty_level": SkillLevel.INTERMEDIATE,
+            "target_metrics": _target_metrics(
+                "shooting_alignment",
+                "elbow_angle_consistency",
+                "shoulder_control",
+                "balance_stability",
+                "posture_accuracy",
+            ),
+            "reference_payload": {
+                "movement_type": "dynamic",
+                "phases": ["setup", "load", "release", "follow_through"],
+                "tracked_joints": ["shoulders", "elbows", "wrists", "hips", "knees", "ankles"],
+                "ideal_ranges": {
+                    "shooting_elbow_angle": {"min": 82, "max": 100},
+                    "release_wrist_extension": {"min": 55, "max": 85},
+                    "shoulder_stack_offset": {"min": 0, "max": 0.10},
+                    "knee_flexion_at_set": {"min": 18, "max": 35},
+                    "release_line_deviation": {"min": 0, "max": 0.08},
+                },
+                "stability_expectations": {
+                    "lateral_sway_max": 0.09,
+                    "tempo_consistency_min": 0.80,
+                    "landing_balance_min": 0.82,
+                },
+                "notes": (
+                    "Bring the ball through a straight shooting pocket, keep the elbow under the ball, "
+                    "and hold balance through the follow-through."
+                ),
+            },
+            "coaching_rules": _coaching_rules(
+                primary_focus=[
+                    "shot line alignment",
+                    "elbow path",
+                    "shoulder stack",
+                    "stable release base",
+                ],
+                rule_checks=[
+                    {
+                        "metric": "shooting_alignment",
+                        "condition": "below_threshold",
+                        "expected_min": 0.84,
+                        "severity_weight": 0.95,
+                        "issue_label": "Ball path drifting off the shooting line",
+                        "coaching_cue": "Start with the ball centered and release straight through the middle finger line.",
+                    },
+                    {
+                        "metric": "elbow_angle_consistency",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.90,
+                        "issue_label": "Shooting elbow wandering away from a repeatable slot",
+                        "coaching_cue": "Keep the elbow tucked under the ball and extend along the same path every rep.",
+                    },
+                    {
+                        "metric": "shoulder_control",
+                        "condition": "below_threshold",
+                        "expected_min": 0.81,
+                        "severity_weight": 0.86,
+                        "issue_label": "Lead shoulder rotating open before release",
+                        "coaching_cue": "Keep the shooting shoulder stacked to the rim until the ball leaves your hand.",
+                    },
+                    {
+                        "metric": "balance_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.79,
+                        "severity_weight": 0.82,
+                        "issue_label": "Base shifting during the set and release",
+                        "coaching_cue": "Stay centered over both feet and finish with quiet balance on the release.",
+                    },
+                    {
+                        "metric": "posture_accuracy",
+                        "condition": "below_threshold",
+                        "expected_min": 0.83,
+                        "severity_weight": 0.78,
+                        "issue_label": "Upper-body posture breaking before the shot",
+                        "coaching_cue": "Keep your chest tall and eyes level from the catch into the follow-through.",
+                    },
+                ],
+                positive_cues=[
+                    "The shot line stays centered through release.",
+                    "Your follow-through is balanced and repeatable.",
+                ],
+                recommendation_templates=[
+                    "Pause at the set point and rehearse elbow-under-ball alignment before releasing.",
+                    "Take a small step back in distance and focus on balance through the full follow-through.",
+                ],
+            ),
+        },
+        {
+            "drill_name": "Defensive Stance",
+            "description": (
+                "Defensive stance trains the low, reactive base used to stay in front of an opponent without losing balance. "
+                "It matters because defensive movement quality depends on consistent stance width, controlled knee bend, and the ability to shift laterally without popping upright. "
+                "The drill emphasizes hip hinge discipline, even foot pressure, and stable torso position while holding or moving in stance."
+            ),
+            "difficulty_level": SkillLevel.BEGINNER,
+            "target_metrics": _target_metrics(
+                "stance_width_control",
+                "knee_alignment_score",
+                "hip_stability",
+                "torso_alignment",
+                "balance_stability",
+            ),
+            "reference_payload": {
+                "movement_type": "static",
+                "phases": ["setup", "hold", "lateral_recovery"],
+                "tracked_joints": ["hips", "knees", "ankles", "shoulders"],
+                "ideal_ranges": {
+                    "stance_width_ratio": {"min": 1.10, "max": 1.45},
+                    "left_knee_flexion": {"min": 95, "max": 125},
+                    "right_knee_flexion": {"min": 95, "max": 125},
+                    "hip_hinge_angle": {"min": 18, "max": 35},
+                    "torso_lean": {"min": 8, "max": 18},
+                },
+                "stability_expectations": {
+                    "lateral_sway_max": 0.10,
+                    "tempo_consistency_min": 0.82,
+                    "weight_shift_max": 0.12,
+                },
+                "notes": (
+                    "Hold a wide, loaded base with the hips back, knees bent, and the chest positioned "
+                    "slightly forward without collapsing."
+                ),
+            },
+            "coaching_rules": _coaching_rules(
+                primary_focus=[
+                    "stance width",
+                    "knee bend quality",
+                    "hip hinge",
+                    "lateral balance",
+                ],
+                rule_checks=[
+                    {
+                        "metric": "stance_width_control",
+                        "condition": "below_threshold",
+                        "expected_min": 0.81,
+                        "severity_weight": 0.90,
+                        "issue_label": "Base width changing too much during the stance",
+                        "coaching_cue": "Keep your feet just outside shoulder width and hold that spacing as you move.",
+                    },
+                    {
+                        "metric": "knee_alignment_score",
+                        "condition": "below_threshold",
+                        "expected_min": 0.78,
+                        "severity_weight": 0.92,
+                        "issue_label": "Knees collapsing inward in stance",
+                        "coaching_cue": "Push the knees out over the feet and keep pressure through the outer hips.",
+                    },
+                    {
+                        "metric": "hip_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.88,
+                        "issue_label": "Hips rising out of the loaded position",
+                        "coaching_cue": "Sit the hips back and keep them low as you hold or slide in stance.",
+                    },
+                    {
+                        "metric": "torso_alignment",
+                        "condition": "below_threshold",
+                        "expected_min": 0.81,
+                        "severity_weight": 0.84,
+                        "issue_label": "Torso pitching too far forward",
+                        "coaching_cue": "Lean from the hips, not the spine, and keep the chest strong.",
+                    },
+                    {
+                        "metric": "balance_stability",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.86,
+                        "issue_label": "Weight shifting too far side to side",
+                        "coaching_cue": "Stay centered between both feet and move without letting the shoulders sway.",
+                    },
+                ],
+                positive_cues=[
+                    "Your base is staying wide and controlled.",
+                    "You are holding balance well while staying low.",
+                ],
+                recommendation_templates=[
+                    "Hold the stance for shorter intervals and rebuild the same knee bend each rep.",
+                    "Add slow lateral slides only after the stance width and torso position stay consistent.",
+                ],
+            ),
+        },
+    ],
+}
+

@@ -36,4 +36,3 @@ class Drill(BaseModel):
         back_populates="drill",
         cascade="all, delete-orphan",
     )
-
