@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -37,13 +37,18 @@ export function LoginForm() {
     }
   });
 
+  useEffect(() => {
+    router.prefetch("/dashboard");
+    router.prefetch("/profile");
+  }, [router]);
+
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
 
     try {
       const response = await loginUser(values);
       saveAuthToken(response.access_token);
-      router.push(response.user.has_profile ? "/dashboard" : "/profile");
+      router.replace(response.user.has_profile ? "/dashboard" : "/profile");
     } catch (error) {
       setFormError(getErrorMessage(error));
     }
@@ -51,8 +56,8 @@ export function LoginForm() {
 
   return (
     <AuthShell
-      title="Login"
-      subtitle="Welcome back to TrainUp"
+      title="Sign in"
+      subtitle="Pick up where you left off."
       footerLabel="Need an account?"
       footerHref="/signup"
       footerLinkText="Create one"
@@ -96,15 +101,11 @@ export function LoginForm() {
           {isSubmitting ? "Signing in..." : "Sign In"}
         </Button>
 
-        <p className="text-sm text-muted-gray">
-          By continuing, you’re entering TrainUp’s secure athlete onboarding
-          flow.
-        </p>
         <Link
           href="/signup"
           className="inline-flex text-sm font-semibold text-primary transition-colors hover:text-primary/80"
         >
-          Prefer to start fresh? Create an account.
+          New here? Create an account.
         </Link>
       </form>
     </AuthShell>

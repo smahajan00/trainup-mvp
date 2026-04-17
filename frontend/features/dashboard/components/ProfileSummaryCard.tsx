@@ -17,8 +17,8 @@ export function ProfileSummaryCard({ profile }: ProfileSummaryCardProps) {
     return (
       <EmptyState
         icon={UserRound}
-        title="Complete your athlete profile"
-        description="TrainUp uses your selected sport, skill level, and physical context to shape the drill catalog and prepare the platform for later movement analysis."
+        title="Complete your profile"
+        description="Set your sport and level first."
         action={
           <Button asChild>
             <Link href="/profile">Set Up Profile</Link>
@@ -35,7 +35,7 @@ export function ProfileSummaryCard({ profile }: ProfileSummaryCardProps) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-              Profile Summary
+              Profile
             </p>
             <h3 className="mt-3 font-display text-3xl font-bold text-white">
               {profile.sport_name}
@@ -58,7 +58,7 @@ export function ProfileSummaryCard({ profile }: ProfileSummaryCardProps) {
         <div className="mt-8 grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-              Readiness
+              Status
             </p>
             <div className="mt-4 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
@@ -66,10 +66,10 @@ export function ProfileSummaryCard({ profile }: ProfileSummaryCardProps) {
               </div>
               <div>
                 <p className="text-sm font-semibold text-white">
-                  Training mode configured
+                  Ready to train
                 </p>
                 <p className="text-sm text-muted-gray">
-                  Sport context and athlete level are ready for drill browsing.
+                  Sport and level are set.
                 </p>
               </div>
             </div>
@@ -80,7 +80,7 @@ export function ProfileSummaryCard({ profile }: ProfileSummaryCardProps) {
               Injury Notes
             </p>
             <p className="mt-4 text-sm leading-7 text-white/85">
-              {profile.injury_notes ?? "No injury notes recorded for this athlete profile."}
+              {profile.injury_notes ?? "No injury notes saved."}
             </p>
           </div>
         </div>

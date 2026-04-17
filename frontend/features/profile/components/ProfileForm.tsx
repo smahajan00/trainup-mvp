@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Activity, ShieldAlert, Sparkles } from "lucide-react";
+import { Activity } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -47,6 +47,8 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const [sports, setSports] = useState<SportOption[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "success">("idle");
+  const [hasExistingProfile, setHasExistingProfile] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const {
     register,
@@ -82,6 +84,7 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
         setSports(sportsResult);
 
         if (profileResult.profile) {
+          setHasExistingProfile(true);
           reset({
             sport_id: profileResult.profile.sport_id,
             skill_level: profileResult.profile.skill_level,
@@ -116,8 +119,10 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
 
   const onSubmit = handleSubmit(async (values) => {
     setLoadError(null);
+    setSaveState("idle");
 
     try {
+      router.prefetch("/dashboard");
       await upsertProfile({
         sport_id: values.sport_id,
         skill_level: values.skill_level,
@@ -125,7 +130,10 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
         weight_kg: values.weight_kg,
         injury_notes: values.injury_notes || null
       });
-      router.push("/dashboard");
+      setSaveState("success");
+      window.setTimeout(() => {
+        router.push("/dashboard");
+      }, 850);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearAuthToken();
@@ -162,13 +170,14 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
         <form className="relative z-10 space-y-6" onSubmit={onSubmit}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <Badge variant="accent">Profile Setup</Badge>
+              <Badge variant="accent">
+                {hasExistingProfile ? "Profile Update" : "Profile Setup"}
+              </Badge>
               <h2 className="mt-4 font-display text-3xl font-bold text-white">
-                Athlete setup that supports later analysis
+                Set your athlete profile
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-gray">
-                Set the sport, level, and physical context TrainUp should use
-                as the baseline for drill browsing and future coaching logic.
+              <p className="mt-3 max-w-2xl text-sm text-muted-gray">
+                Keep your training context current.
               </p>
             </div>
           </div>
@@ -262,7 +271,7 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
             <Label htmlFor="injury_notes">Injury notes</Label>
             <Textarea
               id="injury_notes"
-              placeholder="Optional: note current restrictions, pain points, or return-to-play context."
+              placeholder="Optional: current restrictions or pain points."
               {...register("injury_notes")}
             />
             {errors.injury_notes ? (
@@ -278,13 +287,22 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
             </div>
           ) : null}
 
+          {saveState === "success" ? (
+            <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+              Profile saved. Opening dashboard...
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm leading-7 text-muted-gray">
-              This profile stays editable, so the athlete context can evolve as
-              the training focus changes.
+            <p className="text-sm text-muted-gray">
+              You can update this anytime.
             </p>
-            <Button size="lg" disabled={isSubmitting}>
-              {isSubmitting ? "Saving profile..." : "Save Profile"}
+            <Button size="lg" disabled={isSubmitting || saveState === "success"}>
+              {isSubmitting
+                ? "Saving profile..."
+                : saveState === "success"
+                  ? "Saved"
+                  : "Save Profile"}
             </Button>
           </div>
         </form>
@@ -298,58 +316,16 @@ export function ProfileForm({ embedded = false }: { embedded?: boolean }) {
             </div>
             <div>
               <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-                Why it matters
+                Quick Notes
               </p>
               <h3 className="mt-3 font-display text-2xl font-bold text-white">
-                Better athlete context creates a cleaner product experience
+                Keep it simple
               </h3>
-              <p className="mt-4 text-sm leading-7 text-muted-gray">
-                Sport and skill level shape the most relevant drills. Height,
-                weight, and injury notes prepare the platform for later scoring
-                and coaching feedback without pretending analytics already exist.
-              </p>
-            </div>
-          </div>
-        </InfoCard>
-
-        <InfoCard>
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-white">
-              <ShieldAlert className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-                Injury awareness
-              </p>
-              <h3 className="mt-3 font-display text-2xl font-bold text-white">
-                Capture constraints honestly
-              </h3>
-              <p className="mt-4 text-sm leading-7 text-muted-gray">
-                Use injury notes for current restrictions, rehab context, or
-                return-to-play considerations. This keeps the product grounded
-                in the athlete's real situation.
-              </p>
-            </div>
-          </div>
-        </InfoCard>
-
-        <InfoCard>
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-                Current phase
-              </p>
-              <h3 className="mt-3 font-display text-2xl font-bold text-white">
-                Drill browsing is ready now
-              </h3>
-              <p className="mt-4 text-sm leading-7 text-muted-gray">
-                Once this profile is saved, the dashboard and sports flow can
-                use the athlete context immediately. Live and upload analysis
-                interfaces arrive in a later phase.
-              </p>
+              <ul className="mt-4 space-y-2 text-sm text-muted-gray">
+                <li>• Pick your main sport</li>
+                <li>• Set your current level</li>
+                <li>• Add notes if needed</li>
+              </ul>
             </div>
           </div>
         </InfoCard>

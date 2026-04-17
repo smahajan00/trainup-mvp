@@ -33,35 +33,26 @@ export function AuthShell({
           initial={{ opacity: 0, x: -18 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.55, ease: "easeOut" }}
-          className="rounded-[2rem] border border-white/10 bg-charcoal/65 p-8 shadow-glow backdrop-blur lg:p-12"
+          className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-charcoal/65 p-8 shadow-glow backdrop-blur lg:p-12"
         >
+          <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-primary/10 blur-3xl" />
           <div className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-primary">
             TrainUp Access
           </div>
           <h1 className="mt-6 max-w-xl font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            AI-powered coaching starts with a clean athlete setup.
+            Start strong. Stay consistent.
           </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-muted-gray sm:text-lg">
-            Register, sign in, and build a structured athlete profile tied to
-            your sport and skill level. This foundation is what later powers
-            feedback, scoring, and performance analysis across TrainUp.
-          </p>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <p className="text-sm font-semibold text-white">Secure access</p>
-              <p className="mt-2 text-sm leading-6 text-muted-gray">
-                JWT-based authentication with profile-aware redirects keeps the
-                onboarding flow clean and predictable.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <p className="text-sm font-semibold text-white">Sport-aware setup</p>
-              <p className="mt-2 text-sm leading-6 text-muted-gray">
-                Seeded sports and structured profile fields keep athlete data
-                ready for deterministic coaching logic.
-              </p>
-            </div>
-          </div>
+          <ul className="mt-10 space-y-4">
+            <li className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/85">
+              • Start sessions fast
+            </li>
+            <li className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/85">
+              • Track progress over time
+            </li>
+            <li className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/85">
+              • Hear coaching cues instantly
+            </li>
+          </ul>
         </motion.section>
 
         <motion.section

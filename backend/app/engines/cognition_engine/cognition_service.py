@@ -82,22 +82,16 @@ class CognitionService:
         minimum_frames_met: bool,
     ) -> list[str]:
         flags = [
-            "Scaffold cognition result; drill-specific biomechanical scoring comes next.",
+            "Clip review is ready.",
         ]
 
         if not minimum_frames_met:
-            flags.append(
-                "Upload clip is short for richer drill-specific temporal evaluation."
-            )
+            flags.append("A longer clip can improve review.")
 
         if payload.derived_motion_features.missing_frame_ratio > 0.08:
-            flags.append(
-                "Payload coverage is limited; perception continuity should improve before final scoring."
-            )
+            flags.append("Some movement data is limited.")
 
         if metrics.frame_consistency_score < 0.75:
-            flags.append(
-                "Frame confidence is moderate; positioning and lighting may need improvement."
-            )
+            flags.append("Lighting or framing may need work.")
 
         return flags

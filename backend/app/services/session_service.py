@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -42,6 +43,7 @@ from app.services.summary_service import SummaryService
 PERCEPTION_ARTIFACT_TYPE = "perception_payload"
 COGNITION_ARTIFACT_TYPE = "cognition_result"
 EVALUATION_ARTIFACT_TYPE = "evaluation_result"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,89 +102,135 @@ class SessionService:
         self._ensure_input_type(session, InputType.UPLOAD)
         self._ensure_session_open(session)
 
-        validation = self.perception.validate_upload(
-            file_name=file_name,
-            content_type=content_type,
-            file_size_bytes=file_size_bytes,
+        logger.info(
+            "Starting upload session processing",
+            extra={
+                "session_id": str(session.id),
+                "user_id": str(user_id),
+                "drill_id": str(session.drill_id),
+            },
         )
 
-        next_step = (
-            "Drill-specific analysis and coaching feedback will be connected next."
-            if validation.is_valid
-            else "Upload validation failed. Resolve the file issues and retry."
-        )
-
-        if not validation.is_valid:
-            return UploadProcessingResponse(
-                session_id=session.id,
-                status=session.status,
-                upload_received=False,
-                validation=validation,
-                next_step=next_step,
+        try:
+            validation = self.perception.validate_upload(
+                file_name=file_name,
+                content_type=content_type,
+                file_size_bytes=file_size_bytes,
             )
 
-        tracked_joints = self._resolve_tracked_joints(session)
-        perception_result = self.perception.process_uploaded_file(
-            session_id=session.id,
-            drill_id=session.drill_id,
-            file_name=file_name or "uploaded-video",
-            content_type=validation.content_type or "application/octet-stream",
-            file_size_bytes=file_size_bytes,
-            tracked_joints=tracked_joints,
-            file_bytes=file_bytes,
-        )
-        cognition_result = self.cognition.analyze_perception_payload(
-            session_id=session.id,
-            drill_id=session.drill_id,
-            perception_result=perception_result,
-        )
-        evaluation_result = self.cognition.evaluate_drill_payload(
-            perception_result=perception_result,
-            drill=session.drill,
-            session=session,
-        )
+            next_step = (
+                "File accepted. Review results below."
+                if validation.is_valid
+                else "Fix the file issues and try again."
+            )
 
-        self.artifacts.upsert(
-            session_id=session.id,
-            artifact_type=PERCEPTION_ARTIFACT_TYPE,
-            payload_json=perception_result.model_dump(mode="json"),
-        )
-        self.artifacts.upsert(
-            session_id=session.id,
-            artifact_type=COGNITION_ARTIFACT_TYPE,
-            payload_json=cognition_result.model_dump(mode="json"),
-        )
-        self.artifacts.upsert(
-            session_id=session.id,
-            artifact_type=EVALUATION_ARTIFACT_TYPE,
-            payload_json=evaluation_result.model_dump(mode="json"),
-        )
-        self.feedback.delete_by_session_id(session_id=session.id)
-        feedback_rows = [
-            self.feedback.create(
+            if not validation.is_valid:
+                logger.warning(
+                    "Upload validation failed",
+                    extra={
+                        "session_id": str(session.id),
+                        "errors": validation.errors,
+                        "warnings": validation.warnings,
+                    },
+                )
+                return UploadProcessingResponse(
+                    session_id=session.id,
+                    status=session.status,
+                    upload_received=False,
+                    validation=validation,
+                    next_step=next_step,
+                )
+
+            tracked_joints = self._resolve_tracked_joints(session)
+            perception_result = self.perception.process_uploaded_file(
                 session_id=session.id,
-                severity_level=issue.severity_level,
-                technique_issue=issue.issue_label,
-                coaching_cue=issue.coaching_cue,
-                metric_snapshot={
-                    "metric": issue.metric,
-                    "actual_score": issue.actual_score,
-                    "expected_min": issue.expected_min,
-                    "expected_max": issue.expected_max,
-                    "deviation": issue.deviation,
-                    "evaluator_name": evaluation_result.evaluator_name,
-                    "drill_name": evaluation_result.drill_name,
+                drill_id=session.drill_id,
+                file_name=file_name or "uploaded-video",
+                content_type=validation.content_type or "application/octet-stream",
+                file_size_bytes=file_size_bytes,
+                tracked_joints=tracked_joints,
+                file_bytes=file_bytes,
+            )
+            cognition_result = self.cognition.analyze_perception_payload(
+                session_id=session.id,
+                drill_id=session.drill_id,
+                perception_result=perception_result,
+            )
+            evaluation_result = self.cognition.evaluate_drill_payload(
+                perception_result=perception_result,
+                drill=session.drill,
+                session=session,
+            )
+
+            self.artifacts.upsert(
+                session_id=session.id,
+                artifact_type=PERCEPTION_ARTIFACT_TYPE,
+                payload_json=perception_result.model_dump(mode="json"),
+            )
+            self.artifacts.upsert(
+                session_id=session.id,
+                artifact_type=COGNITION_ARTIFACT_TYPE,
+                payload_json=cognition_result.model_dump(mode="json"),
+            )
+            self.artifacts.upsert(
+                session_id=session.id,
+                artifact_type=EVALUATION_ARTIFACT_TYPE,
+                payload_json=evaluation_result.model_dump(mode="json"),
+            )
+            self.feedback.delete_by_session_id(session_id=session.id)
+            feedback_rows = [
+                self.feedback.create(
+                    session_id=session.id,
+                    severity_level=issue.severity_level,
+                    technique_issue=issue.issue_label,
+                    coaching_cue=issue.coaching_cue,
+                    metric_snapshot={
+                        "metric": issue.metric,
+                        "actual_score": issue.actual_score,
+                        "expected_min": issue.expected_min,
+                        "expected_max": issue.expected_max,
+                        "deviation": issue.deviation,
+                        "evaluator_name": evaluation_result.evaluator_name,
+                        "drill_name": evaluation_result.drill_name,
+                    },
+                )
+                for issue in evaluation_result.issues
+            ]
+            feedback_responses = [
+                self._build_feedback_response(row) for row in feedback_rows
+            ]
+            session_summary = self._persist_session_summary_and_progress(
+                session=session,
+                evaluation_result=evaluation_result,
+                feedback_rows=feedback_responses,
+            )
+            self.db.commit()
+        except HTTPException:
+            self.db.rollback()
+            raise
+        except Exception as exc:
+            self.db.rollback()
+            logger.exception(
+                "Upload session processing failed",
+                extra={
+                    "session_id": str(session.id),
+                    "user_id": str(user_id),
+                    "drill_id": str(session.drill_id),
                 },
             )
-            for issue in evaluation_result.issues
-        ]
-        feedback_responses = [self._build_feedback_response(row) for row in feedback_rows]
-        session_summary = self._persist_session_summary_and_progress(
-            session=session,
-            evaluation_result=evaluation_result,
-            feedback_rows=feedback_responses,
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Processing failed. Please retry the upload.",
+            ) from exc
+
+        logger.info(
+            "Upload session processing completed",
+            extra={
+                "session_id": str(session.id),
+                "feedback_count": len(feedback_responses),
+                "overall_accuracy": float(session_summary.overall_accuracy),
+            },
         )
-        self.db.commit()
 
         return UploadProcessingResponse(
             session_id=session.id,
@@ -200,8 +248,7 @@ class SessionService:
                 EVALUATION_ARTIFACT_TYPE,
             ],
             next_step=(
-                "Session summary and progress records generated. Broader trend analysis "
-                "and longitudinal comparisons will expand next."
+                "Summary saved. Progress updated."
             ),
         )
 
@@ -271,9 +318,9 @@ class SessionService:
         )
 
         message = (
-            "Live session scaffold started. Real-time perception hooks will connect next."
+            "Live session started."
             if started
-            else "Live readiness checks are incomplete. Resolve the warnings before starting."
+            else "Finish the checks before starting."
         )
 
         return LiveStartResponse(

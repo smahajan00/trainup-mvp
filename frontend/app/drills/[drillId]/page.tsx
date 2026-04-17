@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, PlayCircle, UploadCloud } from "lucide-react";
+import {
+  ArrowLeft,
+  ListChecks,
+  PlayCircle,
+  Sparkles,
+  Target,
+  UploadCloud
+} from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -14,8 +21,10 @@ import { InfoCard } from "../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../features/app-shell/components/SectionTitle";
 import {
   formatEnumLabel,
-  formatTokenLabel
+  formatTokenLabel,
+  truncateText
 } from "../../../lib/formatters";
+import { getMetricDescription } from "../../../lib/metric-descriptions";
 import { getDrillById } from "../../../services/drills";
 import type { DrillDetail } from "../../../types/drills";
 
@@ -96,6 +105,12 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
   const stabilityExpectations = Object.entries(
     drill.reference_payload.stability_expectations ?? {}
   );
+  const outputPreview = [
+    "Video checks",
+    "Score cards",
+    "Technique issues",
+    "Session summary"
+  ];
 
   return (
     <div className="space-y-8">
@@ -109,8 +124,8 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
             <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
               {drill.drill_name}
             </h2>
-            <p className="mt-4 text-sm leading-7 text-muted-gray sm:text-base">
-              {drill.description}
+            <p className="mt-4 text-sm text-muted-gray sm:text-base">
+              {truncateText(drill.description, 110)}
             </p>
           </div>
 
@@ -133,14 +148,28 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
                   <UploadCloud className="h-4 w-4" />
                   Upload Video
                 </span>
-                <Badge variant="slate">Scaffold</Badge>
+                <Badge variant="slate">Video</Badge>
               </Link>
             </Button>
-            <p className="text-sm leading-7 text-muted-gray">
-              Each path creates a real training session record and opens the
-              first execution scaffold. Pose extraction and movement analysis
-              connect in the next phase.
+            <p className="text-sm text-muted-gray">
+              Pick live or upload.
             </p>
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                You’ll get
+              </p>
+              <div className="mt-4 space-y-3">
+                {outputPreview.map((item) => (
+                  <div
+                    key={item}
+                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-3"
+                  >
+                    <Sparkles className="mt-0.5 h-4 w-4 text-primary" />
+                    <p className="text-sm text-white/85">{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </InfoCard>
@@ -151,10 +180,10 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
             Overview
           </p>
           <h3 className="mt-4 font-display text-2xl font-bold text-white">
-            Movement breakdown
+            Drill overview
           </h3>
-          <p className="mt-4 text-sm leading-7 text-muted-gray">
-            {drill.reference_payload.notes ?? drill.description}
+          <p className="mt-4 text-sm text-muted-gray">
+            {truncateText(drill.reference_payload.notes ?? drill.description, 120)}
           </p>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -217,15 +246,27 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
             Target Metrics
           </p>
           <h3 className="mt-4 font-display text-2xl font-bold text-white">
-            What later scoring will watch
+            Key metrics
           </h3>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 grid gap-3">
             {metrics.map((metric) => (
               <div
                 key={metric}
-                className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-3 text-sm font-semibold text-white"
+                className="rounded-2xl border border-primary/15 bg-primary/10 px-4 py-4"
               >
-                {formatTokenLabel(metric)}
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/20 bg-primary/15 text-primary">
+                    <Target className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {formatTokenLabel(metric)}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-white/72">
+                      {getMetricDescription(metric)}
+                    </p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -236,8 +277,8 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Coaching Focus"
-            title="Primary focus cues"
-            description="These focus areas are pulled directly from the drill's coaching rules."
+            title="Focus points"
+            description="What to lock in first."
           />
           <div className="mt-6 flex flex-wrap gap-2">
             {primaryFocus.map((item) => (
@@ -251,14 +292,14 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Positive Cues"
-            title="What good reps look like"
-            description="Positive cues frame the movement qualities TrainUp wants the athlete to repeat."
+            title="Good reps"
+            description="Repeat these movement habits."
           />
           <ul className="mt-6 space-y-3">
             {positiveCues.map((cue) => (
               <li
                 key={cue}
-                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-7 text-white/85"
+                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/85"
               >
                 {cue}
               </li>
@@ -269,14 +310,14 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Recommendations"
-            title="How the athlete can clean up form"
-            description="These templates guide what future feedback will recommend after a review."
+            title="Next actions"
+            description="Use these cues next."
           />
           <ul className="mt-6 space-y-3">
             {recommendationTemplates.map((item) => (
               <li
                 key={item}
-                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-7 text-white/85"
+                className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/85"
               >
                 {item}
               </li>
@@ -287,9 +328,9 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Reference Expectations"
-          title="Ideal ranges and stability targets"
-          description="These expectations come directly from the seeded reference payload and explain the drill's deterministic movement targets."
+          eyebrow="Targets"
+          title="Ranges and stability"
+          description="Target values for this drill."
           action={
             <Link
               href={`/sports/${drill.sport_id}/drills`}
@@ -345,6 +386,52 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
           </InfoCard>
         </div>
       </div>
+
+      <InfoCard>
+        <SectionTitle
+          eyebrow="Preview"
+          title="After upload"
+          description="Your review includes these sections."
+        />
+        <div className="mt-6 grid gap-4 lg:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+              <UploadCloud className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-white">Validation</p>
+            <p className="mt-2 text-sm text-muted-gray">
+              File checks
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+              <ListChecks className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-white">Evaluation</p>
+            <p className="mt-2 text-sm text-muted-gray">
+              Scores and issues
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-white">Summary</p>
+            <p className="mt-2 text-sm text-muted-gray">
+              Strengths and next steps
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+              <Target className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-white">Progress</p>
+            <p className="mt-2 text-sm text-muted-gray">
+              Saved metrics over time
+            </p>
+          </div>
+        </div>
+      </InfoCard>
     </div>
   );
 }
@@ -356,10 +443,10 @@ export default function DrillDetailPage({
 }) {
   return (
     <AppShell
-      eyebrow="Drill Detail"
-      title="Inspect the movement before the athlete performs it"
-      description="This detail view is designed as a premium pre-analysis screen that explains movement intent, target metrics, and the coaching logic behind the drill."
-      capsule="Catalog detail"
+      eyebrow="Drill"
+      title="Drill detail"
+      description="Review the drill, then start."
+      capsule="Ready"
       actions={
         <CTAButton asChild>
           <Link href="/sports">All Sports</Link>

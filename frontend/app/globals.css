@@ -15,6 +15,14 @@
 
   body {
     @apply min-h-screen bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(255, 122, 0, 0.12), transparent 28%),
+      radial-gradient(circle at bottom right, rgba(72, 187, 120, 0.06), transparent 22%),
+      linear-gradient(180deg, #101217 0%, #0f1115 100%);
+  }
+
+  ::selection {
+    background: rgba(255, 122, 0, 0.35);
+    color: white;
   }
 }
-

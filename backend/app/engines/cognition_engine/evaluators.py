@@ -97,12 +97,12 @@ def build_evaluation_summary_flags(
     evaluation_result: DrillEvaluationResult,
 ) -> list[str]:
     flags = [
-        "Deterministic drill-aware evaluation generated from scaffold payload.",
-        "Metric scores are derived from scaffold motion signals, not final biomechanical extraction.",
+        "Review complete.",
+        "Scores are based on this video.",
     ]
 
     if not evaluation_result.issues:
-        flags.append("No seeded coaching rule thresholds were breached in this processing pass.")
+        flags.append("No clear issues were flagged.")
         return flags
 
     highest_severity = max(
@@ -114,6 +114,6 @@ def build_evaluation_summary_flags(
         }[issue.severity_level],
     ).severity_level
     flags.append(
-        f"{len(evaluation_result.issues)} drill-specific issue(s) triggered; highest severity is {highest_severity.value}."
+        f"{len(evaluation_result.issues)} issue(s) found. Highest severity: {highest_severity.value.title()}."
     )
     return flags

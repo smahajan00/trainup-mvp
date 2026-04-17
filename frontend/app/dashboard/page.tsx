@@ -163,13 +163,11 @@ function DashboardContent({
             </p>
             <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
               {user?.full_name
-                ? `${user.full_name}, keep your movement work sharp.`
-                : "Build a clean training rhythm."}
+                ? `${user.full_name}, stay sharp.`
+                : "Stay ready to train."}
             </h2>
-            <p className="mt-4 text-sm leading-7 text-muted-gray sm:text-base">
-              Browse sport-specific drills, reinforce technique expectations,
-              and get the platform ready for later live and upload-based
-              coaching analysis.
+            <p className="mt-4 text-sm text-muted-gray sm:text-base">
+              Start a session or review progress.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <CTAButton asChild>
@@ -189,7 +187,7 @@ function DashboardContent({
                 Focus
               </p>
               <p className="mt-3 text-sm font-semibold text-white">
-                Evaluation-backed upload review
+                Upload review
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -197,7 +195,7 @@ function DashboardContent({
                 Progress
               </p>
               <p className="mt-3 text-sm font-semibold text-white">
-                {processedSessionCount} processed
+                {processedSessionCount} recent sessions
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -225,10 +223,8 @@ function DashboardContent({
               <h3 className="mt-4 font-display text-3xl font-bold text-white">
                 Training mode ready
               </h3>
-              <p className="mt-4 text-sm leading-7 text-muted-gray">
-                Your current sport and skill profile are set, so the drill
-                library can already surface the right movement context for this
-                athlete.
+              <p className="mt-4 text-sm text-muted-gray">
+                Your setup is ready.
               </p>
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -244,7 +240,7 @@ function DashboardContent({
                     Next module
                   </p>
                   <p className="mt-3 text-sm font-semibold text-white">
-                    Session summaries and progress tracking live
+                    Review and summary live
                   </p>
                 </div>
               </div>
@@ -253,8 +249,8 @@ function DashboardContent({
         ) : (
           <EmptyState
             icon={ClipboardCheck}
-            title="Complete onboarding to unlock a sharper dashboard"
-            description="Your drill browsing flow already works, but adding athlete context makes later analysis and coaching feedback much more meaningful."
+            title="Finish setup"
+            description="Set your profile to personalize training."
             action={
               <CTAButton asChild>
                 <Link href="/profile">Complete Profile</Link>
@@ -266,28 +262,28 @@ function DashboardContent({
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Quick Actions"
-          title="Move through the product fast"
-          description="These shortcuts keep the current phase focused on browsing sports, exploring drills, and maintaining athlete context."
+          eyebrow="Actions"
+          title="Move fast"
+          description="Pick your next step."
         />
         <div className="grid gap-5 lg:grid-cols-3">
           <QuickActionCard
             title="Browse Sports"
-            description="Open the sports catalog and move straight into Gym, Football, or Basketball drill browsing."
+            description="Open Gym, Football, or Basketball."
             href="/sports"
             icon={Compass}
             badge="Catalog"
           />
           <QuickActionCard
             title="Continue Training"
-            description="Jump directly into your selected sport's drill library if your profile is configured."
+            description="Go straight to your sport."
             href={startTrainingHref}
             icon={Dumbbell}
             badge={profile ? "Recommended" : "Set profile"}
           />
           <QuickActionCard
             title="View Profile"
-            description="Keep sport context, skill level, and physical attributes current before training sessions begin."
+            description="Update your training details."
             href="/profile"
             icon={UserRound}
             badge="Athlete data"
@@ -297,9 +293,9 @@ function DashboardContent({
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Recent Sessions"
-          title="Review processed training sessions"
-          description="These cards are backed by stored session summaries and real overall accuracy values from completed upload evaluation passes."
+          eyebrow="Recent"
+          title="Recent sessions"
+          description="Open your latest reviews."
         />
 
         {isLoadingProgress ? (
@@ -318,8 +314,8 @@ function DashboardContent({
         ) : recentSessions.length === 0 ? (
           <EmptyState
             icon={History}
-            title="No processed sessions yet"
-            description="Upload a drill clip to generate a session summary and start building a real progress history."
+            title="No sessions yet"
+            description="Upload a video to start tracking."
             action={
               <CTAButton asChild>
                 <Link href="/sports">Start With a Drill</Link>
@@ -337,34 +333,34 @@ function DashboardContent({
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Performance Snapshot"
-          title="Latest tracked metrics"
-          description="These values come directly from stored progress records created when upload evaluation completes."
+          eyebrow="Snapshot"
+          title="Latest metrics"
+          description="Your latest saved scores."
         />
         <div className="grid gap-5 xl:grid-cols-4">
           <StatCard
-            label="Processed Sessions"
+            label="Recent Sessions"
             value={String(processedSessionCount)}
-            description="Summary-backed upload sessions currently available for review."
+            description="Latest saved reviews."
             icon={History}
           />
           <StatCard
             label="Tracked Metrics"
             value={String(trackedMetricCount)}
-            description="Latest metric types with at least one persisted progress record."
+            description="Metrics saved so far."
             icon={Gauge}
           />
           <StatCard
             label="Profile Completion"
             value={`${profileCompletion}%`}
-            description="Calculated from the fields currently configured in the athlete profile."
+            description="Setup progress."
             icon={ClipboardCheck}
             tone={profile ? "success" : "warning"}
           />
           <StatCard
             label="Available Drills"
             value={String(availableDrills)}
-            description="Real drill count derived from the seeded backend catalog across all sports."
+            description="Drills ready now."
             icon={Dumbbell}
           />
         </div>
@@ -384,9 +380,9 @@ function DashboardContent({
           <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
             <InfoCard>
               <SectionTitle
-                eyebrow="Latest Metrics"
-                title="Current performance anchors"
-                description="Each value below is the latest recorded progress value for that metric."
+                eyebrow="Metrics"
+                title="Performance snapshot"
+                description="Your latest saved values."
               />
               {performanceSnapshot.length ? (
                 <div className="mt-6 grid gap-3">
@@ -423,22 +419,21 @@ function DashboardContent({
                   ))}
                 </div>
               ) : (
-                <p className="mt-6 text-sm leading-7 text-muted-gray">
-                  Process an upload session to start collecting stored metric
-                  values.
+                <p className="mt-6 text-sm text-muted-gray">
+                  Upload a video to track scores.
                 </p>
               )}
             </InfoCard>
 
             <InfoCard>
               <SectionTitle
-                eyebrow="Progress Trend"
+                eyebrow="Trend"
                 title={
                   trendMetricName
                     ? formatEnumLabel(trendMetricName)
-                    : "Metric trend not available yet"
+                    : "No trend yet"
                 }
-                description="A simple view of the last few stored values for one recurring metric. No fabricated trendline is being shown."
+                description="Last five saved values."
               />
               {trendSeries.length ? (
                 <div className="mt-6 space-y-3">
@@ -471,9 +466,8 @@ function DashboardContent({
                   ))}
                 </div>
               ) : (
-                <p className="mt-6 text-sm leading-7 text-muted-gray">
-                  Once a metric has multiple recorded values, this section will
-                  show the last five stored points.
+                <p className="mt-6 text-sm text-muted-gray">
+                  More sessions will unlock trends.
                 </p>
               )}
             </InfoCard>
@@ -483,9 +477,9 @@ function DashboardContent({
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Featured Training"
-          title="Browse the current drill catalog"
-          description="Each sport card opens into a focused drill library powered by the seeded backend data."
+          eyebrow="Featured"
+          title="Browse drills"
+          description="Pick a sport and continue."
           action={
             <CTAButton asChild className="rounded-2xl">
               <Link href="/sports">Open Sports Hub</Link>
@@ -525,10 +519,10 @@ function DashboardContent({
 export default function DashboardPage() {
   return (
     <AppShell
-      eyebrow="Performance Workspace"
-      title="Your training command center"
-      description="A premium overview of athlete context, catalog readiness, and the fastest paths into the sports and drill library."
-      capsule="Post-login shell"
+      eyebrow="Dashboard"
+      title="Your training home"
+      description="Start sessions. Review progress."
+      capsule="Ready"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Start Training</Link>

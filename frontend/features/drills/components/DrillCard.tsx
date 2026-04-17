@@ -29,8 +29,8 @@ export function DrillCard({ drill }: DrillCardProps) {
           <h3 className="font-display text-2xl font-bold text-white">
             {drill.drill_name}
           </h3>
-          <p className="mt-3 text-sm leading-7 text-muted-gray">
-            {truncateText(drill.description, 190)}
+          <p className="mt-3 text-sm text-muted-gray">
+            {truncateText(drill.description, 110)}
           </p>
         </div>
 

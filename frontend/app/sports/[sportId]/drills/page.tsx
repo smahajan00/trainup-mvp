@@ -87,7 +87,7 @@ function SportDrillsContent({
             <p className="mt-4 text-sm leading-7 text-muted-gray">
               {sport
                 ? preset.subtitle
-                : "Each sport library is structured around seeded drills, target metrics, and real movement expectations."}
+                : "Open a drill to continue."}
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -109,8 +109,8 @@ function SportDrillsContent({
       <div className="space-y-5">
         <SectionTitle
           eyebrow="Drills"
-          title={`${drills.length || 0} drills available`}
-          description="These cards are designed as a training catalog. Open any drill to review movement intent, target metrics, and coaching expectations."
+          title={`${drills.length || 0} drills`}
+          description="Pick a drill to continue."
           action={
             <Link
               href="/sports"
@@ -159,10 +159,10 @@ export default function SportDrillsPage({
 }) {
   return (
     <AppShell
-      eyebrow="Sport Drill Library"
-      title="Explore the drill catalog by sport"
-      description="Every sport page is a focused catalog layer that makes drill selection feel intentional, premium, and ready for demo use."
-      capsule="Authenticated route"
+      eyebrow="Drills"
+      title="Browse drills"
+      description="Open a drill and start."
+      capsule="Catalog"
       actions={
         <CTAButton asChild>
           <Link href="/sports">All Sports</Link>

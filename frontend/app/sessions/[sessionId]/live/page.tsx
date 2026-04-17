@@ -174,7 +174,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       setActionError(
         error instanceof Error
           ? error.message
-          : "Unable to send the frame-batch scaffold."
+          : "Unable to send the session check."
       );
     } finally {
       setIsSendingBatch(false);
@@ -255,10 +255,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
             <h2 className="mt-5 font-display text-4xl font-bold text-white sm:text-5xl">
               {session.drill_name}
             </h2>
-            <p className="mt-4 text-sm leading-7 text-muted-gray sm:text-base">
-              Prepare the athlete environment, verify camera readiness, and
-              open the live execution scaffold. Real-time frame analysis and
-              coaching feedback are intentionally not enabled yet.
+            <p className="mt-4 text-sm text-muted-gray sm:text-base">
+              Check framing. Start when ready.
             </p>
           </div>
 
@@ -278,7 +276,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                 disabled={!clientReady || isStarting || session.status !== "ACTIVE"}
                 className="flex-1 justify-center rounded-2xl"
               >
-                {isStarting ? "Starting Live Mode" : "Start Session"}
+                {isStarting ? "Starting" : "Start"}
               </CTAButton>
               <Button
                 type="button"
@@ -288,7 +286,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                 disabled={isEnding || session.status !== "ACTIVE"}
               >
                 <Square className="mr-2 h-4 w-4" />
-                End Session
+                End
               </Button>
             </div>
           </div>
@@ -298,9 +296,9 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
-            eyebrow="Live Preview"
-            title="Camera feed scaffold"
-            description="Use a stable camera setup and confirm the athlete remains fully visible throughout the drill."
+            eyebrow="Live"
+            title="Camera Preview"
+            description="Keep the athlete in frame."
           />
 
           <div className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate/40">
@@ -318,12 +316,10 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                   <Camera className="h-7 w-7" />
                 </div>
                 <h3 className="mt-5 font-display text-3xl font-bold text-white">
-                  Live preview placeholder
+                  Camera preview
                 </h3>
-                <p className="mt-4 max-w-xl text-sm leading-7 text-muted-gray">
-                  Camera preview is available once permission is granted. Pose
-                  overlays, skeletal landmarks, and live scoring are not part
-                  of this phase.
+                <p className="mt-4 max-w-xl text-sm text-muted-gray">
+                  Enable camera to preview framing.
                 </p>
               </div>
             )}
@@ -339,9 +335,9 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
             >
               <Camera className="mr-2 h-4 w-4" />
               {cameraState === "requesting"
-                ? "Requesting Camera"
+                ? "Opening"
                 : cameraState === "granted"
-                  ? "Refresh Preview"
+                  ? "Refresh"
                   : "Enable Camera"}
             </Button>
             <Button
@@ -356,7 +352,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               }
             >
               <SignalHigh className="mr-2 h-4 w-4" />
-              {isSendingBatch ? "Sending Batch" : "Send Frame Batch Scaffold"}
+              {isSendingBatch ? "Sending" : "Send Check"}
             </Button>
             <Button
               type="button"
@@ -374,8 +370,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
           <InfoCard>
             <SectionTitle
               eyebrow="Readiness"
-              title="Pass the session checks before going live"
-              description="These checks are intentionally explicit so the live scaffold reflects a realistic start sequence."
+              title="Session Checks"
+              description="Confirm each item."
             />
 
             <div className="mt-6 space-y-4">
@@ -387,10 +383,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                   className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent text-primary"
                 />
                 <div>
-                  <p className="text-sm font-semibold text-white">Adequate lighting</p>
-                  <p className="mt-1 text-sm leading-7 text-muted-gray">
-                    The athlete is evenly lit and easy to see from head to toe.
-                  </p>
+                  <p className="text-sm font-semibold text-white">Lighting ready</p>
                 </div>
               </label>
 
@@ -402,10 +395,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                   className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent text-primary"
                 />
                 <div>
-                  <p className="text-sm font-semibold text-white">Framing is ready</p>
-                  <p className="mt-1 text-sm leading-7 text-muted-gray">
-                    The full drill motion stays inside frame without clipping.
-                  </p>
+                  <p className="text-sm font-semibold text-white">Framing ready</p>
                 </div>
               </label>
 
@@ -417,10 +407,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                   className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent text-primary"
                 />
                 <div>
-                  <p className="text-sm font-semibold text-white">Enough space</p>
-                  <p className="mt-1 text-sm leading-7 text-muted-gray">
-                    The athlete has room to complete the drill safely and cleanly.
-                  </p>
+                  <p className="text-sm font-semibold text-white">Space ready</p>
                 </div>
               </label>
             </div>
@@ -432,12 +419,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                 </p>
                 <p className="mt-3 text-sm font-semibold text-white">
                   {cameraState === "granted"
-                    ? "Permission granted"
+                    ? "Ready"
                     : cameraState === "requesting"
-                      ? "Request pending"
+                      ? "Opening"
                       : cameraState === "denied"
-                        ? "Permission blocked"
-                        : "Not enabled"}
+                        ? "Blocked"
+                        : "Off"}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
@@ -445,7 +432,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                   Client Ready
                 </p>
                 <p className="mt-3 text-sm font-semibold text-white">
-                  {clientReady ? "Ready to start" : "Checks incomplete"}
+                  {clientReady ? "Ready" : "Not ready"}
                 </p>
               </div>
             </div>
@@ -453,7 +440,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
             {readinessWarnings.length ? (
               <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
-                  Readiness Warnings
+                  Warnings
                 </p>
                 <ul className="mt-3 space-y-2 text-sm leading-7 text-amber-100">
                   {readinessWarnings.map((warning) => (
@@ -466,9 +453,9 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
 
           <InfoCard>
             <SectionTitle
-              eyebrow="Pipeline Status"
-              title="What this scaffold is doing now"
-              description="The flow is real, but the heavy perception work is intentionally still ahead."
+              eyebrow="Status"
+              title="Session State"
+              description="Live review is not active yet."
             />
 
             {actionError ? (
@@ -481,24 +468,22 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="h-5 w-5 text-emerald-200" />
-                  <p className="text-sm font-semibold text-white">{startResult.message}</p>
+                  <p className="text-sm font-semibold text-white">Session started</p>
                 </div>
               </div>
             ) : (
-              <p className="mt-6 text-sm leading-7 text-muted-gray">
-                Live analysis is not yet active. This page currently validates
-                readiness, opens camera preview scaffolding, and exercises the
-                session lifecycle endpoints honestly.
+              <p className="mt-6 text-sm text-muted-gray">
+                Check camera. Start session.
               </p>
             )}
 
             {frameBatchResult ? (
               <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Frame Batch
+                  Check
                 </p>
                 <p className="mt-3 text-sm font-semibold text-white">
-                  {frameBatchResult.message}
+                  Check received
                 </p>
                 <p className="mt-2 text-sm text-muted-gray">
                   Accepted frames: {frameBatchResult.frame_count}
@@ -508,12 +493,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
 
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Coming Next
+                Next
               </p>
-              <ul className="mt-3 space-y-2 text-sm leading-7 text-white/85">
-                <li>Frame-level pose extraction</li>
-                <li>Movement quality scoring in the Cognition layer</li>
-                <li>Coaching cues and recommendations in the Action layer</li>
+              <ul className="mt-3 space-y-2 text-sm text-white/85">
+                <li>• Live review</li>
+                <li>• Instant scoring</li>
+                <li>• Voice cues</li>
               </ul>
             </div>
           </InfoCard>
@@ -529,9 +514,9 @@ export default function LiveSessionPage() {
   return (
     <AppShell
       eyebrow="Live Session"
-      title="Camera-driven training scaffold"
-      description="Prepare the athlete environment, start the live session lifecycle, and validate the path into real-time perception."
-      capsule="Live pipeline"
+      title="Start live training"
+      description="Open camera and begin."
+      capsule="Live"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Browse Sports</Link>

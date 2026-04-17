@@ -75,6 +75,36 @@ export async function apiRequest<T>(
 
 export function getErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
+    if (
+      typeof error.payload === "object" &&
+      error.payload !== null &&
+      "errors" in error.payload &&
+      Array.isArray(error.payload.errors) &&
+      error.payload.errors.length > 0
+    ) {
+      const firstError = error.payload.errors[0];
+      if (
+        typeof firstError === "object" &&
+        firstError !== null &&
+        "msg" in firstError &&
+        typeof firstError.msg === "string"
+      ) {
+        return firstError.msg;
+      }
+    }
+
+    if (Array.isArray(error.payload) && error.payload.length > 0) {
+      const firstError = error.payload[0];
+      if (
+        typeof firstError === "object" &&
+        firstError !== null &&
+        "msg" in firstError &&
+        typeof firstError.msg === "string"
+      ) {
+        return firstError.msg;
+      }
+    }
+
     return error.message;
   }
 

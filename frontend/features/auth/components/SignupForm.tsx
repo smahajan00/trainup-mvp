@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -43,13 +43,17 @@ export function SignupForm() {
     }
   });
 
+  useEffect(() => {
+    router.prefetch("/profile");
+  }, [router]);
+
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
 
     try {
       const response = await registerUser(values);
       saveAuthToken(response.access_token);
-      router.push("/profile");
+      router.replace("/profile");
     } catch (error) {
       setFormError(getErrorMessage(error));
     }
@@ -57,8 +61,8 @@ export function SignupForm() {
 
   return (
     <AuthShell
-      title="Sign Up"
-      subtitle="Create your TrainUp athlete account"
+      title="Create account"
+      subtitle="Start training in minutes."
       footerLabel="Already registered?"
       footerHref="/login"
       footerLinkText="Sign in instead"
@@ -115,15 +119,11 @@ export function SignupForm() {
           {isSubmitting ? "Creating account..." : "Create Account"}
         </Button>
 
-        <p className="text-sm text-muted-gray">
-          You’ll land in profile setup immediately after registration so your
-          sport and skill context are available from day one.
-        </p>
         <Link
           href="/login"
           className="inline-flex text-sm font-semibold text-primary transition-colors hover:text-primary/80"
         >
-          Already have access? Sign in.
+          Already have an account? Sign in.
         </Link>
       </form>
     </AuthShell>

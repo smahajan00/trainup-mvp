@@ -2,7 +2,11 @@ import Link from "next/link";
 import { ArrowUpRight, UploadCloud, Video } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
-import { formatDateTime, formatEnumLabel } from "../../../lib/formatters";
+import {
+  formatDateTime,
+  formatEnumLabel,
+  truncateText
+} from "../../../lib/formatters";
 import type { RecentProgressSession } from "../../../types/progress";
 import type { TrainingSession } from "../../../types/sessions";
 import { InfoCard } from "../../app-shell/components/InfoCard";
@@ -26,6 +30,7 @@ function getSessionHref(session: RecentSessionCardModel) {
 export function RecentSessionCard({ session }: { session: RecentSessionCardModel }) {
   const Icon = session.input_type === "LIVE" ? Video : UploadCloud;
   const overallAccuracy = "overall_accuracy" in session ? session.overall_accuracy : null;
+  const summaryText = "summary_text" in session ? session.summary_text : null;
 
   return (
     <Link href={getSessionHref(session)} className="block">
@@ -47,20 +52,31 @@ export function RecentSessionCard({ session }: { session: RecentSessionCardModel
           <h3 className="mt-3 font-display text-2xl font-bold text-white">
             {session.drill_name}
           </h3>
-          <p className="mt-3 text-sm leading-7 text-muted-gray">
-            Started {formatDateTime(session.start_time)}
+          <p className="mt-3 text-sm text-muted-gray">
+            {formatDateTime(session.start_time)}
           </p>
         </div>
 
         {overallAccuracy !== null ? (
           <div className="mt-6 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
-              Accuracy
-            </p>
-            <p className="mt-3 text-3xl font-bold text-white">
-              {overallAccuracy.toFixed(1)}%
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
+                  Accuracy
+                </p>
+                <p className="mt-3 text-3xl font-bold text-white">
+                  {overallAccuracy.toFixed(1)}%
+                </p>
+              </div>
+              <Badge variant="success">Processed</Badge>
+            </div>
           </div>
+        ) : null}
+
+        {summaryText ? (
+          <p className="mt-5 text-sm text-white/72">
+            {truncateText(summaryText, 120)}
+          </p>
         ) : null}
 
         <div className="mt-6 flex items-center justify-between text-sm font-semibold text-white/80">

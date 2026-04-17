@@ -18,7 +18,7 @@ export function CTAButton({
 }: CTAButtonProps) {
   const sharedClassName = cn(
     buttonVariants({ variant, size }),
-    "group gap-2 rounded-xl bg-primary px-5 text-primary-foreground shadow-glow hover:bg-primary/90",
+    "group gap-2 rounded-2xl bg-primary px-5 text-primary-foreground shadow-[0_16px_40px_rgba(255,122,0,0.24)] hover:bg-primary/90 hover:shadow-[0_20px_48px_rgba(255,122,0,0.3)]",
     className
   );
 

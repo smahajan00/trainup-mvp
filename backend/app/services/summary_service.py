@@ -106,12 +106,11 @@ class SummaryService:
             strengths_text = (
                 _join_labels(strength_labels)
                 if strength_labels
-                else "the current deterministic movement checks"
+                else "your key movement checks"
             )
             return (
-                f"Your {drill_name} session stayed consistent across the current deterministic pipeline, "
-                f"with strongest results in {strengths_text}. Keep repeating the same controlled movement pattern "
-                "as drill-specific evaluation becomes more detailed."
+                f"Your {drill_name} session looked steady, with strongest results in {strengths_text}. "
+                "Keep repeating that same pattern."
             )
 
         focus_cues = [row.coaching_cue for row in feedback_rows[:2]]

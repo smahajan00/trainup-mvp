@@ -148,15 +148,13 @@ function SessionCreationContent() {
 
   if (creatingMode) {
     return (
-      <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
+        <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
         <Badge variant="accent">{formatEnumLabel(creatingMode)}</Badge>
         <h2 className="mt-4 font-display text-4xl font-bold text-white">
-          Creating your {creatingMode === "LIVE" ? "live" : "upload"} session
+          Starting {creatingMode === "LIVE" ? "live" : "upload"} session
         </h2>
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-gray">
-          TrainUp is opening a real training session record for{" "}
-          <span className="font-semibold text-white">{drill.drill_name}</span>.
-          You will be routed into the execution scaffold as soon as the session is ready.
+        <p className="mt-4 max-w-2xl text-sm text-muted-gray">
+          Opening {drill.drill_name}. You’ll move in automatically.
         </p>
       </InfoCard>
     );
@@ -172,10 +170,8 @@ function SessionCreationContent() {
         <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
           {drill.drill_name}
         </h2>
-        <p className="mt-4 max-w-3xl text-sm leading-7 text-muted-gray sm:text-base">
-          Choose how you want to enter the training flow. Both paths create a
-          real session record, preserve ownership, and route into the new
-          Perception-layer scaffolding.
+        <p className="mt-4 max-w-3xl text-sm text-muted-gray sm:text-base">
+          Pick your session mode.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
           {metrics.map((metric) => (
@@ -201,28 +197,28 @@ function SessionCreationContent() {
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Execution Mode"
-          title="Pick the training path that matches the athlete workflow"
-          description="Live mode opens camera readiness and session control scaffolding. Upload mode validates a recorded clip before the future extraction stage."
+          eyebrow="Mode"
+          title="Choose session mode"
+          description="Live uses camera. Upload uses video."
         />
         <div className="grid gap-5 lg:grid-cols-2">
           <ModeCard
             title="Live Session"
             description="Use your camera for guided real-time training flow."
-            badge="Perception-first"
-            eyebrow="Camera Mode"
-            detail="This path opens readiness checks, camera preview scaffolding, and live frame-batch ingestion hooks for the next phase."
-            ctaLabel="Start Live Flow"
+            badge="Camera"
+            eyebrow="Live"
+            detail="Open camera. Start when ready."
+            ctaLabel="Start Live"
             icon={PlayCircle}
             onSelect={() => router.push(`/sessions/new?drillId=${drill.id}&mode=LIVE`)}
           />
           <ModeCard
             title="Upload Video"
             description="Submit a recorded clip for structured review."
-            badge="Asynchronous"
-            eyebrow="Upload Mode"
-            detail="This path validates format, size, and file metadata, then hands off to the Perception pipeline scaffold without pretending analysis has already happened."
-            ctaLabel="Start Upload Flow"
+            badge="Video"
+            eyebrow="Upload"
+            detail="Pick a clip. Review results."
+            ctaLabel="Start Upload"
             icon={UploadCloud}
             onSelect={() => router.push(`/sessions/new?drillId=${drill.id}&mode=UPLOAD`)}
           />
@@ -235,10 +231,10 @@ function SessionCreationContent() {
 export default function NewSessionPage() {
   return (
     <AppShell
-      eyebrow="Session Launch"
-      title="Start a real training session"
-      description="Choose how the athlete will enter the execution flow for this drill."
-      capsule="Perception-ready"
+      eyebrow="Session"
+      title="Start session"
+      description="Choose how you want to train."
+      capsule="Ready"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Back to Sports</Link>

@@ -47,8 +47,8 @@ export function ModeCard({
             <h3 className="mt-3 font-display text-3xl font-bold text-white">
               {title}
             </h3>
-            <p className="mt-3 text-sm leading-7 text-white/85">{description}</p>
-            <p className="mt-4 text-sm leading-7 text-muted-gray">{detail}</p>
+            <p className="mt-3 text-sm text-white/85">{description}</p>
+            <p className="mt-4 text-sm text-muted-gray">{detail}</p>
           </div>
 
           <div className="mt-auto pt-8">
@@ -58,7 +58,7 @@ export function ModeCard({
               className="w-full justify-between rounded-2xl"
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Creating Session" : ctaLabel}
+              {isSubmitting ? "Creating" : ctaLabel}
             </CTAButton>
           </div>
         </div>

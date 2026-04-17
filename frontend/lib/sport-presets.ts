@@ -15,30 +15,30 @@ type SportPreset = {
 const sportPresets: Record<string, SportPreset> = {
   Gym: {
     label: "Gym",
-    subtitle: "Build strength, control, and movement quality",
+    subtitle: "Build strength and control",
     badge: "Mobility & Strength",
     category: "Strength base",
-    insight: "Pattern-driven lower and upper body mechanics.",
+    insight: "Strength and form.",
     icon: Dumbbell,
     glowClass: "from-primary/25 via-primary/5 to-transparent",
     surfaceClass: "before:bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.18),_transparent_40%)]"
   },
   Football: {
     label: "Football",
-    subtitle: "Improve striking, passing, and lower-body mechanics",
+    subtitle: "Sharpen striking and passing",
     badge: "Ball Control",
     category: "Field technique",
-    insight: "Plant foot control, hip rotation, and follow-through timing.",
+    insight: "Control and timing.",
     icon: Goal,
     glowClass: "from-primary/20 via-white/5 to-transparent",
     surfaceClass: "before:bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_36%)]"
   },
   Basketball: {
     label: "Basketball",
-    subtitle: "Refine shooting form, stance, and balance",
+    subtitle: "Refine shooting and stance",
     badge: "Form & Stance",
     category: "Shot mechanics",
-    insight: "Alignment, release control, and balanced defensive posture.",
+    insight: "Balance and release.",
     icon: Crosshair,
     glowClass: "from-primary/22 via-slate/20 to-transparent",
     surfaceClass: "before:bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_38%)]"
@@ -51,10 +51,10 @@ export function getSportPreset(sportName: string) {
   return (
     sportPresets[sportName] ?? {
       label: sportName,
-      subtitle: "Explore movement quality and training fundamentals",
+      subtitle: "Open drills and train",
       badge: "Training Focus",
       category: "Movement library",
-      insight: "Structured drills designed for performance consistency.",
+      insight: "Focused drill library.",
       icon: Crosshair,
       glowClass: "from-primary/20 via-white/5 to-transparent",
       surfaceClass:

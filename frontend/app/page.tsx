@@ -27,14 +27,14 @@ export default function HomePage() {
           TrainUp
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-muted-gray sm:text-xl">
-          AI-Powered Multi-Sport Coaching Platform
+          Multi-sport coaching
         </p>
         <Button
           asChild
           size="lg"
           className="mt-10 min-w-40 bg-primary text-primary-foreground shadow-glow transition-transform duration-300 hover:-translate-y-0.5 hover:bg-primary/90"
         >
-          <Link href="/signup">Get Started</Link>
+          <Link href="/signup">Start Training</Link>
         </Button>
       </motion.section>
     </main>

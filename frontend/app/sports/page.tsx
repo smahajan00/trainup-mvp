@@ -77,29 +77,27 @@ function SportsPageContent({ profile }: { profile: ProfileResponse | null }) {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_38%)]" />
           <div className="relative z-10">
             <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-              Sports Hub
+              Sports
             </p>
             <h2 className="mt-4 font-display text-3xl font-bold text-white">
-              Explore the sport-specific drill libraries
+              Browse by sport
             </h2>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-gray">
-              Each sport routes into a curated drill catalog with real seeded
-              drill definitions, technique descriptions, and analysis-ready
-              reference payloads.
+            <p className="mt-4 max-w-2xl text-sm text-muted-gray">
+              Pick a sport. Open its drills.
             </p>
           </div>
         </InfoCard>
         <InfoCard>
           <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-            Current athlete context
+            Your sport
           </p>
           <h3 className="mt-4 font-display text-2xl font-bold text-white">
             {profile ? profile.sport_name : "Profile not configured"}
           </h3>
-          <p className="mt-3 text-sm leading-7 text-muted-gray">
+          <p className="mt-3 text-sm text-muted-gray">
             {profile
-              ? "Your current profile sport is highlighted below so you can move faster into relevant drills."
-              : "Set your sport in the profile page to personalize dashboard shortcuts and shell context."}
+              ? "Your sport is highlighted below."
+              : "Set your sport to personalize this page."}
           </p>
           <div className="mt-6 flex gap-3">
             <CTAButton asChild className="rounded-2xl">
@@ -113,9 +111,9 @@ function SportsPageContent({ profile }: { profile: ProfileResponse | null }) {
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Available Sports"
-          title="Training categories"
-          description="Gym, Football, and Basketball are seeded into the platform today. Each card carries a sport-specific narrative and routes into its drill library."
+          eyebrow="Available"
+          title="Sport library"
+          description="Open Gym, Football, or Basketball."
         />
 
         {isLoading ? (
@@ -148,15 +146,13 @@ function SportsPageContent({ profile }: { profile: ProfileResponse | null }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-              Honest roadmap
+              Next
             </p>
             <h3 className="mt-4 font-display text-2xl font-bold text-white">
-              Drill browsing is live. Session analysis is next.
+              Review sessions after each upload
             </h3>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-gray">
-              The catalog is production-ready for demos and screenshots today.
-              Live analysis, upload-based review, and progress analytics will
-              layer on top of these drill definitions in later phases.
+            <p className="mt-3 max-w-2xl text-sm text-muted-gray">
+              Pick a drill to start.
             </p>
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
@@ -171,10 +167,10 @@ function SportsPageContent({ profile }: { profile: ProfileResponse | null }) {
 export default function SportsPage() {
   return (
     <AppShell
-      eyebrow="Sports Catalog"
-      title="Browse the TrainUp sports library"
-      description="Move through Gym, Football, and Basketball with a premium catalog view that feels like a serious training platform rather than a raw data listing."
-      capsule="Protected product route"
+      eyebrow="Catalog"
+      title="Browse sports"
+      description="Choose a sport and open drills."
+      capsule="Training"
       actions={
         <CTAButton asChild>
           <Link href="/dashboard">Back to Dashboard</Link>

@@ -10,9 +10,9 @@ export default function ProfilePage() {
   return (
     <AppShell
       eyebrow="Athlete Profile"
-      title="Configure the athlete context"
-      description="Keep sport, level, and physical context current so the dashboard, drill library, and future analysis layers stay grounded in the right athlete data."
-      capsule="Protected route"
+      title="Update your profile"
+      description="Set your sport, level, and body stats."
+      capsule="Profile"
       actions={
         <CTAButton asChild>
           <Link href="/dashboard">Back to Dashboard</Link>

@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "TrainUp",
-  description: "AI-Powered Multi-Sport Coaching Platform"
+  description: "Multi-sport coaching"
 };
 
 export default function RootLayout({

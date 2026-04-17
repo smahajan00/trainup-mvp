@@ -289,9 +289,7 @@ def test_upload_pipeline_persists_artifacts(client, db_session) -> None:
     assert payload["cognition_result"]["analysis_mode"] == "scaffold"
     assert payload["evaluation_result"]["evaluation_mode"] == "deterministic_scaffold"
     assert payload["session_summary"]["session_id"] == upload_session["id"]
-    assert payload["cognition_result"]["diagnostic_flags"][0].startswith(
-        "Scaffold cognition result"
-    )
+    assert payload["cognition_result"]["diagnostic_flags"][0] == "Clip review is ready."
     assert len(payload["feedback"]) == payload["evaluation_result"]["feedback_count"]
 
 
