@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_enable_enhancement: bool = False
     fuzzy_interpretation_enabled: bool = True
+    it2_fuzzy_enabled: bool = True
     backend_cors_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",

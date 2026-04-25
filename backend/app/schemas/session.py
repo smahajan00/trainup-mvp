@@ -413,6 +413,79 @@ class FuzzyInterpretationResult(APIBaseModel):
     created_at: datetime | None = None
 
 
+IT2FuzzyInterpretationStatus = Literal[
+    "COMPLETED",
+    "FAILED",
+    "NO_INTERPRETABLE_METRICS",
+    "DISABLED",
+]
+IT2UncertaintyCategory = Literal[
+    "LOW_UNCERTAINTY",
+    "MEDIUM_UNCERTAINTY",
+    "HIGH_UNCERTAINTY",
+    "NOT_INTERPRETABLE",
+]
+IT2_FUZZY_VERSION = "phase4e_v0_1_0"
+
+
+class IT2MembershipIntervalResponse(APIBaseModel):
+    lower: float = Field(ge=0, le=1)
+    upper: float = Field(ge=0, le=1)
+    width: float = Field(ge=0, le=1)
+
+
+class IT2HighestUncertaintyMetricResponse(APIBaseModel):
+    phase_id: str | None = None
+    metric_id: str | None = None
+    uncertainty_width: float | None = Field(default=None, ge=0, le=1)
+
+
+class IT2UncertaintySummaryResponse(APIBaseModel):
+    low_count: int = Field(ge=0)
+    medium_count: int = Field(ge=0)
+    high_count: int = Field(ge=0)
+    not_interpretable_count: int = Field(ge=0)
+    average_uncertainty_width: float = Field(ge=0, le=1)
+    highest_uncertainty_metric: IT2HighestUncertaintyMetricResponse
+    summary_text: str
+
+
+class IT2FuzzyMetricInterpretationResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str | None = None
+    metric_name: str
+    computation_status: ComputationStatus
+    deviation: float | None = Field(default=None, ge=0)
+    issue_direction: IssueDirection
+    severity_level: SeverityLevel
+    affected_body_part: str
+    type1_primary_label: FuzzyMetricLabel
+    type1_direction_aware_label: DirectionAwareFuzzyLabel
+    dominant_label_confidence: float | None = Field(default=None, ge=0, le=1)
+    uncertainty_width: float | None = Field(default=None, ge=0, le=1)
+    uncertainty_category: IT2UncertaintyCategory
+    interval_memberships: dict[FuzzyBaseLabel, IT2MembershipIntervalResponse] = Field(
+        default_factory=dict
+    )
+    primary_interval_label: FuzzyMetricLabel
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class IT2FuzzyInterpretationResult(APIBaseModel):
+    it2_fuzzy_version: str = IT2_FUZZY_VERSION
+    status: IT2FuzzyInterpretationStatus
+    session_id: UUID
+    sport_id: UUID
+    drill_id: UUID
+    skill_level: SkillLevel
+    it2_metric_results: list[IT2FuzzyMetricInterpretationResponse] = Field(
+        default_factory=list
+    )
+    uncertainty_summary: IT2UncertaintySummaryResponse
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
 PedagogicalDecisionStatus = Literal[
     "COMPLETED",
     "FAILED",
@@ -579,6 +652,7 @@ ArtifactType = Literal[
     "feedback_result",
     "llm_feedback_result",
     "fuzzy_interpretation_result",
+    "it2_fuzzy_interpretation_result",
     "pedagogical_decision_result",
     "ontology_reasoning_result",
     "choquet_aggregation_result",
@@ -612,6 +686,7 @@ class SessionArtifactsResponse(APIBaseModel):
     feedback_result: DeterministicFeedbackResult | None = None
     llm_feedback_result: LLMFeedbackResult | None = None
     fuzzy_interpretation_result: FuzzyInterpretationResult | None = None
+    it2_fuzzy_interpretation_result: IT2FuzzyInterpretationResult | None = None
     pedagogical_decision_result: PedagogicalDecisionResult | None = None
     ontology_reasoning_result: OntologyReasoningResult | None = None
     choquet_aggregation_result: ChoquetAggregationResult | None = None

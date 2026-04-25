@@ -38,6 +38,7 @@ from app.schemas.session import (
     FrameBatchRequest,
     FrameBatchResponse,
     FuzzyInterpretationResult,
+    IT2FuzzyInterpretationResult,
     LLMFeedbackResult,
     LiveEndRequest,
     LiveReadinessRequest,
@@ -57,6 +58,7 @@ from app.schemas.session import (
 from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
+from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
 from app.services.llm_feedback_service import LLMFeedbackService
 from app.services.choquet_aggregation_service import ChoquetAggregationService
 from app.services.ontology_reasoning_service import OntologyReasoningService
@@ -69,6 +71,7 @@ EVALUATION_ARTIFACT_TYPE = "evaluation_result"
 FEEDBACK_ARTIFACT_TYPE = "feedback_result"
 LLM_FEEDBACK_ARTIFACT_TYPE = "llm_feedback_result"
 FUZZY_INTERPRETATION_ARTIFACT_TYPE = "fuzzy_interpretation_result"
+IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE = "it2_fuzzy_interpretation_result"
 PEDAGOGICAL_ARTIFACT_TYPE = "pedagogical_decision_result"
 ONTOLOGY_REASONING_ARTIFACT_TYPE = "ontology_reasoning_result"
 CHOQUET_AGGREGATION_ARTIFACT_TYPE = "choquet_aggregation_result"
@@ -131,6 +134,7 @@ class SessionService:
     phase2a_evaluator: Phase2AEvaluator
     deterministic_feedback: DeterministicFeedbackService
     fuzzy_interpretation: FuzzyInterpretationService
+    it2_fuzzy_interpretation: IT2FuzzyInterpretationService
     llm_feedback: LLMFeedbackService
     pedagogical_decision: PedagogicalDecisionService
     ontology_reasoning: OntologyReasoningService
@@ -331,6 +335,7 @@ class SessionService:
         feedback_result = None
         llm_feedback_result = None
         fuzzy_interpretation_result = None
+        it2_fuzzy_interpretation_result = None
         pedagogical_decision_result = None
         ontology_reasoning_result = None
         choquet_aggregation_result = None
@@ -353,6 +358,10 @@ class SessionService:
                 llm_feedback_result = LLMFeedbackResult(**artifact.payload_json)
             elif artifact.artifact_type == FUZZY_INTERPRETATION_ARTIFACT_TYPE:
                 fuzzy_interpretation_result = FuzzyInterpretationResult(
+                    **artifact.payload_json
+                )
+            elif artifact.artifact_type == IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE:
+                it2_fuzzy_interpretation_result = IT2FuzzyInterpretationResult(
                     **artifact.payload_json
                 )
             elif artifact.artifact_type == PEDAGOGICAL_ARTIFACT_TYPE:
@@ -386,6 +395,7 @@ class SessionService:
             feedback_result=feedback_result,
             llm_feedback_result=llm_feedback_result,
             fuzzy_interpretation_result=fuzzy_interpretation_result,
+            it2_fuzzy_interpretation_result=it2_fuzzy_interpretation_result,
             pedagogical_decision_result=pedagogical_decision_result,
             ontology_reasoning_result=ontology_reasoning_result,
             choquet_aggregation_result=choquet_aggregation_result,
@@ -502,6 +512,73 @@ class SessionService:
             evaluation_result=evaluation_result,
         )
         self._persist_fuzzy_interpretation_result(
+            session_id=session.id,
+            result=result,
+        )
+        self.db.commit()
+        return result
+
+    def generate_it2_fuzzy_interpretation(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> IT2FuzzyInterpretationResult:
+        session = self._get_owned_session(user_id=user_id, session_id=session_id)
+        if not self.it2_fuzzy_interpretation.enabled:
+            result = self.it2_fuzzy_interpretation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["IT2_FUZZY_DISABLED"],
+                status="DISABLED",
+            )
+            self._persist_it2_fuzzy_interpretation_result(
+                session_id=session.id,
+                result=result,
+            )
+            self.db.commit()
+            return result
+
+        fuzzy_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+        )
+        if fuzzy_artifact is None:
+            result = self.it2_fuzzy_interpretation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MISSING_FUZZY_INTERPRETATION_RESULT"],
+            )
+            self._persist_it2_fuzzy_interpretation_result(
+                session_id=session.id,
+                result=result,
+            )
+            self.db.commit()
+            return result
+
+        try:
+            fuzzy_result = FuzzyInterpretationResult(**fuzzy_artifact.payload_json)
+        except Exception:
+            result = self.it2_fuzzy_interpretation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MALFORMED_FUZZY_INTERPRETATION_RESULT"],
+            )
+            self._persist_it2_fuzzy_interpretation_result(
+                session_id=session.id,
+                result=result,
+            )
+            self.db.commit()
+            return result
+
+        result = self.it2_fuzzy_interpretation.interpret(fuzzy_result=fuzzy_result)
+        self._persist_it2_fuzzy_interpretation_result(
             session_id=session.id,
             result=result,
         )
@@ -1090,6 +1167,7 @@ class SessionService:
                 FEEDBACK_ARTIFACT_TYPE,
                 LLM_FEEDBACK_ARTIFACT_TYPE,
                 FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+                IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE,
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
                 CHOQUET_AGGREGATION_ARTIFACT_TYPE,
@@ -1147,6 +1225,7 @@ class SessionService:
             session_id=session_id,
             artifact_types=[
                 FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+                IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
                 CHOQUET_AGGREGATION_ARTIFACT_TYPE,
             ],
@@ -1230,6 +1309,7 @@ class SessionService:
         self.artifacts.delete_by_session_and_types(
             session_id=session_id,
             artifact_types=[
+                IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE,
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
                 CHOQUET_AGGREGATION_ARTIFACT_TYPE,
@@ -1238,6 +1318,18 @@ class SessionService:
         self.artifacts.upsert(
             session_id=session_id,
             artifact_type=FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+            payload_json=result.model_dump(mode="json"),
+        )
+
+    def _persist_it2_fuzzy_interpretation_result(
+        self,
+        *,
+        session_id: UUID,
+        result: IT2FuzzyInterpretationResult,
+    ) -> None:
+        self.artifacts.upsert(
+            session_id=session_id,
+            artifact_type=IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE,
             payload_json=result.model_dump(mode="json"),
         )
 

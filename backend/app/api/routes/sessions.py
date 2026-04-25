@@ -13,6 +13,7 @@ from app.schemas.session import (
     FrameBatchRequest,
     FrameBatchResponse,
     FuzzyInterpretationResult,
+    IT2FuzzyInterpretationResult,
     LLMFeedbackResult,
     LiveEndRequest,
     LiveReadinessRequest,
@@ -111,6 +112,21 @@ def generate_fuzzy_session_interpretation(
     session_service: SessionService = Depends(get_session_service),
 ) -> FuzzyInterpretationResult:
     return session_service.generate_fuzzy_interpretation(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/interpret/it2-fuzzy",
+    response_model=IT2FuzzyInterpretationResult,
+)
+def generate_it2_fuzzy_session_interpretation(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> IT2FuzzyInterpretationResult:
+    return session_service.generate_it2_fuzzy_interpretation(
         user_id=current_user.id,
         session_id=session_id,
     )

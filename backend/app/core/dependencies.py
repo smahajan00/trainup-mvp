@@ -28,6 +28,7 @@ from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.drill_service import DrillService
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
+from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
 from app.services.choquet_aggregation_service import ChoquetAggregationService
 from app.services.llm_client import LLMProviderConfig, OpenAICompatibleLLMClient
 from app.services.llm_feedback_service import (
@@ -112,6 +113,10 @@ def get_fuzzy_interpretation_service() -> FuzzyInterpretationService:
     return FuzzyInterpretationService(enabled=settings.fuzzy_interpretation_enabled)
 
 
+def get_it2_fuzzy_interpretation_service() -> IT2FuzzyInterpretationService:
+    return IT2FuzzyInterpretationService(enabled=settings.it2_fuzzy_enabled)
+
+
 def get_pedagogical_decision_service() -> PedagogicalDecisionService:
     return PedagogicalDecisionService()
 
@@ -181,6 +186,9 @@ def get_session_service(
     fuzzy_interpretation: FuzzyInterpretationService = Depends(
         get_fuzzy_interpretation_service
     ),
+    it2_fuzzy_interpretation: IT2FuzzyInterpretationService = Depends(
+        get_it2_fuzzy_interpretation_service
+    ),
     llm_feedback: LLMFeedbackService = Depends(get_llm_feedback_service),
     pedagogical_decision: PedagogicalDecisionService = Depends(
         get_pedagogical_decision_service
@@ -207,6 +215,7 @@ def get_session_service(
         phase2a_evaluator=phase2a_evaluator,
         deterministic_feedback=deterministic_feedback,
         fuzzy_interpretation=fuzzy_interpretation,
+        it2_fuzzy_interpretation=it2_fuzzy_interpretation,
         llm_feedback=llm_feedback,
         pedagogical_decision=pedagogical_decision,
         ontology_reasoning=ontology_reasoning,
