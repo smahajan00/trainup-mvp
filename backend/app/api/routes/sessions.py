@@ -23,6 +23,7 @@ from app.schemas.session import (
     SessionCreateRequest,
     SessionArtifactsResponse,
     SessionResponse,
+    TemporalModelingResult,
     UploadProcessingResponse,
 )
 from app.services.session_service import SessionService
@@ -172,6 +173,21 @@ def generate_session_choquet_aggregation(
     session_service: SessionService = Depends(get_session_service),
 ) -> ChoquetAggregationResult:
     return session_service.generate_choquet_aggregation(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/model/temporal",
+    response_model=TemporalModelingResult,
+)
+def generate_session_temporal_modeling(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> TemporalModelingResult:
+    return session_service.generate_temporal_modeling(
         user_id=current_user.id,
         session_id=session_id,
     )

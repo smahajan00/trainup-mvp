@@ -41,6 +41,7 @@ from app.services.pedagogical_decision_service import PedagogicalDecisionService
 from app.services.profile_service import ProfileService
 from app.services.progress_service import ProgressService
 from app.services.session_service import SessionService
+from app.services.temporal_modeling_service import TemporalModelingService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -129,6 +130,10 @@ def get_choquet_aggregation_service() -> ChoquetAggregationService:
     return ChoquetAggregationService()
 
 
+def get_temporal_modeling_service() -> TemporalModelingService:
+    return TemporalModelingService()
+
+
 def get_llm_feedback_service() -> LLMFeedbackService:
     return LLMFeedbackService(
         llm_client=OpenAICompatibleLLMClient(),
@@ -199,6 +204,7 @@ def get_session_service(
     choquet_aggregation: ChoquetAggregationService = Depends(
         get_choquet_aggregation_service
     ),
+    temporal_modeling: TemporalModelingService = Depends(get_temporal_modeling_service),
 ) -> SessionService:
     return SessionService(
         db=db,
@@ -220,6 +226,7 @@ def get_session_service(
         pedagogical_decision=pedagogical_decision,
         ontology_reasoning=ontology_reasoning,
         choquet_aggregation=choquet_aggregation,
+        temporal_modeling=temporal_modeling,
     )
 
 

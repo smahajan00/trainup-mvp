@@ -53,6 +53,7 @@ from app.schemas.session import (
     SessionArtifactsResponse,
     SessionArtifactResponse,
     SessionResponse,
+    TemporalModelingResult,
     UploadProcessingResponse,
 )
 from app.services.capture_protocol_validator import CaptureProtocolValidator
@@ -63,6 +64,7 @@ from app.services.llm_feedback_service import LLMFeedbackService
 from app.services.choquet_aggregation_service import ChoquetAggregationService
 from app.services.ontology_reasoning_service import OntologyReasoningService
 from app.services.pedagogical_decision_service import PedagogicalDecisionService
+from app.services.temporal_modeling_service import TemporalModelingService
 from app.models.session_summary import SessionSummary
 
 PERCEPTION_ARTIFACT_TYPE = "perception_payload"
@@ -75,6 +77,7 @@ IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE = "it2_fuzzy_interpretation_result"
 PEDAGOGICAL_ARTIFACT_TYPE = "pedagogical_decision_result"
 ONTOLOGY_REASONING_ARTIFACT_TYPE = "ontology_reasoning_result"
 CHOQUET_AGGREGATION_ARTIFACT_TYPE = "choquet_aggregation_result"
+TEMPORAL_MODELING_ARTIFACT_TYPE = "temporal_modeling_result"
 POSE_SEQUENCE_ARTIFACT_TYPE = "pose_sequence"
 logger = logging.getLogger(__name__)
 
@@ -139,6 +142,7 @@ class SessionService:
     pedagogical_decision: PedagogicalDecisionService
     ontology_reasoning: OntologyReasoningService
     choquet_aggregation: ChoquetAggregationService
+    temporal_modeling: TemporalModelingService
 
     def create_session(self, *, user_id: UUID, payload: SessionCreateRequest) -> SessionResponse:
         drill = self.drills.get_by_id(payload.drill_id)
@@ -339,6 +343,7 @@ class SessionService:
         pedagogical_decision_result = None
         ontology_reasoning_result = None
         choquet_aggregation_result = None
+        temporal_modeling_result = None
 
         for artifact in artifacts:
             if artifact.artifact_type == POSE_SEQUENCE_ARTIFACT_TYPE:
@@ -376,6 +381,10 @@ class SessionService:
                 choquet_aggregation_result = ChoquetAggregationResult(
                     **artifact.payload_json
                 )
+            elif artifact.artifact_type == TEMPORAL_MODELING_ARTIFACT_TYPE:
+                temporal_modeling_result = TemporalModelingResult(
+                    **artifact.payload_json
+                )
 
         return SessionArtifactsResponse(
             artifacts=[
@@ -399,6 +408,7 @@ class SessionService:
             pedagogical_decision_result=pedagogical_decision_result,
             ontology_reasoning_result=ontology_reasoning_result,
             choquet_aggregation_result=choquet_aggregation_result,
+            temporal_modeling_result=temporal_modeling_result,
             session_summary=(
                 self._build_session_summary_response(session_summary)
                 if session_summary is not None
@@ -958,6 +968,135 @@ class SessionService:
         self.db.commit()
         return result
 
+    def generate_temporal_modeling(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> TemporalModelingResult:
+        session = self._get_owned_session(user_id=user_id, session_id=session_id)
+        pose_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=POSE_SEQUENCE_ARTIFACT_TYPE,
+        )
+        if pose_artifact is None:
+            result = self.temporal_modeling.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MISSING_POSE_SEQUENCE"],
+            )
+            self._persist_temporal_modeling_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        try:
+            pose_sequence = PoseSequenceResponse(**pose_artifact.payload_json)
+        except Exception:
+            result = self.temporal_modeling.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MALFORMED_POSE_SEQUENCE"],
+            )
+            self._persist_temporal_modeling_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        if pose_sequence.frame_count <= 0:
+            result = self.temporal_modeling.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["UNUSABLE_POSE_SEQUENCE", "POSE_SEQUENCE_EMPTY"],
+                status="INSUFFICIENT_DATA",
+            )
+            self._persist_temporal_modeling_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        evaluation_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=EVALUATION_ARTIFACT_TYPE,
+        )
+        if evaluation_artifact is None:
+            result = self.temporal_modeling.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MISSING_EVALUATION_RESULT"],
+            )
+            self._persist_temporal_modeling_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        try:
+            evaluation_result = DeterministicEvaluationResult(
+                **evaluation_artifact.payload_json
+            )
+        except Exception:
+            result = self.temporal_modeling.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MALFORMED_EVALUATION_RESULT"],
+            )
+            self._persist_temporal_modeling_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        if evaluation_result.status != "COMPLETED":
+            result = self.temporal_modeling.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=[
+                    "UNUSABLE_EVALUATION_RESULT",
+                    f"EVALUATION_STATUS:{evaluation_result.status}",
+                ],
+                status="INSUFFICIENT_DATA",
+            )
+            self._persist_temporal_modeling_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        fuzzy_result = None
+        fuzzy_diagnostic_flags: list[str] = []
+        fuzzy_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+        )
+        if fuzzy_artifact is None:
+            fuzzy_diagnostic_flags.append("MISSING_FUZZY_INTERPRETATION_RESULT")
+        else:
+            try:
+                fuzzy_result = FuzzyInterpretationResult(**fuzzy_artifact.payload_json)
+            except Exception:
+                fuzzy_diagnostic_flags.append("MALFORMED_FUZZY_INTERPRETATION_RESULT")
+
+        result = self.temporal_modeling.model(
+            pose_sequence=pose_sequence,
+            evaluation_result=evaluation_result,
+            fuzzy_result=fuzzy_result,
+        )
+        if fuzzy_diagnostic_flags:
+            result = result.model_copy(
+                update={
+                    "diagnostic_flags": self._dedupe_strings(
+                        [*result.diagnostic_flags, *fuzzy_diagnostic_flags]
+                    )
+                }
+            )
+        self._persist_temporal_modeling_result(session_id=session.id, result=result)
+        self.db.commit()
+        return result
+
     def generate_llm_feedback(
         self,
         *,
@@ -1171,6 +1310,7 @@ class SessionService:
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
                 CHOQUET_AGGREGATION_ARTIFACT_TYPE,
+                TEMPORAL_MODELING_ARTIFACT_TYPE,
             ],
         )
         self.feedback.delete_by_session_id(session_id=session_id)
@@ -1228,6 +1368,7 @@ class SessionService:
                 IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
                 CHOQUET_AGGREGATION_ARTIFACT_TYPE,
+                TEMPORAL_MODELING_ARTIFACT_TYPE,
             ],
         )
         self.artifacts.upsert(
@@ -1313,6 +1454,7 @@ class SessionService:
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
                 CHOQUET_AGGREGATION_ARTIFACT_TYPE,
+                TEMPORAL_MODELING_ARTIFACT_TYPE,
             ],
         )
         self.artifacts.upsert(
@@ -1374,6 +1516,18 @@ class SessionService:
         self.artifacts.upsert(
             session_id=session_id,
             artifact_type=CHOQUET_AGGREGATION_ARTIFACT_TYPE,
+            payload_json=result.model_dump(mode="json"),
+        )
+
+    def _persist_temporal_modeling_result(
+        self,
+        *,
+        session_id: UUID,
+        result: TemporalModelingResult,
+    ) -> None:
+        self.artifacts.upsert(
+            session_id=session_id,
+            artifact_type=TEMPORAL_MODELING_ARTIFACT_TYPE,
             payload_json=result.model_dump(mode="json"),
         )
 

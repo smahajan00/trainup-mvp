@@ -632,6 +632,59 @@ class ChoquetAggregationResult(APIBaseModel):
     created_at: datetime | None = None
 
 
+TemporalModelingStatus = Literal["COMPLETED", "FAILED", "INSUFFICIENT_DATA"]
+TemporalState = Literal[
+    "STABLE",
+    "CONTROLLED",
+    "RUSHED",
+    "JERKY",
+    "INCOMPLETE",
+    "UNCERTAIN",
+]
+TEMPORAL_MODEL_VERSION = "phase4f_v0_1_0"
+
+
+class TemporalPhaseResultResponse(APIBaseModel):
+    phase_id: str
+    frame_count: int = Field(ge=0)
+    phase_duration_ms: float = Field(ge=0)
+    valid_frame_ratio: float = Field(ge=0, le=1)
+    average_velocity_proxy: float = Field(ge=0, le=1)
+    smoothness_proxy: float = Field(ge=0, le=1)
+    acceleration_change_proxy: float = Field(ge=0, le=1)
+    temporal_state: TemporalState
+    state_confidence: float = Field(ge=0, le=1)
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class TemporalTransitionResultResponse(APIBaseModel):
+    from_phase: str
+    to_phase: str
+    transition_valid: bool
+    transition_gap_ms: float
+    phase_order_valid: bool
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class TemporalModelingResult(APIBaseModel):
+    temporal_model_version: str = TEMPORAL_MODEL_VERSION
+    status: TemporalModelingStatus
+    session_id: UUID
+    sport_id: UUID
+    drill_id: UUID
+    skill_level: SkillLevel
+    phase_temporal_results: list[TemporalPhaseResultResponse] = Field(
+        default_factory=list
+    )
+    transition_results: list[TemporalTransitionResultResponse] = Field(
+        default_factory=list
+    )
+    overall_temporal_state: TemporalState
+    temporal_summary: str
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
 class DrillEvaluationResult(APIBaseModel):
     evaluation_mode: Literal["deterministic_scaffold"]
     session_id: UUID
@@ -656,6 +709,7 @@ ArtifactType = Literal[
     "pedagogical_decision_result",
     "ontology_reasoning_result",
     "choquet_aggregation_result",
+    "temporal_modeling_result",
 ]
 
 
@@ -690,6 +744,7 @@ class SessionArtifactsResponse(APIBaseModel):
     pedagogical_decision_result: PedagogicalDecisionResult | None = None
     ontology_reasoning_result: OntologyReasoningResult | None = None
     choquet_aggregation_result: ChoquetAggregationResult | None = None
+    temporal_modeling_result: TemporalModelingResult | None = None
     session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
 
