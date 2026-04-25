@@ -476,6 +476,54 @@ class PedagogicalDecisionResult(APIBaseModel):
     created_at: datetime | None = None
 
 
+OntologyReasoningStatus = Literal[
+    "COMPLETED",
+    "FAILED",
+    "NO_SIGNIFICANT_ISSUES",
+]
+ONTOLOGY_REASONING_VERSION = "phase4c_v0_1_0"
+
+
+class OntologySeveritySummaryResponse(APIBaseModel):
+    severe_count: int = Field(ge=0)
+    moderate_count: int = Field(ge=0)
+
+
+class OntologyConceptGroupResponse(APIBaseModel):
+    metrics: list[str] = Field(default_factory=list)
+    phases: list[str] = Field(default_factory=list)
+    total_weight: float = Field(ge=0)
+    severity_summary: OntologySeveritySummaryResponse
+
+
+class OntologyBodyRegionSummaryResponse(APIBaseModel):
+    concepts: list[str] = Field(default_factory=list)
+    metrics: list[str] = Field(default_factory=list)
+    phases: list[str] = Field(default_factory=list)
+    total_weight: float = Field(ge=0)
+    severity_summary: OntologySeveritySummaryResponse
+
+
+class OntologyReasoningResult(APIBaseModel):
+    ontology_version: str = ONTOLOGY_REASONING_VERSION
+    status: OntologyReasoningStatus
+    session_id: UUID
+    sport_id: UUID
+    drill_id: UUID
+    skill_level: SkillLevel
+    primary_concept: str | None = None
+    secondary_concepts: list[str] = Field(default_factory=list)
+    concept_groups: dict[str, OntologyConceptGroupResponse] = Field(
+        default_factory=dict
+    )
+    body_region_summary: dict[str, OntologyBodyRegionSummaryResponse] = Field(
+        default_factory=dict
+    )
+    reasoning_summary: str
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
 class DrillEvaluationResult(APIBaseModel):
     evaluation_mode: Literal["deterministic_scaffold"]
     session_id: UUID
@@ -497,6 +545,7 @@ ArtifactType = Literal[
     "llm_feedback_result",
     "fuzzy_interpretation_result",
     "pedagogical_decision_result",
+    "ontology_reasoning_result",
 ]
 
 
@@ -528,6 +577,7 @@ class SessionArtifactsResponse(APIBaseModel):
     llm_feedback_result: LLMFeedbackResult | None = None
     fuzzy_interpretation_result: FuzzyInterpretationResult | None = None
     pedagogical_decision_result: PedagogicalDecisionResult | None = None
+    ontology_reasoning_result: OntologyReasoningResult | None = None
     session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
 

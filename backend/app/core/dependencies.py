@@ -34,6 +34,7 @@ from app.services.llm_feedback_service import (
     LLMFeedbackPromptBuilder,
     LLMFeedbackService,
 )
+from app.services.ontology_reasoning_service import OntologyReasoningService
 from app.services.pedagogical_decision_service import PedagogicalDecisionService
 from app.services.profile_service import ProfileService
 from app.services.progress_service import ProgressService
@@ -114,6 +115,10 @@ def get_pedagogical_decision_service() -> PedagogicalDecisionService:
     return PedagogicalDecisionService()
 
 
+def get_ontology_reasoning_service() -> OntologyReasoningService:
+    return OntologyReasoningService()
+
+
 def get_llm_feedback_service() -> LLMFeedbackService:
     return LLMFeedbackService(
         llm_client=OpenAICompatibleLLMClient(),
@@ -175,6 +180,9 @@ def get_session_service(
     pedagogical_decision: PedagogicalDecisionService = Depends(
         get_pedagogical_decision_service
     ),
+    ontology_reasoning: OntologyReasoningService = Depends(
+        get_ontology_reasoning_service
+    ),
 ) -> SessionService:
     return SessionService(
         db=db,
@@ -193,6 +201,7 @@ def get_session_service(
         fuzzy_interpretation=fuzzy_interpretation,
         llm_feedback=llm_feedback,
         pedagogical_decision=pedagogical_decision,
+        ontology_reasoning=ontology_reasoning,
     )
 
 

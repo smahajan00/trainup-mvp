@@ -16,6 +16,7 @@ from app.schemas.session import (
     LiveEndRequest,
     LiveReadinessRequest,
     LiveStartResponse,
+    OntologyReasoningResult,
     PedagogicalDecisionResult,
     SessionCreateRequest,
     SessionArtifactsResponse,
@@ -124,6 +125,21 @@ def generate_session_pedagogy(
     session_service: SessionService = Depends(get_session_service),
 ) -> PedagogicalDecisionResult:
     return session_service.generate_pedagogical_decision(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/ontology",
+    response_model=OntologyReasoningResult,
+)
+def generate_session_ontology_reasoning(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> OntologyReasoningResult:
+    return session_service.generate_ontology_reasoning(
         user_id=current_user.id,
         session_id=session_id,
     )
