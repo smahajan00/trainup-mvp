@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from app.core.dependencies import get_current_user, get_session_service
 from app.models.user import User
 from app.schemas.session import (
+    ChoquetAggregationResult,
     DeterministicEvaluationResult,
     DeterministicFeedbackResult,
     FrameBatchRequest,
@@ -140,6 +141,21 @@ def generate_session_ontology_reasoning(
     session_service: SessionService = Depends(get_session_service),
 ) -> OntologyReasoningResult:
     return session_service.generate_ontology_reasoning(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/aggregate/choquet",
+    response_model=ChoquetAggregationResult,
+)
+def generate_session_choquet_aggregation(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> ChoquetAggregationResult:
+    return session_service.generate_choquet_aggregation(
         user_id=current_user.id,
         session_id=session_id,
     )

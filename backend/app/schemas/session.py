@@ -524,6 +524,41 @@ class OntologyReasoningResult(APIBaseModel):
     created_at: datetime | None = None
 
 
+ChoquetAggregationStatus = Literal[
+    "COMPLETED",
+    "FAILED",
+    "NO_ACTIONABLE_ISSUES",
+]
+CHOQUET_AGGREGATION_VERSION = "phase4d_v0_1_0"
+
+
+class ChoquetAggregatedGroupResponse(APIBaseModel):
+    concepts: list[str] = Field(default_factory=list)
+    input_values: dict[str, float] = Field(default_factory=dict)
+    choquet_score: float = Field(ge=0, le=1)
+    interaction_detected: bool
+    explanation: str
+
+
+class ChoquetAggregationResult(APIBaseModel):
+    choquet_version: str = CHOQUET_AGGREGATION_VERSION
+    status: ChoquetAggregationStatus
+    session_id: UUID
+    sport_id: UUID
+    drill_id: UUID
+    skill_level: SkillLevel
+    concept_aggregation: dict[str, ChoquetAggregatedGroupResponse] = Field(
+        default_factory=dict
+    )
+    body_region_aggregation: dict[str, ChoquetAggregatedGroupResponse] = Field(
+        default_factory=dict
+    )
+    overall_choquet_score: float = Field(ge=0, le=1)
+    dominant_interaction_group: str | None = None
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
 class DrillEvaluationResult(APIBaseModel):
     evaluation_mode: Literal["deterministic_scaffold"]
     session_id: UUID
@@ -546,6 +581,7 @@ ArtifactType = Literal[
     "fuzzy_interpretation_result",
     "pedagogical_decision_result",
     "ontology_reasoning_result",
+    "choquet_aggregation_result",
 ]
 
 
@@ -578,6 +614,7 @@ class SessionArtifactsResponse(APIBaseModel):
     fuzzy_interpretation_result: FuzzyInterpretationResult | None = None
     pedagogical_decision_result: PedagogicalDecisionResult | None = None
     ontology_reasoning_result: OntologyReasoningResult | None = None
+    choquet_aggregation_result: ChoquetAggregationResult | None = None
     session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
 

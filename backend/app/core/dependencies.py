@@ -28,6 +28,7 @@ from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.drill_service import DrillService
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
+from app.services.choquet_aggregation_service import ChoquetAggregationService
 from app.services.llm_client import LLMProviderConfig, OpenAICompatibleLLMClient
 from app.services.llm_feedback_service import (
     CoachingContextBuilder,
@@ -119,6 +120,10 @@ def get_ontology_reasoning_service() -> OntologyReasoningService:
     return OntologyReasoningService()
 
 
+def get_choquet_aggregation_service() -> ChoquetAggregationService:
+    return ChoquetAggregationService()
+
+
 def get_llm_feedback_service() -> LLMFeedbackService:
     return LLMFeedbackService(
         llm_client=OpenAICompatibleLLMClient(),
@@ -183,6 +188,9 @@ def get_session_service(
     ontology_reasoning: OntologyReasoningService = Depends(
         get_ontology_reasoning_service
     ),
+    choquet_aggregation: ChoquetAggregationService = Depends(
+        get_choquet_aggregation_service
+    ),
 ) -> SessionService:
     return SessionService(
         db=db,
@@ -202,6 +210,7 @@ def get_session_service(
         llm_feedback=llm_feedback,
         pedagogical_decision=pedagogical_decision,
         ontology_reasoning=ontology_reasoning,
+        choquet_aggregation=choquet_aggregation,
     )
 
 

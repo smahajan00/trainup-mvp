@@ -29,6 +29,7 @@ from app.repositories.session_repository import SessionRepository
 from app.repositories.session_summary_repository import SessionSummaryRepository
 from app.schemas.progress import SessionSummaryResponse
 from app.schemas.session import (
+    ChoquetAggregationResult,
     CognitionResult,
     DeterministicEvaluationResult,
     DeterministicFeedbackItemResponse,
@@ -57,6 +58,7 @@ from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
 from app.services.llm_feedback_service import LLMFeedbackService
+from app.services.choquet_aggregation_service import ChoquetAggregationService
 from app.services.ontology_reasoning_service import OntologyReasoningService
 from app.services.pedagogical_decision_service import PedagogicalDecisionService
 from app.models.session_summary import SessionSummary
@@ -69,6 +71,7 @@ LLM_FEEDBACK_ARTIFACT_TYPE = "llm_feedback_result"
 FUZZY_INTERPRETATION_ARTIFACT_TYPE = "fuzzy_interpretation_result"
 PEDAGOGICAL_ARTIFACT_TYPE = "pedagogical_decision_result"
 ONTOLOGY_REASONING_ARTIFACT_TYPE = "ontology_reasoning_result"
+CHOQUET_AGGREGATION_ARTIFACT_TYPE = "choquet_aggregation_result"
 POSE_SEQUENCE_ARTIFACT_TYPE = "pose_sequence"
 logger = logging.getLogger(__name__)
 
@@ -131,6 +134,7 @@ class SessionService:
     llm_feedback: LLMFeedbackService
     pedagogical_decision: PedagogicalDecisionService
     ontology_reasoning: OntologyReasoningService
+    choquet_aggregation: ChoquetAggregationService
 
     def create_session(self, *, user_id: UUID, payload: SessionCreateRequest) -> SessionResponse:
         drill = self.drills.get_by_id(payload.drill_id)
@@ -329,6 +333,7 @@ class SessionService:
         fuzzy_interpretation_result = None
         pedagogical_decision_result = None
         ontology_reasoning_result = None
+        choquet_aggregation_result = None
 
         for artifact in artifacts:
             if artifact.artifact_type == POSE_SEQUENCE_ARTIFACT_TYPE:
@@ -358,6 +363,10 @@ class SessionService:
                 ontology_reasoning_result = OntologyReasoningResult(
                     **artifact.payload_json
                 )
+            elif artifact.artifact_type == CHOQUET_AGGREGATION_ARTIFACT_TYPE:
+                choquet_aggregation_result = ChoquetAggregationResult(
+                    **artifact.payload_json
+                )
 
         return SessionArtifactsResponse(
             artifacts=[
@@ -379,6 +388,7 @@ class SessionService:
             fuzzy_interpretation_result=fuzzy_interpretation_result,
             pedagogical_decision_result=pedagogical_decision_result,
             ontology_reasoning_result=ontology_reasoning_result,
+            choquet_aggregation_result=choquet_aggregation_result,
             session_summary=(
                 self._build_session_summary_response(session_summary)
                 if session_summary is not None
@@ -741,6 +751,136 @@ class SessionService:
         self.db.commit()
         return result
 
+    def generate_choquet_aggregation(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> ChoquetAggregationResult:
+        session = self._get_owned_session(user_id=user_id, session_id=session_id)
+        evaluation_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=EVALUATION_ARTIFACT_TYPE,
+        )
+        if evaluation_artifact is None:
+            result = self.choquet_aggregation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MISSING_EVALUATION_RESULT"],
+            )
+            self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        try:
+            evaluation_result = DeterministicEvaluationResult(
+                **evaluation_artifact.payload_json
+            )
+        except Exception:
+            result = self.choquet_aggregation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MALFORMED_EVALUATION_RESULT"],
+            )
+            self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        if evaluation_result.status != "COMPLETED":
+            result = self.choquet_aggregation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=[
+                    "UNUSABLE_EVALUATION_RESULT",
+                    f"EVALUATION_STATUS:{evaluation_result.status}",
+                ],
+            )
+            self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        ontology_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=ONTOLOGY_REASONING_ARTIFACT_TYPE,
+        )
+        if ontology_artifact is None:
+            result = self.choquet_aggregation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MISSING_ONTOLOGY_REASONING_RESULT"],
+            )
+            self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        try:
+            ontology_result = OntologyReasoningResult(**ontology_artifact.payload_json)
+        except Exception:
+            result = self.choquet_aggregation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=["MALFORMED_ONTOLOGY_REASONING_RESULT"],
+            )
+            self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        if ontology_result.status not in {"COMPLETED", "NO_SIGNIFICANT_ISSUES"}:
+            result = self.choquet_aggregation.build_failure_result(
+                session_id=session.id,
+                sport_id=session.drill.sport_id,
+                drill_id=session.drill_id,
+                skill_level=session.skill_level,
+                diagnostic_flags=[
+                    "UNUSABLE_ONTOLOGY_REASONING_RESULT",
+                    f"ONTOLOGY_STATUS:{ontology_result.status}",
+                ],
+            )
+            self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+            self.db.commit()
+            return result
+
+        fuzzy_result = None
+        fuzzy_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session.id,
+            artifact_type=FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+        )
+        fuzzy_diagnostic_flags: list[str] = []
+        if fuzzy_artifact is None:
+            fuzzy_diagnostic_flags.append("MISSING_FUZZY_INTERPRETATION_RESULT")
+        else:
+            try:
+                fuzzy_result = FuzzyInterpretationResult(**fuzzy_artifact.payload_json)
+            except Exception:
+                fuzzy_diagnostic_flags.append("MALFORMED_FUZZY_INTERPRETATION_RESULT")
+
+        result = self.choquet_aggregation.aggregate(
+            evaluation_result=evaluation_result,
+            ontology_result=ontology_result,
+            fuzzy_result=fuzzy_result,
+        )
+        if fuzzy_diagnostic_flags:
+            result = result.model_copy(
+                update={
+                    "diagnostic_flags": self._dedupe_strings(
+                        [*result.diagnostic_flags, *fuzzy_diagnostic_flags]
+                    )
+                }
+            )
+        self._persist_choquet_aggregation_result(session_id=session.id, result=result)
+        self.db.commit()
+        return result
+
     def generate_llm_feedback(
         self,
         *,
@@ -952,6 +1092,7 @@ class SessionService:
                 FUZZY_INTERPRETATION_ARTIFACT_TYPE,
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
+                CHOQUET_AGGREGATION_ARTIFACT_TYPE,
             ],
         )
         self.feedback.delete_by_session_id(session_id=session_id)
@@ -1007,6 +1148,7 @@ class SessionService:
             artifact_types=[
                 FUZZY_INTERPRETATION_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
+                CHOQUET_AGGREGATION_ARTIFACT_TYPE,
             ],
         )
         self.artifacts.upsert(
@@ -1090,6 +1232,7 @@ class SessionService:
             artifact_types=[
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
+                CHOQUET_AGGREGATION_ARTIFACT_TYPE,
             ],
         )
         self.artifacts.upsert(
@@ -1120,9 +1263,25 @@ class SessionService:
         session_id: UUID,
         result: OntologyReasoningResult,
     ) -> None:
+        self.artifacts.delete_by_session_and_types(
+            session_id=session_id,
+            artifact_types=[CHOQUET_AGGREGATION_ARTIFACT_TYPE],
+        )
         self.artifacts.upsert(
             session_id=session_id,
             artifact_type=ONTOLOGY_REASONING_ARTIFACT_TYPE,
+            payload_json=result.model_dump(mode="json"),
+        )
+
+    def _persist_choquet_aggregation_result(
+        self,
+        *,
+        session_id: UUID,
+        result: ChoquetAggregationResult,
+    ) -> None:
+        self.artifacts.upsert(
+            session_id=session_id,
+            artifact_type=CHOQUET_AGGREGATION_ARTIFACT_TYPE,
             payload_json=result.model_dump(mode="json"),
         )
 
