@@ -70,6 +70,7 @@ def test_get_drill_detail_success(client, db_session) -> None:
     assert payload["coaching_rules"]["thresholds"] == drill.coaching_rules["thresholds"]
     assert payload["coaching_rules"]["rule_checks"] == drill.coaching_rules["rule_checks"]
     assert set(payload["reference_payload"].keys()) == {
+        "capture_protocol",
         "movement_type",
         "phases",
         "tracked_joints",

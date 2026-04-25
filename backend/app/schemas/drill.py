@@ -14,7 +14,14 @@ class DrillReferenceRangeResponse(APIBaseModel):
     max: float
 
 
+class DrillCaptureProtocolResponse(APIBaseModel):
+    required: bool
+    allowed_camera_views: list[str]
+    canonical_view: str
+
+
 class DrillReferencePayloadResponse(APIBaseModel):
+    capture_protocol: DrillCaptureProtocolResponse | None = None
     movement_type: str
     phases: list[str]
     tracked_joints: list[str]
