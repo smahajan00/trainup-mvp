@@ -1109,10 +1109,54 @@ class SessionService:
             session=session,
             evaluation_result=evaluation_result,
         )
+        advanced_context_flags: list[str] = []
+        fuzzy_result = self._load_optional_artifact_result(
+            session_id=session.id,
+            artifact_type=FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+            schema_cls=FuzzyInterpretationResult,
+            diagnostic_flags=advanced_context_flags,
+        )
+        it2_fuzzy_result = self._load_optional_artifact_result(
+            session_id=session.id,
+            artifact_type=IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE,
+            schema_cls=IT2FuzzyInterpretationResult,
+            diagnostic_flags=advanced_context_flags,
+        )
+        pedagogical_result = self._load_optional_artifact_result(
+            session_id=session.id,
+            artifact_type=PEDAGOGICAL_ARTIFACT_TYPE,
+            schema_cls=PedagogicalDecisionResult,
+            diagnostic_flags=advanced_context_flags,
+        )
+        ontology_result = self._load_optional_artifact_result(
+            session_id=session.id,
+            artifact_type=ONTOLOGY_REASONING_ARTIFACT_TYPE,
+            schema_cls=OntologyReasoningResult,
+            diagnostic_flags=advanced_context_flags,
+        )
+        choquet_result = self._load_optional_artifact_result(
+            session_id=session.id,
+            artifact_type=CHOQUET_AGGREGATION_ARTIFACT_TYPE,
+            schema_cls=ChoquetAggregationResult,
+            diagnostic_flags=advanced_context_flags,
+        )
+        temporal_result = self._load_optional_artifact_result(
+            session_id=session.id,
+            artifact_type=TEMPORAL_MODELING_ARTIFACT_TYPE,
+            schema_cls=TemporalModelingResult,
+            diagnostic_flags=advanced_context_flags,
+        )
         result = self.llm_feedback.enhance(
             session=session,
             evaluation_result=evaluation_result,
             feedback_result=feedback_result,
+            fuzzy_result=fuzzy_result,
+            it2_fuzzy_result=it2_fuzzy_result,
+            pedagogical_result=pedagogical_result,
+            ontology_result=ontology_result,
+            choquet_result=choquet_result,
+            temporal_result=temporal_result,
+            context_diagnostic_flags=advanced_context_flags,
         )
         self._persist_llm_feedback_result(session_id=session.id, result=result)
         self.db.commit()
@@ -1565,6 +1609,28 @@ class SessionService:
                 session=session,
                 diagnostic_flags=["MALFORMED_EVALUATION_RESULT"],
             )
+
+    def _load_optional_artifact_result(
+        self,
+        *,
+        session_id: UUID,
+        artifact_type: str,
+        schema_cls,
+        diagnostic_flags: list[str],
+    ):
+        artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=artifact_type,
+        )
+        if artifact is None:
+            diagnostic_flags.append(f"ADVANCED_CONTEXT_MISSING:{artifact_type}")
+            return None
+
+        try:
+            return schema_cls(**artifact.payload_json)
+        except Exception:
+            diagnostic_flags.append(f"ADVANCED_CONTEXT_MALFORMED:{artifact_type}")
+            return None
 
     def _load_or_generate_feedback_result(
         self,

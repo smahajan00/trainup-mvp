@@ -8,14 +8,20 @@ from typing import Any
 from app.models.enums import SeverityLevel
 from app.models.training_session import TrainingSession
 from app.schemas.session import (
+    ChoquetAggregationResult,
     DeterministicEvaluationResult,
     DeterministicFeedbackItemResponse,
     DeterministicFeedbackResult,
+    FuzzyInterpretationResult,
+    IT2FuzzyInterpretationResult,
     LLMEnhancedFeedbackItemResponse,
     LLMEnhancedSessionSummaryResponse,
     LLMFeedbackResult,
     LLM_FEEDBACK_VERSION,
     MetricEvaluationResultResponse,
+    OntologyReasoningResult,
+    PedagogicalDecisionResult,
+    TemporalModelingResult,
 )
 from app.services.llm_client import LLMClient, LLMClientError, LLMMessage, LLMProviderConfig
 
@@ -49,6 +55,7 @@ class CoachingIssueContext:
     deterministic_improvement_suggestion: str
     strongest_area: str | None
     weakest_area: str | None
+    advanced_reasoning_context: dict[str, Any]
     diagnostic_flags: list[str]
 
 
@@ -68,6 +75,7 @@ class CoachingSummaryContext:
     strongest_area: str | None
     weakest_area: str | None
     improvement_suggestions: list[str]
+    advanced_reasoning_context: dict[str, Any]
     diagnostic_flags: list[str]
 
 
@@ -75,6 +83,9 @@ class CoachingSummaryContext:
 class CoachingContext:
     issue_contexts: list[CoachingIssueContext]
     summary_context: CoachingSummaryContext
+    advanced_context_used: bool
+    advanced_context_sources: list[str]
+    context_diagnostic_flags: list[str]
 
 
 @dataclass(frozen=True)
@@ -85,10 +96,33 @@ class CoachingContextBuilder:
         session: TrainingSession,
         evaluation_result: DeterministicEvaluationResult,
         feedback_result: DeterministicFeedbackResult,
+        fuzzy_result: FuzzyInterpretationResult | None = None,
+        it2_fuzzy_result: IT2FuzzyInterpretationResult | None = None,
+        pedagogical_result: PedagogicalDecisionResult | None = None,
+        ontology_result: OntologyReasoningResult | None = None,
+        choquet_result: ChoquetAggregationResult | None = None,
+        temporal_result: TemporalModelingResult | None = None,
+        context_diagnostic_flags: list[str] | None = None,
     ) -> CoachingContext:
         metric_results = self._metric_results_by_key(evaluation_result)
         strongest_area = self._ranked_metric_label(evaluation_result.strongest_metrics[:1])
         weakest_area = self._ranked_metric_label(evaluation_result.weakest_metrics[:1])
+        context_sources, advanced_context_flags = self._resolve_advanced_context_status(
+            fuzzy_result=fuzzy_result,
+            it2_fuzzy_result=it2_fuzzy_result,
+            pedagogical_result=pedagogical_result,
+            ontology_result=ontology_result,
+            choquet_result=choquet_result,
+            temporal_result=temporal_result,
+            existing_flags=context_diagnostic_flags or [],
+        )
+        fuzzy_index = self._fuzzy_index(fuzzy_result)
+        it2_index = self._it2_index(it2_fuzzy_result)
+        pedagogy_index = self._pedagogy_index(pedagogical_result)
+        ontology_metric_concepts = self._ontology_metric_concepts(ontology_result)
+        ontology_metric_regions = self._ontology_metric_regions(ontology_result)
+        choquet_groups = choquet_result.concept_aggregation if choquet_result is not None else {}
+        temporal_phase_index = self._temporal_phase_index(temporal_result)
         issue_contexts = [
             self._build_issue_context(
                 session=session,
@@ -99,6 +133,27 @@ class CoachingContextBuilder:
                 ),
                 strongest_area=strongest_area,
                 weakest_area=weakest_area,
+                fuzzy_metric=fuzzy_index.get(
+                    (feedback_item.phase_id, feedback_item.metric_id or feedback_item.metric_name)
+                ),
+                it2_metric=it2_index.get(
+                    (feedback_item.phase_id, feedback_item.metric_id or feedback_item.metric_name)
+                ),
+                pedagogical_focus=pedagogy_index.get(
+                    (feedback_item.phase_id, feedback_item.metric_id or feedback_item.metric_name)
+                ),
+                ontology_result=ontology_result,
+                metric_concepts=ontology_metric_concepts.get(
+                    feedback_item.metric_id or feedback_item.metric_name,
+                    set(),
+                ),
+                metric_region=ontology_metric_regions.get(
+                    feedback_item.metric_id or feedback_item.metric_name
+                ),
+                choquet_groups=choquet_groups,
+                temporal_phase=temporal_phase_index.get(feedback_item.phase_id),
+                pedagogical_result=pedagogical_result,
+                temporal_result=temporal_result,
             )
             for feedback_item in feedback_result.prioritized_feedback_items
         ]
@@ -112,7 +167,17 @@ class CoachingContextBuilder:
                 issue_contexts=issue_contexts,
                 strongest_area=strongest_area,
                 weakest_area=weakest_area,
+                fuzzy_result=fuzzy_result,
+                it2_fuzzy_result=it2_fuzzy_result,
+                pedagogical_result=pedagogical_result,
+                ontology_result=ontology_result,
+                choquet_result=choquet_result,
+                temporal_result=temporal_result,
+                ontology_metric_regions=ontology_metric_regions,
             ),
+            advanced_context_used=bool(context_sources),
+            advanced_context_sources=context_sources,
+            context_diagnostic_flags=self._dedupe(advanced_context_flags),
         )
 
     @staticmethod
@@ -126,8 +191,8 @@ class CoachingContextBuilder:
                 indexed[(metric.phase_id, metric_key)] = metric
         return indexed
 
-    @staticmethod
     def _build_issue_context(
+        self,
         *,
         session: TrainingSession,
         evaluation_result: DeterministicEvaluationResult,
@@ -135,6 +200,16 @@ class CoachingContextBuilder:
         metric_result: MetricEvaluationResultResponse | None,
         strongest_area: str | None,
         weakest_area: str | None,
+        fuzzy_metric: Any | None,
+        it2_metric: Any | None,
+        pedagogical_focus: Any | None,
+        ontology_result: OntologyReasoningResult | None,
+        metric_concepts: set[str],
+        metric_region: str | None,
+        choquet_groups: dict[str, Any],
+        temporal_phase: Any | None,
+        pedagogical_result: PedagogicalDecisionResult | None,
+        temporal_result: TemporalModelingResult | None,
     ) -> CoachingIssueContext:
         sport = session.drill.sport if session.drill is not None else None
         return CoachingIssueContext(
@@ -162,11 +237,23 @@ class CoachingContextBuilder:
             deterministic_improvement_suggestion=feedback_item.improvement_suggestion,
             strongest_area=strongest_area,
             weakest_area=weakest_area,
+            advanced_reasoning_context=self._build_issue_advanced_context(
+                fuzzy_metric=fuzzy_metric,
+                it2_metric=it2_metric,
+                pedagogical_focus=pedagogical_focus,
+                pedagogical_result=pedagogical_result,
+                ontology_result=ontology_result,
+                metric_concepts=metric_concepts,
+                metric_region=metric_region,
+                choquet_groups=choquet_groups,
+                temporal_phase=temporal_phase,
+                temporal_result=temporal_result,
+            ),
             diagnostic_flags=evaluation_result.diagnostic_flags,
         )
 
-    @staticmethod
     def _build_summary_context(
+        self,
         *,
         session: TrainingSession,
         evaluation_result: DeterministicEvaluationResult,
@@ -174,6 +261,13 @@ class CoachingContextBuilder:
         issue_contexts: list[CoachingIssueContext],
         strongest_area: str | None,
         weakest_area: str | None,
+        fuzzy_result: FuzzyInterpretationResult | None,
+        it2_fuzzy_result: IT2FuzzyInterpretationResult | None,
+        pedagogical_result: PedagogicalDecisionResult | None,
+        ontology_result: OntologyReasoningResult | None,
+        choquet_result: ChoquetAggregationResult | None,
+        temporal_result: TemporalModelingResult | None,
+        ontology_metric_regions: dict[str, str],
     ) -> CoachingSummaryContext:
         sport = session.drill.sport if session.drill is not None else None
         top_issue = asdict(issue_contexts[0]) if issue_contexts else None
@@ -193,6 +287,16 @@ class CoachingContextBuilder:
             strongest_area=strongest_area,
             weakest_area=weakest_area,
             improvement_suggestions=feedback_result.improvement_suggestions,
+            advanced_reasoning_context=self._build_summary_advanced_context(
+                issue_contexts=issue_contexts,
+                fuzzy_result=fuzzy_result,
+                it2_fuzzy_result=it2_fuzzy_result,
+                pedagogical_result=pedagogical_result,
+                ontology_result=ontology_result,
+                choquet_result=choquet_result,
+                temporal_result=temporal_result,
+                ontology_metric_regions=ontology_metric_regions,
+            ),
             diagnostic_flags=(
                 evaluation_result.diagnostic_flags + feedback_result.diagnostic_flags
             ),
@@ -204,6 +308,373 @@ class CoachingContextBuilder:
             return None
         metric = ranked_metrics[0]
         return f"{metric.metric_name} in {metric.phase_id}"
+
+    @staticmethod
+    def _fuzzy_index(
+        fuzzy_result: FuzzyInterpretationResult | None,
+    ) -> dict[tuple[str, str], Any]:
+        if fuzzy_result is None or fuzzy_result.status not in {
+            "COMPLETED",
+            "NO_INTERPRETABLE_METRICS",
+        }:
+            return {}
+        return {
+            (metric.phase_id, metric.metric_id or metric.metric_name): metric
+            for metric in fuzzy_result.fuzzy_metric_results
+        }
+
+    @staticmethod
+    def _it2_index(
+        it2_fuzzy_result: IT2FuzzyInterpretationResult | None,
+    ) -> dict[tuple[str, str], Any]:
+        if it2_fuzzy_result is None or it2_fuzzy_result.status not in {
+            "COMPLETED",
+            "NO_INTERPRETABLE_METRICS",
+            "DISABLED",
+        }:
+            return {}
+        return {
+            (metric.phase_id, metric.metric_id or metric.metric_name): metric
+            for metric in it2_fuzzy_result.it2_metric_results
+        }
+
+    @staticmethod
+    def _pedagogy_index(
+        pedagogical_result: PedagogicalDecisionResult | None,
+    ) -> dict[tuple[str, str], Any]:
+        if pedagogical_result is None or pedagogical_result.status != "COMPLETED":
+            return {}
+        return {
+            (item.phase_id, item.metric_id or item.metric_name): item
+            for item in pedagogical_result.selected_focus_items
+        }
+
+    @staticmethod
+    def _ontology_metric_concepts(
+        ontology_result: OntologyReasoningResult | None,
+    ) -> dict[str, set[str]]:
+        if ontology_result is None or ontology_result.status not in {
+            "COMPLETED",
+            "NO_SIGNIFICANT_ISSUES",
+        }:
+            return {}
+        concepts_by_metric: dict[str, set[str]] = {}
+        for concept, group in ontology_result.concept_groups.items():
+            for metric_id in group.metrics:
+                concepts_by_metric.setdefault(metric_id, set()).add(concept)
+        return concepts_by_metric
+
+    @staticmethod
+    def _ontology_metric_regions(
+        ontology_result: OntologyReasoningResult | None,
+    ) -> dict[str, str]:
+        if ontology_result is None:
+            return {}
+        region_by_metric: dict[str, str] = {}
+        for region, summary in ontology_result.body_region_summary.items():
+            for metric_id in summary.metrics:
+                region_by_metric.setdefault(metric_id, region)
+        return region_by_metric
+
+    @staticmethod
+    def _temporal_phase_index(
+        temporal_result: TemporalModelingResult | None,
+    ) -> dict[str, Any]:
+        if temporal_result is None or temporal_result.status not in {
+            "COMPLETED",
+            "INSUFFICIENT_DATA",
+        }:
+            return {}
+        return {
+            phase.phase_id: phase for phase in temporal_result.phase_temporal_results
+        }
+
+    def _resolve_advanced_context_status(
+        self,
+        *,
+        fuzzy_result: FuzzyInterpretationResult | None,
+        it2_fuzzy_result: IT2FuzzyInterpretationResult | None,
+        pedagogical_result: PedagogicalDecisionResult | None,
+        ontology_result: OntologyReasoningResult | None,
+        choquet_result: ChoquetAggregationResult | None,
+        temporal_result: TemporalModelingResult | None,
+        existing_flags: list[str],
+    ) -> tuple[list[str], list[str]]:
+        sources: list[str] = []
+        flags = list(existing_flags)
+        artifact_status = [
+            ("fuzzy_interpretation_result", fuzzy_result, {"COMPLETED", "NO_INTERPRETABLE_METRICS"}),
+            ("it2_fuzzy_interpretation_result", it2_fuzzy_result, {"COMPLETED", "NO_INTERPRETABLE_METRICS", "DISABLED"}),
+            ("pedagogical_decision_result", pedagogical_result, {"COMPLETED", "NO_ACTIONABLE_FEEDBACK"}),
+            ("ontology_reasoning_result", ontology_result, {"COMPLETED", "NO_SIGNIFICANT_ISSUES"}),
+            ("choquet_aggregation_result", choquet_result, {"COMPLETED", "NO_ACTIONABLE_ISSUES"}),
+            ("temporal_modeling_result", temporal_result, {"COMPLETED", "INSUFFICIENT_DATA"}),
+        ]
+        for artifact_name, artifact, usable_statuses in artifact_status:
+            if artifact is None:
+                flags.append(f"ADVANCED_CONTEXT_MISSING:{artifact_name}")
+                continue
+            status_value = getattr(artifact, "status", None)
+            if status_value in usable_statuses:
+                sources.append(artifact_name)
+            else:
+                flags.append(f"ADVANCED_CONTEXT_UNUSABLE:{artifact_name}")
+        return sources, flags
+
+    def _build_issue_advanced_context(
+        self,
+        *,
+        fuzzy_metric: Any | None,
+        it2_metric: Any | None,
+        pedagogical_focus: Any | None,
+        pedagogical_result: PedagogicalDecisionResult | None,
+        ontology_result: OntologyReasoningResult | None,
+        metric_concepts: set[str],
+        metric_region: str | None,
+        choquet_groups: dict[str, Any],
+        temporal_phase: Any | None,
+        temporal_result: TemporalModelingResult | None,
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {}
+        if fuzzy_metric is not None:
+            context["fuzzy"] = {
+                "top_metric_label": fuzzy_metric.primary_fuzzy_label,
+                "direction_aware_label": fuzzy_metric.direction_aware_label,
+                "dominant_label_confidence": fuzzy_metric.dominant_label_confidence,
+            }
+        if it2_metric is not None:
+            context["it2_uncertainty"] = {
+                "uncertainty_category": it2_metric.uncertainty_category,
+                "uncertainty_width": it2_metric.uncertainty_width,
+                "confidence_guidance": self._confidence_guidance(
+                    getattr(it2_metric, "uncertainty_category", None)
+                ),
+            }
+        if pedagogical_result is not None:
+            pedagogy_context = {
+                "teaching_strategy": pedagogical_result.teaching_strategy,
+                "tone_profile": pedagogical_result.tone_profile,
+                "correction_intensity": pedagogical_result.correction_intensity,
+                "learning_objective": pedagogical_result.learning_objective,
+                "progression_advice": pedagogical_result.progression_advice,
+            }
+            if pedagogical_focus is not None:
+                pedagogy_context.update(
+                    {
+                        "selected_focus": True,
+                        "teaching_reason": pedagogical_focus.teaching_reason,
+                        "recommended_message_style": pedagogical_focus.recommended_message_style,
+                    }
+                )
+            context["pedagogy"] = pedagogy_context
+        if ontology_result is not None and ontology_result.status in {
+            "COMPLETED",
+            "NO_SIGNIFICANT_ISSUES",
+        } and metric_concepts:
+            context["ontology"] = {
+                "concepts": sorted(metric_concepts),
+                "primary_concept": ontology_result.primary_concept,
+                "primary_body_region": metric_region,
+                "reasoning_summary": ontology_result.reasoning_summary,
+            }
+        choquet_context = self._build_issue_choquet_context(
+            metric_concepts=metric_concepts,
+            choquet_groups=choquet_groups,
+        )
+        if choquet_context is not None:
+            context["choquet"] = choquet_context
+        if temporal_result is not None and temporal_phase is not None:
+            context["temporal"] = {
+                "overall_temporal_state": temporal_result.overall_temporal_state,
+                "top_phase_temporal_state": temporal_phase.temporal_state,
+                "temporal_summary": temporal_result.temporal_summary,
+            }
+        return context
+
+    def _build_summary_advanced_context(
+        self,
+        *,
+        issue_contexts: list[CoachingIssueContext],
+        fuzzy_result: FuzzyInterpretationResult | None,
+        it2_fuzzy_result: IT2FuzzyInterpretationResult | None,
+        pedagogical_result: PedagogicalDecisionResult | None,
+        ontology_result: OntologyReasoningResult | None,
+        choquet_result: ChoquetAggregationResult | None,
+        temporal_result: TemporalModelingResult | None,
+        ontology_metric_regions: dict[str, str],
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {}
+        if issue_contexts:
+            top_issue_advanced = issue_contexts[0].advanced_reasoning_context
+            if "fuzzy" in top_issue_advanced:
+                context["fuzzy"] = top_issue_advanced["fuzzy"]
+        if it2_fuzzy_result is not None and it2_fuzzy_result.status in {
+            "COMPLETED",
+            "NO_INTERPRETABLE_METRICS",
+            "DISABLED",
+        }:
+            highest_uncertainty = it2_fuzzy_result.uncertainty_summary.highest_uncertainty_metric
+            context["it2_uncertainty"] = {
+                "low_count": it2_fuzzy_result.uncertainty_summary.low_count,
+                "medium_count": it2_fuzzy_result.uncertainty_summary.medium_count,
+                "high_count": it2_fuzzy_result.uncertainty_summary.high_count,
+                "not_interpretable_count": it2_fuzzy_result.uncertainty_summary.not_interpretable_count,
+                "average_uncertainty_width": it2_fuzzy_result.uncertainty_summary.average_uncertainty_width,
+                "highest_uncertainty_metric": {
+                    "phase_id": highest_uncertainty.phase_id,
+                    "metric_id": highest_uncertainty.metric_id,
+                    "uncertainty_width": highest_uncertainty.uncertainty_width,
+                },
+                "confidence_guidance": self._confidence_guidance_from_width(
+                    it2_fuzzy_result.uncertainty_summary.average_uncertainty_width
+                ),
+            }
+        if pedagogical_result is not None:
+            context["pedagogy"] = {
+                "teaching_strategy": pedagogical_result.teaching_strategy,
+                "tone_profile": pedagogical_result.tone_profile,
+                "correction_intensity": pedagogical_result.correction_intensity,
+                "learning_objective": pedagogical_result.learning_objective,
+                "progression_advice": pedagogical_result.progression_advice,
+            }
+        if ontology_result is not None and ontology_result.status in {
+            "COMPLETED",
+            "NO_SIGNIFICANT_ISSUES",
+        }:
+            context["ontology"] = {
+                "primary_concept": ontology_result.primary_concept,
+                "secondary_concepts": ontology_result.secondary_concepts[:3],
+                "primary_body_region": self._primary_body_region_from_summary(
+                    ontology_result=ontology_result,
+                    ontology_metric_regions=ontology_metric_regions,
+                ),
+                "reasoning_summary": ontology_result.reasoning_summary,
+            }
+        if choquet_result is not None and choquet_result.status in {
+            "COMPLETED",
+            "NO_ACTIONABLE_ISSUES",
+        }:
+            interaction_summary = None
+            if choquet_result.dominant_interaction_group is not None:
+                dominant_group = choquet_result.concept_aggregation.get(
+                    choquet_result.dominant_interaction_group
+                )
+                interaction_summary = (
+                    dominant_group.explanation if dominant_group is not None else None
+                )
+            context["choquet"] = {
+                "dominant_interaction_group": choquet_result.dominant_interaction_group,
+                "overall_choquet_score": choquet_result.overall_choquet_score,
+                "interaction_summary": interaction_summary,
+            }
+        if temporal_result is not None and temporal_result.status in {
+            "COMPLETED",
+            "INSUFFICIENT_DATA",
+        }:
+            top_phase = self._top_temporal_phase(temporal_result)
+            context["temporal"] = {
+                "overall_temporal_state": temporal_result.overall_temporal_state,
+                "top_phase_temporal_state": (
+                    None if top_phase is None else top_phase.temporal_state
+                ),
+                "temporal_summary": temporal_result.temporal_summary,
+            }
+        return context
+
+    @staticmethod
+    def _build_issue_choquet_context(
+        *,
+        metric_concepts: set[str],
+        choquet_groups: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not metric_concepts or not choquet_groups:
+            return None
+        candidates = [
+            (group_name, group)
+            for group_name, group in choquet_groups.items()
+            if set(group.concepts) & metric_concepts
+        ]
+        if not candidates:
+            return None
+        group_name, group = max(
+            candidates,
+            key=lambda item: (item[1].choquet_score, item[0]),
+        )
+        return {
+            "dominant_interaction_group": group_name,
+            "overall_choquet_score": group.choquet_score,
+            "interaction_summary": group.explanation,
+        }
+
+    @staticmethod
+    def _confidence_guidance(uncertainty_category: str | None) -> str | None:
+        if uncertainty_category == "LOW_UNCERTAINTY":
+            return "high_certainty"
+        if uncertainty_category == "MEDIUM_UNCERTAINTY":
+            return "moderate_certainty"
+        if uncertainty_category == "HIGH_UNCERTAINTY":
+            return "low_certainty"
+        return None
+
+    @staticmethod
+    def _confidence_guidance_from_width(average_width: float) -> str:
+        if average_width <= 0.12:
+            return "high_certainty"
+        if average_width <= 0.22:
+            return "moderate_certainty"
+        return "low_certainty"
+
+    @staticmethod
+    def _primary_body_region_from_summary(
+        *,
+        ontology_result: OntologyReasoningResult,
+        ontology_metric_regions: dict[str, str],
+    ) -> str | None:
+        if ontology_result.primary_concept is not None:
+            concept_group = ontology_result.concept_groups.get(ontology_result.primary_concept)
+            if concept_group is not None:
+                for metric_id in concept_group.metrics:
+                    region = ontology_metric_regions.get(metric_id)
+                    if region is not None:
+                        return region
+        ranked_regions = [
+            (region, summary.total_weight)
+            for region, summary in ontology_result.body_region_summary.items()
+        ]
+        if not ranked_regions:
+            return None
+        return max(ranked_regions, key=lambda item: (item[1], item[0]))[0]
+
+    @staticmethod
+    def _top_temporal_phase(temporal_result: TemporalModelingResult | None) -> Any | None:
+        if temporal_result is None or not temporal_result.phase_temporal_results:
+            return None
+        return max(
+            temporal_result.phase_temporal_results,
+            key=lambda phase: (
+                _ADVANCED_TEMPORAL_STATE_PRIORITY.get(phase.temporal_state, -1),
+                phase.state_confidence,
+                phase.phase_id,
+            ),
+        )
+
+    @staticmethod
+    def _dedupe(values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        for value in values:
+            if value not in deduped:
+                deduped.append(value)
+        return deduped
+
+
+_ADVANCED_TEMPORAL_STATE_PRIORITY = {
+    "INCOMPLETE": 5,
+    "UNCERTAIN": 4,
+    "JERKY": 3,
+    "RUSHED": 2,
+    "CONTROLLED": 1,
+    "STABLE": 0,
+}
 
 
 @dataclass(frozen=True)
@@ -218,6 +689,14 @@ class LLMFeedbackPromptBuilder:
                     "Use only the JSON context. Return JSON only with keys: "
                     "coaching_cue, improvement_suggestion, grounding_fields_used.\n"
                     "Each text field must be one short sentence.\n"
+                    "Use deterministic evaluation as the source of truth. "
+                    "Use advanced reasoning only to explain and prioritize. "
+                    "If uncertainty is high, use softer wording. "
+                    "If temporal state is RUSHED or JERKY, mention movement control. "
+                    "If related issues appeared together, explain that connection simply. "
+                    "If pedagogy indicates BEGINNER, keep one clear correction. "
+                    "If ADVANCED, you may use more technical wording. "
+                    "Do not mention internal terms like ontology, Choquet, or IT2 fuzzy.\n"
                     f"Context:\n{json.dumps(asdict(context), sort_keys=True)}"
                 ),
             ),
@@ -234,6 +713,12 @@ class LLMFeedbackPromptBuilder:
                     "optionally mention one strength, and give one next-step action.\n"
                     "Return JSON only with keys: summary, grounding_fields_used.\n"
                     "The summary must be no more than three short sentences.\n"
+                    "Use deterministic evaluation as the source of truth. "
+                    "Use advanced reasoning only to explain and prioritize. "
+                    "If uncertainty is high, soften certainty claims. "
+                    "If temporal state is RUSHED or JERKY, mention movement control. "
+                    "If related issues appeared together, explain that they showed up together. "
+                    "Do not mention internal terms like ontology, Choquet, or IT2 fuzzy.\n"
                     f"Context:\n{json.dumps(asdict(context), sort_keys=True)}"
                 ),
             ),
@@ -246,8 +731,14 @@ class LLMFeedbackPromptBuilder:
             "The deterministic evaluator is the source of truth. "
             "Only explain the supplied findings. Do not invent new faults, metrics, "
             "diagnoses, pain, injury claims, or unsupported body mechanics. "
-            "Do not contradict severity or priority ordering. Adapt wording to the drill, "
-            "phase, and skill level. Keep language short, safe, and coaching-oriented."
+            "Do not contradict severity or priority ordering. "
+            "Use advanced reasoning only to explain emphasis and delivery, never to invent diagnosis. "
+            "Adapt wording to the drill, phase, and skill level. "
+            "If uncertainty is high, use softer wording. "
+            "If temporal movement looks rushed or jerky, mention control and pacing. "
+            "If related issues appeared together, explain that they showed up together. "
+            "Do not mention internal analysis terms such as ontology, Choquet, or IT2 fuzzy. "
+            "Keep language short, safe, and coaching-oriented."
         )
 
 
@@ -264,11 +755,25 @@ class LLMFeedbackService:
         session: TrainingSession,
         evaluation_result: DeterministicEvaluationResult,
         feedback_result: DeterministicFeedbackResult,
+        fuzzy_result: FuzzyInterpretationResult | None = None,
+        it2_fuzzy_result: IT2FuzzyInterpretationResult | None = None,
+        pedagogical_result: PedagogicalDecisionResult | None = None,
+        ontology_result: OntologyReasoningResult | None = None,
+        choquet_result: ChoquetAggregationResult | None = None,
+        temporal_result: TemporalModelingResult | None = None,
+        context_diagnostic_flags: list[str] | None = None,
     ) -> LLMFeedbackResult:
         context = self.context_builder.build(
             session=session,
             evaluation_result=evaluation_result,
             feedback_result=feedback_result,
+            fuzzy_result=fuzzy_result,
+            it2_fuzzy_result=it2_fuzzy_result,
+            pedagogical_result=pedagogical_result,
+            ontology_result=ontology_result,
+            choquet_result=choquet_result,
+            temporal_result=temporal_result,
+            context_diagnostic_flags=context_diagnostic_flags,
         )
         diagnostic_flags = list(feedback_result.diagnostic_flags)
         configuration_flag = self._configuration_fallback_flag()
@@ -311,6 +816,9 @@ class LLMFeedbackService:
             provider=self.provider_config.provider,
             model=self.provider_config.model,
             fallback_used=fallback_used,
+            advanced_context_used=context.advanced_context_used,
+            advanced_context_sources=context.advanced_context_sources,
+            context_diagnostic_flags=context.context_diagnostic_flags,
             enhanced_feedback_items=enhanced_items,
             enhanced_summary=enhanced_summary,
             diagnostic_flags=self._dedupe(diagnostic_flags),

@@ -331,6 +331,9 @@ class LLMFeedbackResult(APIBaseModel):
     provider: str
     model: str
     fallback_used: bool
+    advanced_context_used: bool = False
+    advanced_context_sources: list[str] = Field(default_factory=list)
+    context_diagnostic_flags: list[str] = Field(default_factory=list)
     enhanced_feedback_items: list[LLMEnhancedFeedbackItemResponse] = Field(
         default_factory=list
     )
