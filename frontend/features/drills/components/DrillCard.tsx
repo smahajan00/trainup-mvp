@@ -4,7 +4,7 @@ import { Radar } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import { formatEnumLabel, formatTokenLabel, truncateText } from "../../../lib/formatters";
+import { formatTokenLabel, truncateText } from "../../../lib/formatters";
 import type { DrillListItem } from "../../../types/drills";
 import { InfoCard } from "../../app-shell/components/InfoCard";
 
@@ -22,7 +22,7 @@ export function DrillCard({ drill }: DrillCardProps) {
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
             <Radar className="h-5 w-5" />
           </div>
-          <Badge variant="accent">{formatEnumLabel(drill.difficulty_level)}</Badge>
+          <Badge variant="accent">Reusable</Badge>
         </div>
 
         <div className="mt-6">

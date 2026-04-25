@@ -8,6 +8,9 @@ psycopg2-binary==2.9.10
 pydantic==2.9.2
 pydantic-settings==2.6.1
 pytest==8.3.3
+mediapipe==0.10.14
+opencv-python-headless==4.13.0.92
+numpy>=1.26,<3.0
 python-multipart==0.0.12
 python-dotenv==1.0.1
 python-jose[cryptography]==3.3.0

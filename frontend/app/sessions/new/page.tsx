@@ -17,13 +17,18 @@ import { formatEnumLabel, formatTokenLabel } from "../../../lib/formatters";
 import { createSession } from "../../../services/sessions";
 import { getDrillById } from "../../../services/drills";
 import type { DrillDetail } from "../../../types/drills";
+import type { ProfileResponse } from "../../../types/profile";
 import type { SessionInputType } from "../../../types/sessions";
 
 function isValidMode(value: string | null): value is SessionInputType {
   return value === "LIVE" || value === "UPLOAD";
 }
 
-function SessionCreationContent() {
+function SessionCreationContent({
+  profile
+}: {
+  profile: ProfileResponse | null;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const drillId = searchParams.get("drillId");
@@ -72,7 +77,14 @@ function SessionCreationContent() {
   }, [drillId]);
 
   useEffect(() => {
-    if (!drillId || !isValidMode(requestedMode) || autoCreateTriggered.current) {
+    if (
+      !drillId ||
+      !drill ||
+      !profile ||
+      profile.sport_id !== drill.sport_id ||
+      !isValidMode(requestedMode) ||
+      autoCreateTriggered.current
+    ) {
       return;
     }
 
@@ -80,7 +92,12 @@ function SessionCreationContent() {
     setCreatingMode(requestedMode);
     setCreateError(null);
 
-    createSession({ drill_id: drillId, input_type: requestedMode })
+    createSession({
+      sport_id: drill.sport_id,
+      skill_level: profile.skill_level,
+      drill_id: drillId,
+      input_type: requestedMode
+    })
       .then((session) => {
         const destination =
           requestedMode === "LIVE"
@@ -97,7 +114,7 @@ function SessionCreationContent() {
         );
         setCreatingMode(null);
       });
-  }, [drillId, requestedMode, router]);
+  }, [drill, drillId, profile, requestedMode, router]);
 
   const metrics = useMemo(
     () => drill?.target_metrics.metrics.slice(0, 5) ?? [],
@@ -146,9 +163,24 @@ function SessionCreationContent() {
     );
   }
 
+  if (!profile || profile.sport_id !== drill.sport_id) {
+    return (
+      <EmptyState
+        icon={Sparkles}
+        title="Select this sport before starting"
+        description="Skill level is tied to your selected sport context. Update your profile for this sport, then start the drill."
+        action={
+          <CTAButton asChild>
+            <Link href="/profile">Update Profile</Link>
+          </CTAButton>
+        }
+      />
+    );
+  }
+
   if (creatingMode) {
     return (
-        <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
+      <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
         <Badge variant="accent">{formatEnumLabel(creatingMode)}</Badge>
         <h2 className="mt-4 font-display text-4xl font-bold text-white">
           Starting {creatingMode === "LIVE" ? "live" : "upload"} session
@@ -165,7 +197,7 @@ function SessionCreationContent() {
       <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
         <div className="flex flex-wrap gap-2">
           <Badge variant="accent">{drill.sport_name}</Badge>
-          <Badge variant="slate">{formatEnumLabel(drill.difficulty_level)}</Badge>
+          <Badge variant="slate">{formatEnumLabel(profile.skill_level)}</Badge>
         </div>
         <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
           {drill.drill_name}
@@ -241,7 +273,7 @@ export default function NewSessionPage() {
         </CTAButton>
       }
     >
-      {() => <SessionCreationContent />}
+      {({ profile }) => <SessionCreationContent profile={profile} />}
     </AppShell>
   );
 }

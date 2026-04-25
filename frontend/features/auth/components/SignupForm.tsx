@@ -1,6 +1,4 @@
 "use client";
-
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -63,9 +61,9 @@ export function SignupForm() {
     <AuthShell
       title="Create account"
       subtitle="Start training in minutes."
-      footerLabel="Already registered?"
+      footerLabel="Already have an account?"
       footerHref="/login"
-      footerLinkText="Sign in instead"
+      footerLinkText="Log in"
     >
       <form className="space-y-5" onSubmit={onSubmit}>
         <div className="space-y-2">
@@ -118,13 +116,6 @@ export function SignupForm() {
         <Button className="w-full" size="lg" disabled={isSubmitting}>
           {isSubmitting ? "Creating account..." : "Create Account"}
         </Button>
-
-        <Link
-          href="/login"
-          className="inline-flex text-sm font-semibold text-primary transition-colors hover:text-primary/80"
-        >
-          Already have an account? Sign in.
-        </Link>
       </form>
     </AuthShell>
   );

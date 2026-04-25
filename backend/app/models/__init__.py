@@ -1,6 +1,7 @@
 from app.models.base import Base, BaseModel
 from app.models.drill import Drill
 from app.models.feedback import Feedback
+from app.models.metric_result import MetricResult
 from app.models.metric_type import MetricType
 from app.models.progress_record import ProgressRecord
 from app.models.session_artifact import SessionArtifact
@@ -15,6 +16,7 @@ __all__ = [
     "BaseModel",
     "Drill",
     "Feedback",
+    "MetricResult",
     "MetricType",
     "ProgressRecord",
     "SessionArtifact",

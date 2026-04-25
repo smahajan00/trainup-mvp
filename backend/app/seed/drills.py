@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-from app.models.enums import SkillLevel
+
+def _capture_protocol(
+    *allowed_camera_views: str,
+    required: bool = True,
+    canonical_view: str | None = None,
+) -> dict[str, object]:
+    return {
+        "required": required,
+        "allowed_camera_views": list(allowed_camera_views),
+        "canonical_view": canonical_view or allowed_camera_views[0],
+    }
 
 
 def _target_metrics(*metrics: str) -> dict[str, list[str]]:
@@ -33,7 +43,6 @@ DRILL_SEEDS_BY_SPORT = {
                 "It matters because squat mechanics underpin jumping, acceleration, deceleration, and lower-body strength work across sports. "
                 "The drill emphasizes even knee tracking, centered foot pressure, and consistent torso position from rep to rep."
             ),
-            "difficulty_level": SkillLevel.BEGINNER,
             "target_metrics": _target_metrics(
                 "posture_accuracy",
                 "knee_alignment_score",
@@ -42,6 +51,11 @@ DRILL_SEEDS_BY_SPORT = {
                 "repetition_consistency",
             ),
             "reference_payload": {
+                "capture_protocol": _capture_protocol(
+                    "RIGHT_SAGITTAL",
+                    "LEFT_SAGITTAL",
+                    canonical_view="RIGHT_SAGITTAL",
+                ),
                 "movement_type": "dynamic",
                 "phases": ["setup", "descent", "ascent"],
                 "tracked_joints": ["shoulders", "hips", "knees", "ankles"],
@@ -129,17 +143,18 @@ DRILL_SEEDS_BY_SPORT = {
                 "It matters because safe overhead strength depends on stacked joints, controlled elbow travel, and the ability to resist compensation through the spine. "
                 "The drill emphasizes smooth pressing paths, consistent lockout, and balance from the first rep to the last."
             ),
-            "difficulty_level": SkillLevel.INTERMEDIATE,
             "target_metrics": _target_metrics(
                 "posture_accuracy",
-                "elbow_angle_consistency",
-                "shoulder_control",
+                "elbow_extension",
+                "wrist_elbow_alignment",
+                "lockout_control",
+                "shoulder_symmetry",
                 "torso_alignment",
-                "balance_stability",
             ),
             "reference_payload": {
+                "capture_protocol": _capture_protocol("FRONTAL"),
                 "movement_type": "dynamic",
-                "phases": ["setup", "drive", "lockout"],
+                "phases": ["setup", "press", "lockout", "return"],
                 "tracked_joints": ["shoulders", "elbows", "wrists", "hips"],
                 "ideal_ranges": {
                     "left_elbow_angle": {"min": 82, "max": 172},
@@ -175,15 +190,15 @@ DRILL_SEEDS_BY_SPORT = {
                         "coaching_cue": "Stand tall before pressing and keep your ribcage quiet as the weights move.",
                     },
                     {
-                        "metric": "elbow_angle_consistency",
+                        "metric": "elbow_extension",
                         "condition": "below_threshold",
-                        "expected_min": 0.79,
+                        "expected_min": 0.78,
                         "severity_weight": 0.90,
                         "issue_label": "Elbows drifting out of a repeatable pressing path",
                         "coaching_cue": "Keep your elbows slightly in front of the shoulders and press straight up.",
                     },
                     {
-                        "metric": "shoulder_control",
+                        "metric": "shoulder_symmetry",
                         "condition": "below_threshold",
                         "expected_min": 0.80,
                         "severity_weight": 0.92,
@@ -199,9 +214,9 @@ DRILL_SEEDS_BY_SPORT = {
                         "coaching_cue": "Brace your trunk and keep your ribs stacked as you drive overhead.",
                     },
                     {
-                        "metric": "balance_stability",
+                        "metric": "lockout_control",
                         "condition": "below_threshold",
-                        "expected_min": 0.77,
+                        "expected_min": 0.82,
                         "severity_weight": 0.75,
                         "issue_label": "Weight rocking backward during the press",
                         "coaching_cue": "Stay rooted through the midfoot and squeeze the glutes to stay centered.",
@@ -226,24 +241,28 @@ DRILL_SEEDS_BY_SPORT = {
                 "It matters because reliable passing depends on a quiet support leg, coordinated hip rotation, and a controlled follow-through rather than pure leg speed. "
                 "The drill emphasizes plant-foot stability, balanced trunk position, and consistent contact through the center of the foot."
             ),
-            "difficulty_level": SkillLevel.BEGINNER,
             "target_metrics": _target_metrics(
-                "posture_accuracy",
-                "balance_stability",
-                "hip_stability",
-                "torso_alignment",
-                "repetition_consistency",
+                "plant_foot_alignment_ratio",
+                "instep_backswing_knee_angle",
+                "instep_contact_extension",
+                "instep_torso_tilt",
+                "instep_follow_through_stability",
             ),
             "reference_payload": {
+                "capture_protocol": _capture_protocol(
+                    "RIGHT_SAGITTAL",
+                    "LEFT_SAGITTAL",
+                    canonical_view="RIGHT_SAGITTAL",
+                ),
                 "movement_type": "dynamic",
-                "phases": ["approach", "plant", "strike", "follow_through"],
+                "phases": ["setup", "backswing", "contact", "follow_through"],
                 "tracked_joints": ["hips", "knees", "ankles", "shoulders"],
                 "ideal_ranges": {
-                    "plant_knee_flexion": {"min": 20, "max": 45},
-                    "hip_rotation": {"min": 25, "max": 55},
-                    "torso_lean": {"min": 2, "max": 16},
-                    "support_ankle_inversion": {"min": 0, "max": 12},
-                    "follow_through_angle": {"min": 25, "max": 55},
+                    "plant_foot_alignment_ratio": {"min": 0.78, "max": 1.00},
+                    "backswing_knee_angle_score": {"min": 0.78, "max": 1.00},
+                    "contact_knee_extension_score": {"min": 0.80, "max": 1.00},
+                    "torso_tilt_score": {"min": 0.79, "max": 1.00},
+                    "follow_through_stability": {"min": 0.77, "max": 1.00},
                 },
                 "stability_expectations": {
                     "lateral_sway_max": 0.14,
@@ -264,31 +283,31 @@ DRILL_SEEDS_BY_SPORT = {
                 ],
                 rule_checks=[
                     {
-                        "metric": "posture_accuracy",
-                        "condition": "below_threshold",
-                        "expected_min": 0.80,
-                        "severity_weight": 0.80,
-                        "issue_label": "Approach posture is inconsistent into contact",
-                        "coaching_cue": "Stay tall in the approach and keep your chest facing the target line.",
-                    },
-                    {
-                        "metric": "balance_stability",
-                        "condition": "below_threshold",
-                        "expected_min": 0.76,
-                        "severity_weight": 0.91,
-                        "issue_label": "Support leg is unstable at plant",
-                        "coaching_cue": "Freeze the plant foot beside the ball and let the strike happen around it.",
-                    },
-                    {
-                        "metric": "hip_stability",
+                        "metric": "plant_foot_alignment_ratio",
                         "condition": "below_threshold",
                         "expected_min": 0.78,
-                        "severity_weight": 0.88,
-                        "issue_label": "Pelvis opens too early before contact",
-                        "coaching_cue": "Rotate through the hip at strike, not before the foot reaches the ball.",
+                        "severity_weight": 0.80,
+                        "issue_label": "Support foot is not set consistently beside the ball",
+                        "coaching_cue": "Plant beside the ball before the swing leg accelerates.",
                     },
                     {
-                        "metric": "torso_alignment",
+                        "metric": "instep_backswing_knee_angle",
+                        "condition": "below_threshold",
+                        "expected_min": 0.78,
+                        "severity_weight": 0.91,
+                        "issue_label": "Backswing knee flexion is outside the target window",
+                        "coaching_cue": "Let the kicking knee fold naturally before driving through the ball.",
+                    },
+                    {
+                        "metric": "instep_contact_extension",
+                        "condition": "below_threshold",
+                        "expected_min": 0.80,
+                        "severity_weight": 0.88,
+                        "issue_label": "Kicking leg is not extending cleanly at contact",
+                        "coaching_cue": "Strike through the ball with a firm, extending leg.",
+                    },
+                    {
+                        "metric": "instep_torso_tilt",
                         "condition": "below_threshold",
                         "expected_min": 0.79,
                         "severity_weight": 0.84,
@@ -296,12 +315,12 @@ DRILL_SEEDS_BY_SPORT = {
                         "coaching_cue": "Keep the sternum over the plant leg and finish the chest toward the target.",
                     },
                     {
-                        "metric": "repetition_consistency",
+                        "metric": "instep_follow_through_stability",
                         "condition": "below_threshold",
                         "expected_min": 0.77,
                         "severity_weight": 0.73,
-                        "issue_label": "Contact mechanics changing from pass to pass",
-                        "coaching_cue": "Use the same approach steps and strike through the same part of the ball each rep.",
+                        "issue_label": "Follow-through path is unstable after contact",
+                        "coaching_cue": "Finish the kicking leg through the target line without falling away.",
                     },
                 ],
                 positive_cues=[
@@ -321,24 +340,30 @@ DRILL_SEEDS_BY_SPORT = {
                 "It matters because finishing quality drops quickly when the plant foot, hip drive, and trunk position break down under speed. "
                 "The drill emphasizes an organized approach, stable support-leg positioning, and a direct strike path through the ball."
             ),
-            "difficulty_level": SkillLevel.INTERMEDIATE,
             "target_metrics": _target_metrics(
-                "posture_accuracy",
-                "hip_stability",
-                "balance_stability",
-                "torso_alignment",
-                "knee_alignment_score",
+                "support_foot_distance_ratio",
+                "shooting_knee_load",
+                "shooting_swing_velocity",
+                "shooting_contact_extension",
+                "torso_rotation_stability",
+                "shooting_balance",
             ),
             "reference_payload": {
+                "capture_protocol": _capture_protocol(
+                    "RIGHT_SAGITTAL",
+                    "LEFT_SAGITTAL",
+                    canonical_view="RIGHT_SAGITTAL",
+                ),
                 "movement_type": "dynamic",
-                "phases": ["approach", "plant", "strike", "follow_through"],
+                "phases": ["setup", "load", "swing", "contact", "follow_through"],
                 "tracked_joints": ["hips", "knees", "ankles", "shoulders"],
                 "ideal_ranges": {
-                    "approach_torso_lean": {"min": 4, "max": 18},
-                    "plant_foot_angle": {"min": -10, "max": 15},
-                    "plant_knee_flexion": {"min": 30, "max": 55},
-                    "hip_drive_angle": {"min": 28, "max": 60},
-                    "strike_knee_extension": {"min": 135, "max": 175},
+                    "support_foot_distance_ratio": {"min": 0.78, "max": 1.00},
+                    "load_knee_flexion_score": {"min": 0.78, "max": 1.00},
+                    "swing_velocity_proxy": {"min": 0.76, "max": 1.00},
+                    "contact_leg_extension_score": {"min": 0.80, "max": 1.00},
+                    "torso_rotation_stability": {"min": 0.78, "max": 1.00},
+                    "follow_through_balance": {"min": 0.78, "max": 1.00},
                 },
                 "stability_expectations": {
                     "lateral_sway_max": 0.13,
@@ -359,44 +384,44 @@ DRILL_SEEDS_BY_SPORT = {
                 ],
                 rule_checks=[
                     {
-                        "metric": "posture_accuracy",
+                        "metric": "support_foot_distance_ratio",
                         "condition": "below_threshold",
-                        "expected_min": 0.81,
+                        "expected_min": 0.78,
                         "severity_weight": 0.79,
-                        "issue_label": "Approach shape breaking down before the strike",
-                        "coaching_cue": "Keep the final steps compact and arrive at the ball in a controlled posture.",
+                        "issue_label": "Support foot is not arriving at a repeatable striking distance",
+                        "coaching_cue": "Set the support foot beside the ball before accelerating the kicking leg.",
                     },
                     {
-                        "metric": "hip_stability",
+                        "metric": "shooting_knee_load",
                         "condition": "below_threshold",
                         "expected_min": 0.78,
                         "severity_weight": 0.89,
-                        "issue_label": "Hip drive leaking sideways through the strike",
-                        "coaching_cue": "Drive the kicking hip through the ball and finish it toward the target.",
+                        "issue_label": "Kicking knee load is outside the target range",
+                        "coaching_cue": "Load the kicking leg before the swing so the strike is not rushed.",
                     },
                     {
-                        "metric": "balance_stability",
+                        "metric": "shooting_swing_velocity",
                         "condition": "below_threshold",
-                        "expected_min": 0.75,
+                        "expected_min": 0.76,
                         "severity_weight": 0.92,
-                        "issue_label": "Support-leg balance lost at contact",
-                        "coaching_cue": "Stabilize the plant leg first and let the striking leg accelerate around it.",
+                        "issue_label": "Swing-leg acceleration proxy is too low",
+                        "coaching_cue": "Accelerate the kicking ankle through the ball after the load phase.",
                     },
                     {
-                        "metric": "torso_alignment",
+                        "metric": "shooting_contact_extension",
                         "condition": "below_threshold",
                         "expected_min": 0.80,
                         "severity_weight": 0.84,
-                        "issue_label": "Torso drifting off the shooting line",
-                        "coaching_cue": "Keep the chest slightly over the ball and finish facing the target.",
+                        "issue_label": "Kicking leg is not extended at contact",
+                        "coaching_cue": "Drive through contact with the knee extending toward the target.",
                     },
                     {
-                        "metric": "knee_alignment_score",
+                        "metric": "shooting_balance",
                         "condition": "below_threshold",
-                        "expected_min": 0.77,
+                        "expected_min": 0.78,
                         "severity_weight": 0.87,
-                        "issue_label": "Plant knee collapsing inward",
-                        "coaching_cue": "Set the support knee over the middle of the foot before striking through.",
+                        "issue_label": "Balance is unstable after the strike",
+                        "coaching_cue": "Finish on a stable support leg instead of drifting after contact.",
                     },
                 ],
                 positive_cues=[
@@ -418,7 +443,6 @@ DRILL_SEEDS_BY_SPORT = {
                 "It matters because consistent shot making depends on stacked joints, controlled elbow positioning, and a stable center of mass through release. "
                 "The drill emphasizes alignment from feet to fingertips, smooth elbow extension, and quiet body balance."
             ),
-            "difficulty_level": SkillLevel.INTERMEDIATE,
             "target_metrics": _target_metrics(
                 "shooting_alignment",
                 "elbow_angle_consistency",
@@ -427,6 +451,7 @@ DRILL_SEEDS_BY_SPORT = {
                 "posture_accuracy",
             ),
             "reference_payload": {
+                "capture_protocol": _capture_protocol("FRONTAL"),
                 "movement_type": "dynamic",
                 "phases": ["setup", "load", "release", "follow_through"],
                 "tracked_joints": ["shoulders", "elbows", "wrists", "hips", "knees", "ankles"],
@@ -513,17 +538,18 @@ DRILL_SEEDS_BY_SPORT = {
                 "It matters because defensive movement quality depends on consistent stance width, controlled knee bend, and the ability to shift laterally without popping upright. "
                 "The drill emphasizes hip hinge discipline, even foot pressure, and stable torso position while holding or moving in stance."
             ),
-            "difficulty_level": SkillLevel.BEGINNER,
             "target_metrics": _target_metrics(
                 "stance_width_control",
-                "knee_alignment_score",
-                "hip_stability",
+                "knee_flexion",
+                "hip_level_stability",
                 "torso_alignment",
                 "balance_stability",
+                "posture_accuracy",
             ),
             "reference_payload": {
+                "capture_protocol": _capture_protocol("FRONTAL"),
                 "movement_type": "static",
-                "phases": ["setup", "hold", "lateral_recovery"],
+                "phases": ["setup", "hold", "recovery"],
                 "tracked_joints": ["hips", "knees", "ankles", "shoulders"],
                 "ideal_ranges": {
                     "stance_width_ratio": {"min": 1.10, "max": 1.45},
@@ -559,15 +585,15 @@ DRILL_SEEDS_BY_SPORT = {
                         "coaching_cue": "Keep your feet just outside shoulder width and hold that spacing as you move.",
                     },
                     {
-                        "metric": "knee_alignment_score",
+                        "metric": "knee_flexion",
                         "condition": "below_threshold",
-                        "expected_min": 0.78,
+                        "expected_min": 0.80,
                         "severity_weight": 0.92,
                         "issue_label": "Knees collapsing inward in stance",
                         "coaching_cue": "Push the knees out over the feet and keep pressure through the outer hips.",
                     },
                     {
-                        "metric": "hip_stability",
+                        "metric": "hip_level_stability",
                         "condition": "below_threshold",
                         "expected_min": 0.80,
                         "severity_weight": 0.88,
@@ -603,4 +629,3 @@ DRILL_SEEDS_BY_SPORT = {
         },
     ],
 }
-

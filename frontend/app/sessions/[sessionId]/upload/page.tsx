@@ -27,6 +27,9 @@ import { SessionStatusBadge } from "../../../../features/sessions/components/Ses
 import { formatDateTime, formatEnumLabel, formatFileSize } from "../../../../lib/formatters";
 import { validateVideoFile } from "../../../../lib/session-validation";
 import {
+  evaluateSession,
+  generateLLMSessionFeedback,
+  generateSessionFeedback,
   getSession,
   getSessionArtifacts,
   submitSessionUpload
@@ -92,8 +95,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
   const [localErrors, setLocalErrors] = useState<string[]>([]);
   const [localWarnings, setLocalWarnings] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadProcessingResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionPending, setActionPending] = useState<
+    "evaluation" | "feedback" | "llm" | null
+  >(null);
   const [isDragActive, setIsDragActive] = useState(false);
 
   useEffect(() => {
@@ -138,12 +145,17 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     ...(uploadResult?.validation.warnings ?? [])
   ];
   const displayErrors = [...localErrors, ...(uploadResult?.validation.errors ?? [])];
+  const poseSequenceSummary =
+    uploadResult?.pose_sequence ?? artifactSnapshot?.pose_sequence ?? null;
+  const poseSequence = artifactSnapshot?.pose_sequence ?? null;
   const perceptionResult =
     uploadResult?.perception_result ?? artifactSnapshot?.perception_result ?? null;
   const cognitionResult =
     uploadResult?.cognition_result ?? artifactSnapshot?.cognition_result ?? null;
   const evaluationResult =
     uploadResult?.evaluation_result ?? artifactSnapshot?.evaluation_result ?? null;
+  const feedbackResult = artifactSnapshot?.feedback_result ?? null;
+  const llmFeedbackResult = artifactSnapshot?.llm_feedback_result ?? null;
   const sessionSummary =
     uploadResult?.session_summary ?? artifactSnapshot?.session_summary ?? null;
   const feedbackItems: SessionFeedback[] =
@@ -154,16 +166,28 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     0;
   const uploadAccepted =
     uploadResult?.upload_received ??
-    Boolean(perceptionResult || cognitionResult || evaluationResult);
+    Boolean(poseSequenceSummary || perceptionResult || cognitionResult || evaluationResult);
   const validationComplete =
     uploadResult?.validation.is_valid ??
-    Boolean(perceptionResult || cognitionResult || evaluationResult);
+    Boolean(poseSequenceSummary || perceptionResult || cognitionResult || evaluationResult);
+  const poseFramePreview = poseSequence?.sequence_data.slice(0, 3) ?? [];
   const keypointPreview = perceptionResult?.keypoint_series.slice(0, 3) ?? [];
   const cognitionMetricEntries = cognitionResult
     ? Object.entries(cognitionResult.derived_metrics)
     : [];
   const evaluationMetricEntries = evaluationResult
-    ? Object.entries(evaluationResult.metric_scores)
+    ? evaluationResult.phase_results.flatMap((phase) =>
+        phase.metric_results
+          .filter(
+            (metric) =>
+              metric.normalized_score !== null &&
+              metric.normalized_score !== undefined
+          )
+          .map((metric) => [
+            `${phase.phase_id}:${metric.metric_name}`,
+            metric.normalized_score ?? 0
+          ] as const)
+      )
     : [];
   const motionFeatureEntries = perceptionResult
     ? Object.entries(perceptionResult.derived_motion_features)
@@ -174,6 +198,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     setSelectedFile(file);
     setUploadResult(null);
     setSubmitError(null);
+    setActionError(null);
 
     if (!file) {
       setLocalErrors([]);
@@ -224,6 +249,59 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function refreshArtifacts() {
+    const artifactsDetail = await getSessionArtifacts(sessionId);
+    setArtifactSnapshot(artifactsDetail);
+  }
+
+  async function handleRunEvaluation() {
+    setActionPending("evaluation");
+    setActionError(null);
+
+    try {
+      await evaluateSession(sessionId);
+      await refreshArtifacts();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to run evaluation."
+      );
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function handleGenerateFeedback() {
+    setActionPending("feedback");
+    setActionError(null);
+
+    try {
+      await generateSessionFeedback(sessionId);
+      await refreshArtifacts();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to generate feedback."
+      );
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function handleGenerateLLMFeedback() {
+    setActionPending("llm");
+    setActionError(null);
+
+    try {
+      await generateLLMSessionFeedback(sessionId);
+      await refreshArtifacts();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to enhance feedback."
+      );
+    } finally {
+      setActionPending(null);
     }
   }
 
@@ -406,6 +484,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               </div>
             ) : null}
 
+            {actionError ? (
+              <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
+                {actionError}
+              </div>
+            ) : null}
+
             {displayErrors.length ? (
               <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-rose-200">
@@ -504,7 +588,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
           />
           <ProcessingStep
             title="Processing"
-            complete={Boolean(perceptionResult)}
+            complete={Boolean(poseSequenceSummary || perceptionResult)}
             icon={ScanSearch}
           />
           <ProcessingStep
@@ -520,17 +604,135 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      {perceptionResult ? (
+      {poseSequenceSummary ? (
+        <InfoCard>
+          <SectionTitle
+            eyebrow="Phase 3"
+            title="Coaching Feedback"
+            description="Run deterministic evaluation, generate coaching cues, then optionally enhance wording with the configured LLM."
+          />
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-2xl"
+              onClick={handleRunEvaluation}
+              disabled={actionPending !== null}
+            >
+              {actionPending === "evaluation" ? "Evaluating" : "Run Evaluation"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-2xl"
+              onClick={handleGenerateFeedback}
+              disabled={!evaluationResult || actionPending !== null}
+            >
+              {actionPending === "feedback" ? "Generating" : "Generate Feedback"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-2xl"
+              onClick={handleGenerateLLMFeedback}
+              disabled={!feedbackResult || actionPending !== null}
+            >
+              {actionPending === "llm" ? "Enhancing" : "Enhance with LLM"}
+            </Button>
+          </div>
+
+          {feedbackResult ? (
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-white">
+                  Deterministic Feedback
+                </p>
+                <Badge variant="slate">{formatEnumLabel(feedbackResult.status)}</Badge>
+              </div>
+              <p className="mt-3 text-sm text-white/85">
+                {feedbackResult.overall_feedback_summary}
+              </p>
+              {feedbackResult.prioritized_feedback_items.length ? (
+                <div className="mt-4 space-y-3">
+                  {feedbackResult.prioritized_feedback_items.map((item) => (
+                    <div
+                      key={`${item.priority_rank}-${item.phase_id}-${item.metric_name}`}
+                      className="rounded-2xl border border-white/10 bg-background-dark/60 px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white">
+                          {item.priority_rank}. {item.issue_title}
+                        </p>
+                        <Badge variant={getSeverityVariant(item.severity_level)}>
+                          {formatEnumLabel(item.severity_level)}
+                        </Badge>
+                      </div>
+                      <p className="mt-3 text-sm text-white/85">
+                        {item.coaching_cue}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-gray">
+                        {item.improvement_suggestion}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {llmFeedbackResult ? (
+            <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-white">
+                  LLM-Enhanced Feedback
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={llmFeedbackResult.fallback_used ? "warning" : "success"}>
+                    {llmFeedbackResult.fallback_used ? "Fallback" : "Enhanced"}
+                  </Badge>
+                  <Badge variant="slate">{llmFeedbackResult.model}</Badge>
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-white/90">
+                {llmFeedbackResult.enhanced_summary.llm_summary}
+              </p>
+              {llmFeedbackResult.enhanced_feedback_items.length ? (
+                <div className="mt-4 space-y-3">
+                  {llmFeedbackResult.enhanced_feedback_items.map((item) => (
+                    <div
+                      key={`${item.priority_rank}-${item.phase_id}-${item.metric_name}`}
+                      className="rounded-2xl border border-white/10 bg-background-dark/60 px-4 py-4"
+                    >
+                      <p className="text-sm font-semibold text-white">
+                        {item.priority_rank}. {formatEnumLabel(item.metric_name)}
+                      </p>
+                      <p className="mt-3 text-sm text-white/85">
+                        {item.llm_coaching_cue}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-gray">
+                        {item.llm_improvement_suggestion}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </InfoCard>
+      ) : null}
+
+      {poseSequenceSummary || perceptionResult ? (
         <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
           <InfoCard>
               <SectionTitle
-                eyebrow="Motion"
-                title="Clip Overview"
-                description="Clip details."
+                eyebrow="Perception"
+                title="Pose Sequence"
+                description="Structured output ready for deterministic evaluation."
               />
 
             <div className="mt-6 flex flex-wrap gap-2">
-              <Badge variant="accent">Upload</Badge>
+              <Badge variant="accent">{poseSequenceSummary?.pose_model ?? "Upload"}</Badge>
               <Badge variant="slate">{artifactsPersisted} results</Badge>
             </div>
 
@@ -540,45 +742,57 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                   Frames
                 </p>
                 <p className="mt-3 text-2xl font-bold text-white">
-                  {perceptionResult.processing_summary.frame_count}
+                  {poseSequenceSummary?.frame_count ?? perceptionResult?.processing_summary.frame_count ?? 0}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Duration
+                  Valid Frames
                 </p>
                 <p className="mt-3 text-2xl font-bold text-white">
-                  {perceptionResult.processing_summary.duration_seconds.toFixed(2)}s
+                  {poseSequenceSummary?.valid_frame_count ?? keypointPreview.length}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Frame Rate
+                  Status
                 </p>
                 <p className="mt-3 text-2xl font-bold text-white">
-                  {perceptionResult.processing_summary.fps_estimate.toFixed(1)}
+                  {formatEnumLabel(poseSequenceSummary?.status ?? "COMPLETED")}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                 <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  File Size
+                  Preprocessing
                 </p>
                 <p className="mt-3 text-2xl font-bold text-white">
-                  {formatFileSize(perceptionResult.file_metadata.file_size_bytes)}
+                  {poseSequenceSummary?.preprocessing_version ?? "N/A"}
                 </p>
               </div>
             </div>
 
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                File
-              </p>
-              <p className="mt-3 text-sm font-semibold text-white">
-                {perceptionResult.file_metadata.file_name}
-              </p>
-              <p className="mt-2 text-sm text-muted-gray">
-                {perceptionResult.file_metadata.content_type}
-              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Pose Model
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-white">
+                    {poseSequenceSummary?.pose_model ?? "scaffold"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Capture Validation
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-white">
+                    {formatEnumLabel(
+                      uploadResult?.capture_validation?.reason_code ??
+                        "CAPTURE_PROTOCOL_VALID"
+                    )}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="mt-6">
@@ -586,24 +800,46 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 Sample
               </p>
               <div className="mt-4 space-y-3">
-                {keypointPreview.map((frame) => (
-                  <div
-                    key={`${frame.frame_index}-${frame.timestamp}`}
-                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">
-                        Frame {frame.frame_index}
+                {poseSequence ? (
+                  poseFramePreview.map((frame) => (
+                    <div
+                      key={`${frame.frame_index}-${frame.timestamp_ms}`}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white">
+                          Frame {frame.frame_index}
+                        </p>
+                        <Badge variant={frame.frame_valid ? "success" : "warning"}>
+                          {frame.frame_valid ? "Valid" : "Invalid"}
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-gray">
+                        {(frame.timestamp_ms / 1000).toFixed(3)}s ·{" "}
+                        {Object.keys(frame.landmarks).length} landmarks
                       </p>
-                      <Badge variant="slate">
-                        {Math.round(frame.confidence * 100)}%
-                      </Badge>
                     </div>
-                    <p className="mt-2 text-sm text-muted-gray">
-                      {frame.timestamp.toFixed(3)}s · {Object.keys(frame.keypoints).length} points
-                    </p>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  keypointPreview.map((frame) => (
+                    <div
+                      key={`${frame.frame_index}-${frame.timestamp}`}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white">
+                          Frame {frame.frame_index}
+                        </p>
+                        <Badge variant="slate">
+                          {Math.round(frame.confidence * 100)}%
+                        </Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-gray">
+                        {frame.timestamp.toFixed(3)}s · {Object.keys(frame.keypoints).length} points
+                      </p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </InfoCard>
@@ -612,24 +848,53 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
             <InfoCard>
               <SectionTitle
                 eyebrow="Processing"
-                title="Motion"
-                description="Quick checks."
+                title="Perception Diagnostics"
+                description="Phase 1 preprocessing output."
               />
-              <div className="mt-6 grid gap-3">
-                {motionFeatureEntries.map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                  >
+              {poseSequenceSummary ? (
+                <div className="mt-6 space-y-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
                     <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                      {formatEnumLabel(key)}
+                      Output Status
                     </p>
                     <p className="mt-3 text-lg font-semibold text-white">
-                      {typeof value === "number" ? value.toFixed(3) : String(value)}
+                      {formatEnumLabel(poseSequenceSummary.status)}
                     </p>
                   </div>
-                ))}
-              </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                      Diagnostic Flags
+                    </p>
+                    {poseSequenceSummary.diagnostic_flags.length ? (
+                      <ul className="mt-3 space-y-2 text-sm text-white/85">
+                        {poseSequenceSummary.diagnostic_flags.map((flag) => (
+                          <li key={flag}>{flag}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-sm text-muted-gray">
+                        No sequence-level flags.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 grid gap-3">
+                  {motionFeatureEntries.map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                    >
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                        {formatEnumLabel(key)}
+                      </p>
+                      <p className="mt-3 text-lg font-semibold text-white">
+                        {typeof value === "number" ? value.toFixed(3) : String(value)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </InfoCard>
 
             {cognitionResult ? (
@@ -705,11 +970,14 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 <div className="mt-6 flex flex-wrap gap-2">
                   <Badge
                     variant={
-                      evaluationResult.feedback_count > 0 ? "warning" : "success"
+                      evaluationResult.detected_issues.length > 0 ? "warning" : "success"
                     }
                   >
-                    {evaluationResult.feedback_count} issue
-                    {evaluationResult.feedback_count === 1 ? "" : "s"}
+                    {evaluationResult.detected_issues.length} issue
+                    {evaluationResult.detected_issues.length === 1 ? "" : "s"}
+                  </Badge>
+                  <Badge variant={getSeverityVariant(evaluationResult.overall_severity)}>
+                    {formatEnumLabel(evaluationResult.overall_severity)}
                   </Badge>
                 </div>
 
@@ -742,7 +1010,11 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                     Notes
                   </p>
                   <ul className="mt-3 space-y-2 text-sm text-white/85">
-                    {evaluationResult.summary_flags.map((flag) => (
+                    {(
+                      evaluationResult.diagnostic_flags.length
+                        ? evaluationResult.diagnostic_flags
+                        : ["Deterministic evaluation complete."]
+                    ).map((flag) => (
                       <li key={flag}>{flag}</li>
                     ))}
                   </ul>
@@ -766,34 +1038,29 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                     ) : null}
                   </div>
 
-                  {evaluationResult.issues.length ? (
+                  {evaluationResult.detected_issues.length ? (
                     <div className="mt-4 space-y-3">
-                      {evaluationResult.issues.map((issue) => (
+                      {evaluationResult.detected_issues.map((issue) => (
                         <div
-                          key={`${issue.metric}-${issue.issue_label}`}
+                          key={`${issue.phase_id}-${issue.metric_name}-${issue.issue_direction}`}
                           className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold text-white">
-                                {issue.issue_label}
+                                {formatEnumLabel(issue.metric_name)}
                               </p>
                               <p className="mt-2 text-sm text-muted-gray">
-                                {formatEnumLabel(issue.metric)} scored{" "}
-                                {(issue.actual_score * 100).toFixed(0)}%
-                                {issue.expected_min !== null &&
-                                issue.expected_min !== undefined
-                                  ? ` against a minimum of ${(issue.expected_min * 100).toFixed(0)}%.`
-                                  : "."}
+                                {formatEnumLabel(issue.phase_id)} ·{" "}
+                                {formatEnumLabel(issue.affected_body_part)} · deviation{" "}
+                                {(issue.deviation * 100).toFixed(0)}%{" "}
+                                ({formatEnumLabel(issue.issue_direction)}).
                               </p>
                             </div>
                             <Badge variant={getSeverityVariant(issue.severity_level)}>
                               {formatEnumLabel(issue.severity_level)}
                             </Badge>
                           </div>
-                          <p className="mt-4 text-sm text-white/85">
-                            {issue.coaching_cue}
-                          </p>
                         </div>
                       ))}
                     </div>

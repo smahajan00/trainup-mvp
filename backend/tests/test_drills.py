@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.models.drill import Drill
 from app.models.sport import Sport
+from app.seed.drills import DRILL_SEEDS_BY_SPORT
 
 
 def _register_and_get_token(client) -> str:
@@ -37,9 +38,16 @@ def test_get_drills_for_sport_success(client, db_session) -> None:
     ]
     assert all(
         set(drill.keys())
-        == {"id", "sport_id", "drill_name", "description", "difficulty_level", "target_metrics"}
+        == {"id", "sport_id", "drill_name", "description", "target_metrics"}
         for drill in payload
     )
+    assert all("difficulty_level" not in drill for drill in payload)
+
+
+def test_seeded_drills_do_not_define_fixed_skill_levels() -> None:
+    for drill_definitions in DRILL_SEEDS_BY_SPORT.values():
+        for drill_definition in drill_definitions:
+            assert "difficulty_level" not in drill_definition
 
 
 def test_get_drill_detail_success(client, db_session) -> None:
@@ -56,6 +64,7 @@ def test_get_drill_detail_success(client, db_session) -> None:
     payload = response.json()
     assert payload["drill_name"] == "Set Shot Form"
     assert payload["sport_name"] == "Basketball"
+    assert "difficulty_level" not in payload
     assert payload["reference_payload"] == drill.reference_payload
     assert payload["coaching_rules"] == drill.coaching_rules
     assert payload["coaching_rules"]["thresholds"] == drill.coaching_rules["thresholds"]

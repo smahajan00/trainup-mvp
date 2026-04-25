@@ -6,14 +6,26 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
-from app.models.enums import InputType, SessionStatus, SeverityLevel
+from app.models.enums import (
+    CameraView,
+    ComputationStatus,
+    DominantSide,
+    InputType,
+    SessionStatus,
+    SeverityLevel,
+    SkillLevel,
+)
 from app.schemas.progress import SessionSummaryResponse
 from app.schemas.base import APIBaseModel
 
 
 class SessionCreateRequest(APIBaseModel):
+    sport_id: UUID
+    skill_level: SkillLevel
     drill_id: UUID
     input_type: InputType
+    camera_view: CameraView | None = None
+    dominant_side: DominantSide | None = None
 
 
 class SessionResponse(APIBaseModel):
@@ -21,7 +33,10 @@ class SessionResponse(APIBaseModel):
     user_id: UUID
     drill_id: UUID
     sport_id: UUID
+    skill_level: SkillLevel
     input_type: InputType
+    camera_view: CameraView | None = None
+    dominant_side: DominantSide | None = None
     status: SessionStatus
     start_time: datetime
     end_time: datetime | None
@@ -35,6 +50,47 @@ class UploadValidationResult(APIBaseModel):
     file_size_bytes: int = Field(ge=0)
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+
+
+class CaptureProtocolValidationResult(APIBaseModel):
+    is_valid: bool
+    reason_code: str
+    message: str
+    expected_view: CameraView | None = None
+    actual_view: CameraView | None = None
+
+
+class PoseLandmarkCoordinate(APIBaseModel):
+    x: float
+    y: float
+    visibility: float = Field(ge=0, le=1)
+
+
+class PoseFrameResponse(APIBaseModel):
+    session_id: UUID
+    frame_index: int = Field(ge=0)
+    timestamp_ms: float = Field(ge=0)
+    landmarks: dict[str, PoseLandmarkCoordinate] = Field(default_factory=dict)
+    frame_valid: bool
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+PoseSequenceStatus = Literal["COMPLETED", "FAILED", "INSUFFICIENT_DATA"]
+
+
+class PoseSequenceSummaryResponse(APIBaseModel):
+    session_id: UUID
+    pose_model: Literal["mediapipe_pose"]
+    preprocessing_version: Literal["phase1_v0_1_0"]
+    frame_count: int = Field(ge=0)
+    valid_frame_count: int = Field(ge=0)
+    status: PoseSequenceStatus
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class PoseSequenceResponse(PoseSequenceSummaryResponse):
+    sequence_data: list[PoseFrameResponse] = Field(default_factory=list)
+    created_at: datetime | None = None
 
 
 class PerceptionFileMetadata(APIBaseModel):
@@ -109,6 +165,317 @@ class EvaluationIssueResponse(APIBaseModel):
     coaching_cue: str
 
 
+EvaluationStatus = Literal["COMPLETED", "FAILED", "INSUFFICIENT_DATA"]
+IssueDirection = Literal["UNDER_RANGE", "OVER_RANGE", "NONE"]
+
+
+class MetricEvaluationResultResponse(APIBaseModel):
+    metric_id: str | None = None
+    metric_name: str
+    phase_id: str
+    raw_value: float | None = None
+    unit: str
+    ideal_min: float | None = None
+    ideal_max: float | None = None
+    deviation: float | None = None
+    issue_direction: IssueDirection
+    severity_level: SeverityLevel
+    normalized_score: float | None = Field(default=None, ge=0, le=1)
+    affected_body_part: str
+    computation_status: ComputationStatus
+    valid_frame_count: int = Field(ge=0)
+    formula_version: str
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class EvaluationFrameRangeResponse(APIBaseModel):
+    """Inclusive-overlapping frame range.
+
+    Adjacent phases may share the boundary frame so phase transitions remain
+    inspectable by downstream deterministic feedback logic. Zero-length ranges
+    are allowed when deterministic boundaries collapse to one frame.
+    """
+
+    phase_id: str
+    start_frame_index: int = Field(ge=0)
+    end_frame_index: int = Field(ge=0)
+    start_timestamp_ms: float = Field(ge=0)
+    end_timestamp_ms: float = Field(ge=0)
+    boundary_mode: Literal["inclusive_overlapping"] = "inclusive_overlapping"
+
+
+class DeterministicEvaluationIssueResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str | None = None
+    metric_name: str
+    severity_level: SeverityLevel
+    affected_body_part: str
+    deviation: float
+    issue_direction: IssueDirection
+    computation_status: ComputationStatus = ComputationStatus.COMPUTED
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class RankedMetricResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str
+    metric_name: str
+    score: float = Field(ge=0, le=1)
+
+
+class PhaseEvaluationResultResponse(APIBaseModel):
+    phase_id: str
+    frame_range: EvaluationFrameRangeResponse
+    metric_results: list[MetricEvaluationResultResponse] = Field(default_factory=list)
+    phase_score: float = Field(ge=0, le=1)
+    phase_severity: SeverityLevel
+    detected_issues: list[DeterministicEvaluationIssueResponse] = Field(default_factory=list)
+
+
+class DeterministicEvaluationResult(APIBaseModel):
+    evaluation_version: str = "phase2c_v0_1_0"
+    status: EvaluationStatus
+    session_id: UUID
+    sport_id: UUID
+    skill_level: SkillLevel
+    drill_id: UUID
+    phase_results: list[PhaseEvaluationResultResponse] = Field(default_factory=list)
+    overall_score: float = Field(ge=0, le=1)
+    overall_severity: SeverityLevel
+    detected_issues: list[DeterministicEvaluationIssueResponse] = Field(default_factory=list)
+    strongest_metrics: list[RankedMetricResponse] = Field(default_factory=list)
+    weakest_metrics: list[RankedMetricResponse] = Field(default_factory=list)
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+    @field_validator("strongest_metrics", "weakest_metrics", mode="before")
+    @classmethod
+    def _coerce_legacy_ranked_metrics(cls, value: Any) -> Any:
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            ranked = []
+            for item in value:
+                phase_id, _, metric_name = item.partition(":")
+                ranked.append(
+                    {
+                        "phase_id": phase_id,
+                        "metric_id": metric_name or item,
+                        "metric_name": metric_name or item,
+                        "score": 0.0,
+                    }
+                )
+            return ranked
+        return value
+
+
+FeedbackGenerationStatus = Literal["COMPLETED", "FAILED", "NO_ACTIONABLE_ISSUES"]
+FEEDBACK_VERSION = "phase3a_v0_1_0"
+
+
+class DeterministicFeedbackItemResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str | None = None
+    metric_name: str
+    severity_level: SeverityLevel
+    affected_body_part: str
+    issue_direction: IssueDirection
+    issue_title: str
+    coaching_cue: str
+    improvement_suggestion: str
+    priority_rank: int = Field(ge=1)
+    deviation: float = Field(ge=0)
+
+
+class DeterministicFeedbackResult(APIBaseModel):
+    feedback_version: str = FEEDBACK_VERSION
+    status: FeedbackGenerationStatus
+    session_id: UUID
+    overall_feedback_summary: str
+    prioritized_feedback_items: list[DeterministicFeedbackItemResponse] = Field(
+        default_factory=list
+    )
+    improvement_suggestions: list[str] = Field(default_factory=list)
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
+LLMFeedbackGenerationStatus = Literal["COMPLETED", "FAILED"]
+LLM_FEEDBACK_VERSION = "phase3b_v0_1_0"
+
+
+class LLMEnhancedFeedbackItemResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str | None = None
+    metric_name: str
+    severity_level: SeverityLevel
+    priority_rank: int = Field(ge=1)
+    affected_body_part: str
+    issue_direction: IssueDirection
+    deterministic_coaching_cue: str
+    llm_coaching_cue: str
+    deterministic_improvement_suggestion: str
+    llm_improvement_suggestion: str
+    grounding_fields_used: list[str] = Field(default_factory=list)
+    fallback_used: bool
+
+
+class LLMEnhancedSessionSummaryResponse(APIBaseModel):
+    deterministic_summary: str
+    llm_summary: str
+    grounding_fields_used: list[str] = Field(default_factory=list)
+    fallback_used: bool
+
+
+class LLMFeedbackResult(APIBaseModel):
+    llm_feedback_version: str = LLM_FEEDBACK_VERSION
+    status: LLMFeedbackGenerationStatus = "COMPLETED"
+    session_id: UUID
+    provider: str
+    model: str
+    fallback_used: bool
+    enhanced_feedback_items: list[LLMEnhancedFeedbackItemResponse] = Field(
+        default_factory=list
+    )
+    enhanced_summary: LLMEnhancedSessionSummaryResponse
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
+FuzzyInterpretationStatus = Literal[
+    "COMPLETED",
+    "FAILED",
+    "NO_INTERPRETABLE_METRICS",
+    "DISABLED",
+]
+FuzzyBaseLabel = Literal[
+    "IDEAL",
+    "SLIGHTLY_OFF",
+    "MODERATELY_OFF",
+    "STRONGLY_OFF",
+]
+FuzzyMetricLabel = Literal[
+    "IDEAL",
+    "SLIGHTLY_OFF",
+    "MODERATELY_OFF",
+    "STRONGLY_OFF",
+    "NOT_INTERPRETABLE",
+]
+DirectionAwareFuzzyLabel = Literal[
+    "IDEAL",
+    "SLIGHTLY_LOW",
+    "MODERATELY_LOW",
+    "STRONGLY_LOW",
+    "SLIGHTLY_HIGH",
+    "MODERATELY_HIGH",
+    "STRONGLY_HIGH",
+    "NOT_INTERPRETABLE",
+]
+FUZZY_INTERPRETATION_VERSION = "phase4a_v0_1_0"
+
+
+class FuzzyMetricInterpretationResponse(APIBaseModel):
+    metric_id: str | None = None
+    metric_name: str
+    phase_id: str
+    computation_status: ComputationStatus
+    deviation: float | None = Field(default=None, ge=0)
+    issue_direction: IssueDirection
+    severity_level: SeverityLevel
+    affected_body_part: str
+    primary_fuzzy_label: FuzzyMetricLabel
+    membership_scores: dict[FuzzyBaseLabel, float] = Field(default_factory=dict)
+    dominant_label_confidence: float | None = Field(default=None, ge=0, le=1)
+    direction_aware_label: DirectionAwareFuzzyLabel
+    diagnostic_flags: list[str] = Field(default_factory=list)
+
+
+class FuzzySummaryResponse(APIBaseModel):
+    ideal_count: int = Field(ge=0)
+    slightly_off_count: int = Field(ge=0)
+    moderately_off_count: int = Field(ge=0)
+    strongly_off_count: int = Field(ge=0)
+    not_interpretable_count: int = Field(ge=0)
+    interpretable_metric_count: int = Field(ge=0)
+    dominant_fuzzy_label: FuzzyMetricLabel
+    top_concern_areas: list[str] = Field(default_factory=list)
+
+
+class FuzzyInterpretationResult(APIBaseModel):
+    fuzzy_version: str = FUZZY_INTERPRETATION_VERSION
+    status: FuzzyInterpretationStatus
+    session_id: UUID
+    drill_id: UUID
+    sport_id: UUID
+    skill_level: SkillLevel
+    fuzzy_metric_results: list[FuzzyMetricInterpretationResponse] = Field(
+        default_factory=list
+    )
+    fuzzy_summary: FuzzySummaryResponse
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
+PedagogicalDecisionStatus = Literal[
+    "COMPLETED",
+    "FAILED",
+    "NO_ACTIONABLE_FEEDBACK",
+]
+TeachingStrategy = Literal[
+    "single_focus_mastery",
+    "dual_focus_refinement",
+    "multi_focus_precision",
+]
+ToneProfile = Literal[
+    "supportive_simple",
+    "corrective_specific",
+    "technical_performance",
+]
+CorrectionIntensity = Literal["observe", "soft", "corrective", "direct"]
+PEDAGOGICAL_DECISION_VERSION = "phase4b_v0_1_0"
+
+
+class PedagogicalFocusItemResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str | None = None
+    metric_name: str
+    severity_level: SeverityLevel
+    fuzzy_label: FuzzyMetricLabel | None = None
+    dominant_label_confidence: float | None = Field(default=None, ge=0, le=1)
+    affected_body_part: str
+    priority_rank: int = Field(ge=1)
+    teaching_reason: str
+    recommended_message_style: str
+
+
+class PedagogicalSuppressedItemResponse(APIBaseModel):
+    phase_id: str
+    metric_id: str | None = None
+    metric_name: str
+    severity_level: SeverityLevel
+    priority_rank: int = Field(ge=1)
+    suppression_reason: str
+
+
+class PedagogicalDecisionResult(APIBaseModel):
+    pedagogical_version: str = PEDAGOGICAL_DECISION_VERSION
+    status: PedagogicalDecisionStatus
+    session_id: UUID
+    sport_id: UUID
+    drill_id: UUID
+    skill_level: SkillLevel
+    teaching_strategy: TeachingStrategy
+    selected_focus_items: list[PedagogicalFocusItemResponse] = Field(
+        default_factory=list
+    )
+    suppressed_items: list[PedagogicalSuppressedItemResponse] = Field(
+        default_factory=list
+    )
+    tone_profile: ToneProfile
+    correction_intensity: CorrectionIntensity
+    learning_objective: str
+    progression_advice: str
+    diagnostic_flags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
 class DrillEvaluationResult(APIBaseModel):
     evaluation_mode: Literal["deterministic_scaffold"]
     session_id: UUID
@@ -121,7 +488,16 @@ class DrillEvaluationResult(APIBaseModel):
     feedback_count: int = Field(ge=0)
 
 
-ArtifactType = Literal["perception_payload", "cognition_result", "evaluation_result"]
+ArtifactType = Literal[
+    "perception_payload",
+    "cognition_result",
+    "evaluation_result",
+    "pose_sequence",
+    "feedback_result",
+    "llm_feedback_result",
+    "fuzzy_interpretation_result",
+    "pedagogical_decision_result",
+]
 
 
 class SessionArtifactResponse(APIBaseModel):
@@ -144,9 +520,14 @@ class FeedbackResponse(APIBaseModel):
 
 class SessionArtifactsResponse(APIBaseModel):
     artifacts: list[SessionArtifactResponse]
+    pose_sequence: PoseSequenceResponse | None = None
     perception_result: PerceptionResult | None = None
     cognition_result: CognitionResult | None = None
-    evaluation_result: DrillEvaluationResult | None = None
+    evaluation_result: DeterministicEvaluationResult | None = None
+    feedback_result: DeterministicFeedbackResult | None = None
+    llm_feedback_result: LLMFeedbackResult | None = None
+    fuzzy_interpretation_result: FuzzyInterpretationResult | None = None
+    pedagogical_decision_result: PedagogicalDecisionResult | None = None
     session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
 
@@ -156,9 +537,11 @@ class UploadProcessingResponse(APIBaseModel):
     status: SessionStatus
     upload_received: bool
     validation: UploadValidationResult
+    capture_validation: CaptureProtocolValidationResult | None = None
+    pose_sequence: PoseSequenceSummaryResponse | None = None
     perception_result: PerceptionResult | None = None
     cognition_result: CognitionResult | None = None
-    evaluation_result: DrillEvaluationResult | None = None
+    evaluation_result: DeterministicEvaluationResult | None = None
     session_summary: SessionSummaryResponse | None = None
     feedback: list[FeedbackResponse] = Field(default_factory=list)
     artifacts_persisted: list[ArtifactType] = Field(default_factory=list)

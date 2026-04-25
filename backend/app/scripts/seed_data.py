@@ -126,7 +126,6 @@ def seed_drills(
                 "sport_id": sport.id,
                 "drill_name": definition["drill_name"],
                 "description": definition["description"],
-                "difficulty_level": definition["difficulty_level"],
                 "reference_payload": definition["reference_payload"],
                 "coaching_rules": definition["coaching_rules"],
                 "target_metrics": definition["target_metrics"],
@@ -181,4 +180,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

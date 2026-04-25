@@ -6,13 +6,15 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import TokenDecodeError, decode_access_token
-from app.engines.cognition_engine.cognition_service import CognitionService
 from app.engines.perception_interface.perception_service import PerceptionService
+from app.engines.cognition_engine.phase2a_evaluator import Phase2AEvaluator
 from app.models.user import User
 from app.repositories.drill_repository import DrillRepository
 from app.repositories.feedback_repository import FeedbackRepository
+from app.repositories.metric_result_repository import MetricResultRepository
 from app.repositories.metric_type_repository import MetricTypeRepository
 from app.repositories.profile_repository import ProfileRepository
 from app.repositories.progress_repository import ProgressRepository
@@ -22,11 +24,20 @@ from app.repositories.session_summary_repository import SessionSummaryRepository
 from app.repositories.sport_repository import SportRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
+from app.services.capture_protocol_validator import CaptureProtocolValidator
+from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.drill_service import DrillService
+from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
+from app.services.llm_client import LLMProviderConfig, OpenAICompatibleLLMClient
+from app.services.llm_feedback_service import (
+    CoachingContextBuilder,
+    LLMFeedbackPromptBuilder,
+    LLMFeedbackService,
+)
+from app.services.pedagogical_decision_service import PedagogicalDecisionService
 from app.services.profile_service import ProfileService
 from app.services.progress_service import ProgressService
 from app.services.session_service import SessionService
-from app.services.summary_service import SummaryService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -61,6 +72,10 @@ def get_feedback_repository(db: Session = Depends(get_db)) -> FeedbackRepository
     return FeedbackRepository(db)
 
 
+def get_metric_result_repository(db: Session = Depends(get_db)) -> MetricResultRepository:
+    return MetricResultRepository(db)
+
+
 def get_metric_type_repository(db: Session = Depends(get_db)) -> MetricTypeRepository:
     return MetricTypeRepository(db)
 
@@ -79,12 +94,33 @@ def get_perception_service() -> PerceptionService:
     return PerceptionService()
 
 
-def get_cognition_service() -> CognitionService:
-    return CognitionService()
+def get_capture_protocol_validator() -> CaptureProtocolValidator:
+    return CaptureProtocolValidator()
 
 
-def get_summary_service() -> SummaryService:
-    return SummaryService()
+def get_phase2a_evaluator() -> Phase2AEvaluator:
+    return Phase2AEvaluator()
+
+
+def get_deterministic_feedback_service() -> DeterministicFeedbackService:
+    return DeterministicFeedbackService()
+
+
+def get_fuzzy_interpretation_service() -> FuzzyInterpretationService:
+    return FuzzyInterpretationService(enabled=settings.fuzzy_interpretation_enabled)
+
+
+def get_pedagogical_decision_service() -> PedagogicalDecisionService:
+    return PedagogicalDecisionService()
+
+
+def get_llm_feedback_service() -> LLMFeedbackService:
+    return LLMFeedbackService(
+        llm_client=OpenAICompatibleLLMClient(),
+        provider_config=LLMProviderConfig.from_settings(settings),
+        context_builder=CoachingContextBuilder(),
+        prompt_builder=LLMFeedbackPromptBuilder(),
+    )
 
 
 def get_auth_service(
@@ -122,12 +158,23 @@ def get_session_service(
     artifacts: SessionArtifactRepository = Depends(get_session_artifact_repository),
     feedback: FeedbackRepository = Depends(get_feedback_repository),
     metric_types: MetricTypeRepository = Depends(get_metric_type_repository),
+    metric_results: MetricResultRepository = Depends(get_metric_result_repository),
     summaries: SessionSummaryRepository = Depends(get_session_summary_repository),
     progress_records: ProgressRepository = Depends(get_progress_repository),
     drills: DrillRepository = Depends(get_drill_repository),
     perception: PerceptionService = Depends(get_perception_service),
-    cognition: CognitionService = Depends(get_cognition_service),
-    summary_service: SummaryService = Depends(get_summary_service),
+    capture_protocol: CaptureProtocolValidator = Depends(get_capture_protocol_validator),
+    phase2a_evaluator: Phase2AEvaluator = Depends(get_phase2a_evaluator),
+    deterministic_feedback: DeterministicFeedbackService = Depends(
+        get_deterministic_feedback_service
+    ),
+    fuzzy_interpretation: FuzzyInterpretationService = Depends(
+        get_fuzzy_interpretation_service
+    ),
+    llm_feedback: LLMFeedbackService = Depends(get_llm_feedback_service),
+    pedagogical_decision: PedagogicalDecisionService = Depends(
+        get_pedagogical_decision_service
+    ),
 ) -> SessionService:
     return SessionService(
         db=db,
@@ -135,12 +182,17 @@ def get_session_service(
         artifacts=artifacts,
         feedback=feedback,
         metric_types=metric_types,
+        metric_results=metric_results,
         summaries=summaries,
         progress_records=progress_records,
         drills=drills,
         perception=perception,
-        cognition=cognition,
-        summary_service=summary_service,
+        capture_protocol=capture_protocol,
+        phase2a_evaluator=phase2a_evaluator,
+        deterministic_feedback=deterministic_feedback,
+        fuzzy_interpretation=fuzzy_interpretation,
+        llm_feedback=llm_feedback,
+        pedagogical_decision=pedagogical_decision,
     )
 
 

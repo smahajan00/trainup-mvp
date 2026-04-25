@@ -39,7 +39,6 @@ export type DrillListItem = {
   sport_id: string;
   drill_name: string;
   description: string | null;
-  difficulty_level: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
   target_metrics: DrillTargetMetrics;
 };
 
@@ -49,7 +48,6 @@ export type DrillDetail = {
   sport_name: string;
   drill_name: string;
   description: string | null;
-  difficulty_level: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
   target_metrics: DrillTargetMetrics;
   reference_payload: DrillReferencePayload;
   coaching_rules: DrillCoachingRules;

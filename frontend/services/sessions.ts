@@ -1,7 +1,11 @@
 import { apiRequest } from "../lib/api";
 import type {
+  DeterministicFeedbackResult,
   FrameBatchRequest,
   FrameBatchResponse,
+  DeterministicEvaluationResult,
+  FuzzyInterpretationResult,
+  LLMFeedbackResult,
   LiveEndRequest,
   LiveReadinessRequest,
   LiveStartResponse,
@@ -28,6 +32,33 @@ export function getRecentSessions(limit = 10) {
 
 export function getSessionArtifacts(sessionId: string) {
   return apiRequest<SessionArtifactsResponse>(`/sessions/${sessionId}/artifacts`);
+}
+
+export function evaluateSession(sessionId: string) {
+  return apiRequest<DeterministicEvaluationResult>(`/sessions/${sessionId}/evaluate`, {
+    method: "POST"
+  });
+}
+
+export function generateSessionFeedback(sessionId: string) {
+  return apiRequest<DeterministicFeedbackResult>(`/sessions/${sessionId}/feedback`, {
+    method: "POST"
+  });
+}
+
+export function generateFuzzySessionInterpretation(sessionId: string) {
+  return apiRequest<FuzzyInterpretationResult>(
+    `/sessions/${sessionId}/interpret/fuzzy`,
+    {
+      method: "POST"
+    }
+  );
+}
+
+export function generateLLMSessionFeedback(sessionId: string) {
+  return apiRequest<LLMFeedbackResult>(`/sessions/${sessionId}/feedback/llm`, {
+    method: "POST"
+  });
 }
 
 export function submitSessionUpload(sessionId: string, file: File) {

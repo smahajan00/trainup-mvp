@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.drill import Drill
-from app.models.enums import InputType, SessionStatus
+from app.models.enums import (
+    CameraView,
+    DominantSide,
+    InputType,
+    SessionStatus,
+    SkillLevel,
+)
 from app.models.session_artifact import SessionArtifact
 from app.models.training_session import TrainingSession
 
@@ -22,6 +28,9 @@ class SessionRepository:
         user_id: UUID,
         drill_id: UUID,
         input_type: InputType,
+        skill_level: SkillLevel,
+        camera_view: CameraView | None,
+        dominant_side: DominantSide | None,
         status: SessionStatus,
         start_time: datetime,
     ) -> TrainingSession:
@@ -29,6 +38,9 @@ class SessionRepository:
             user_id=user_id,
             drill_id=drill_id,
             input_type=input_type,
+            skill_level=skill_level,
+            camera_view=camera_view,
+            dominant_side=dominant_side,
             status=status,
             start_time=start_time,
             end_time=None,

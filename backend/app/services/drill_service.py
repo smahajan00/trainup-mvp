@@ -29,7 +29,6 @@ class DrillService:
                 sport_id=drill.sport_id,
                 drill_name=drill.drill_name,
                 description=drill.description,
-                difficulty_level=drill.difficulty_level,
                 target_metrics=drill.target_metrics,
             )
             for drill in self.drills.list_by_sport_id(sport_id)
@@ -50,7 +49,6 @@ class DrillService:
             sport_name=sport_name,
             drill_name=drill.drill_name,
             description=drill.description,
-            difficulty_level=drill.difficulty_level,
             target_metrics=drill.target_metrics,
             reference_payload=drill.reference_payload,
             coaching_rules=drill.coaching_rules,

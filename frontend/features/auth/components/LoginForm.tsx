@@ -55,13 +55,7 @@ export function LoginForm() {
   });
 
   return (
-    <AuthShell
-      title="Sign in"
-      subtitle="Pick up where you left off."
-      footerLabel="Need an account?"
-      footerHref="/signup"
-      footerLinkText="Create one"
-    >
+    <AuthShell title="Login" subtitle="Pick up where you left off.">
       <form className="space-y-5" onSubmit={onSubmit}>
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -98,7 +92,7 @@ export function LoginForm() {
         ) : null}
 
         <Button className="w-full" size="lg" disabled={isSubmitting}>
-          {isSubmitting ? "Signing in..." : "Sign In"}
+          {isSubmitting ? "Logging in..." : "Login"}
         </Button>
 
         <Link

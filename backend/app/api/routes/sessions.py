@@ -7,11 +7,16 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from app.core.dependencies import get_current_user, get_session_service
 from app.models.user import User
 from app.schemas.session import (
+    DeterministicEvaluationResult,
+    DeterministicFeedbackResult,
     FrameBatchRequest,
     FrameBatchResponse,
+    FuzzyInterpretationResult,
+    LLMFeedbackResult,
     LiveEndRequest,
     LiveReadinessRequest,
     LiveStartResponse,
+    PedagogicalDecisionResult,
     SessionCreateRequest,
     SessionArtifactsResponse,
     SessionResponse,
@@ -52,7 +57,6 @@ def get_session(
 @router.get(
     "/{session_id}/artifacts",
     response_model=SessionArtifactsResponse,
-    response_model_exclude_none=True,
 )
 def get_session_artifacts(
     session_id: UUID,
@@ -60,6 +64,81 @@ def get_session_artifacts(
     session_service: SessionService = Depends(get_session_service),
 ) -> SessionArtifactsResponse:
     return session_service.get_session_artifacts(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/evaluate",
+    response_model=DeterministicEvaluationResult,
+)
+def evaluate_session(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> DeterministicEvaluationResult:
+    return session_service.evaluate_session(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/feedback",
+    response_model=DeterministicFeedbackResult,
+)
+def generate_session_feedback(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> DeterministicFeedbackResult:
+    return session_service.generate_feedback(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/interpret/fuzzy",
+    response_model=FuzzyInterpretationResult,
+)
+def generate_fuzzy_session_interpretation(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> FuzzyInterpretationResult:
+    return session_service.generate_fuzzy_interpretation(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/pedagogy",
+    response_model=PedagogicalDecisionResult,
+)
+def generate_session_pedagogy(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> PedagogicalDecisionResult:
+    return session_service.generate_pedagogical_decision(
+        user_id=current_user.id,
+        session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/feedback/llm",
+    response_model=LLMFeedbackResult,
+)
+def generate_llm_session_feedback(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> LLMFeedbackResult:
+    return session_service.generate_llm_feedback(
         user_id=current_user.id,
         session_id=session_id,
     )

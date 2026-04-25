@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.session_artifact import SessionArtifact
@@ -31,6 +31,22 @@ class SessionArtifactRepository:
             .order_by(SessionArtifact.created_at.asc(), SessionArtifact.artifact_type.asc())
         )
         return list(self.db.scalars(statement))
+
+    def delete_by_session_and_types(
+        self,
+        *,
+        session_id: UUID,
+        artifact_types: list[str],
+    ) -> None:
+        if not artifact_types:
+            return
+        self.db.execute(
+            delete(SessionArtifact).where(
+                SessionArtifact.session_id == session_id,
+                SessionArtifact.artifact_type.in_(artifact_types),
+            )
+        )
+        self.db.flush()
 
     def upsert(
         self,

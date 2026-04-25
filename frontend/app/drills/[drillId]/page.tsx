@@ -20,7 +20,6 @@ import { EmptyState } from "../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../features/app-shell/components/SectionTitle";
 import {
-  formatEnumLabel,
   formatTokenLabel,
   truncateText
 } from "../../../lib/formatters";
@@ -119,7 +118,7 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
           <div className="max-w-3xl">
             <div className="flex flex-wrap gap-2">
               <Badge variant="accent">{drill.sport_name}</Badge>
-              <Badge variant="slate">{formatEnumLabel(drill.difficulty_level)}</Badge>
+              <Badge variant="slate">All skill levels</Badge>
             </div>
             <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
               {drill.drill_name}

@@ -6,9 +6,9 @@ import Link from "next/link";
 type AuthShellProps = {
   title: string;
   subtitle: string;
-  footerLabel: string;
-  footerHref: string;
-  footerLinkText: string;
+  footerLabel?: string;
+  footerHref?: string;
+  footerLinkText?: string;
   children: React.ReactNode;
 };
 
@@ -68,15 +68,17 @@ export function AuthShell({
             {subtitle}
           </h2>
           <div className="mt-8">{children}</div>
-          <p className="mt-8 text-sm text-muted-gray">
-            {footerLabel}{" "}
-            <Link
-              href={footerHref}
-              className="font-semibold text-primary transition-colors hover:text-primary/80"
-            >
-              {footerLinkText}
-            </Link>
-          </p>
+          {footerLabel && footerHref && footerLinkText ? (
+            <p className="mt-8 text-sm text-muted-gray">
+              {footerLabel}{" "}
+              <Link
+                href={footerHref}
+                className="font-semibold text-primary transition-colors hover:text-primary/80"
+              >
+                {footerLinkText}
+              </Link>
+            </p>
+          ) : null}
         </motion.section>
       </div>
     </main>

@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     secret_key: str = "change_this"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-4o-mini"
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_timeout_seconds: float = 10.0
+    llm_max_tokens: int = 500
+    llm_temperature: float = 0.2
+    llm_enable_enhancement: bool = False
+    fuzzy_interpretation_enabled: bool = True
     backend_cors_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",

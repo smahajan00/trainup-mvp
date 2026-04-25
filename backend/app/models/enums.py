@@ -16,6 +16,17 @@ class InputType(str, Enum):
     LIVE = "LIVE"
 
 
+class CameraView(str, Enum):
+    FRONTAL = "FRONTAL"
+    LEFT_SAGITTAL = "LEFT_SAGITTAL"
+    RIGHT_SAGITTAL = "RIGHT_SAGITTAL"
+
+
+class DominantSide(str, Enum):
+    LEFT = "LEFT"
+    RIGHT = "RIGHT"
+
+
 class SessionStatus(str, Enum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
@@ -28,6 +39,11 @@ class SeverityLevel(str, Enum):
     SEVERE = "SEVERE"
 
 
+class ComputationStatus(str, Enum):
+    COMPUTED = "COMPUTED"
+    NOT_COMPUTABLE = "NOT_COMPUTABLE"
+
+
 skill_level_enum = SQLAlchemyEnum(
     SkillLevel,
     name="skill_level_enum",
@@ -37,6 +53,18 @@ skill_level_enum = SQLAlchemyEnum(
 input_type_enum = SQLAlchemyEnum(
     InputType,
     name="input_type_enum",
+    native_enum=True,
+)
+
+camera_view_enum = SQLAlchemyEnum(
+    CameraView,
+    name="camera_view_enum",
+    native_enum=True,
+)
+
+dominant_side_enum = SQLAlchemyEnum(
+    DominantSide,
+    name="dominant_side_enum",
     native_enum=True,
 )
 
@@ -52,3 +80,8 @@ severity_level_enum = SQLAlchemyEnum(
     native_enum=True,
 )
 
+computation_status_enum = SQLAlchemyEnum(
+    ComputationStatus,
+    name="computation_status_enum",
+    native_enum=True,
+)

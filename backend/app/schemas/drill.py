@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.models.enums import SkillLevel
 from app.schemas.base import APIBaseModel
 
 
@@ -47,7 +46,6 @@ class DrillListItemResponse(APIBaseModel):
     sport_id: UUID
     drill_name: str
     description: str | None
-    difficulty_level: SkillLevel
     target_metrics: DrillTargetMetricsResponse
 
 
@@ -57,7 +55,6 @@ class DrillDetailResponse(APIBaseModel):
     sport_name: str
     drill_name: str
     description: str | None
-    difficulty_level: SkillLevel
     target_metrics: DrillTargetMetricsResponse
     reference_payload: DrillReferencePayloadResponse
     coaching_rules: DrillCoachingRulesResponse

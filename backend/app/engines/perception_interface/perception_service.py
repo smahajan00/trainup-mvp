@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-import hashlib
+from contextlib import contextmanager
 from dataclasses import dataclass
-from math import sin
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Any, Iterator
 from uuid import UUID
 
+from app.engines.perception_interface.mediapipe_pose_backend import (
+    ExtractedPoseFrame,
+    ExtractedPoseLandmark,
+    MediaPipePoseBackend,
+    MediaPipeUnavailableError,
+)
 from app.engines.perception_interface.validators import (
     build_frame_batch_acceptance,
     build_live_readiness,
+    normalize_content_type,
     validate_upload_metadata,
 )
 from app.schemas.session import (
@@ -15,14 +24,23 @@ from app.schemas.session import (
     FrameBatchRequest,
     LiveReadinessRequest,
     LiveReadinessResponse,
-    PerceptionDerivedMotionFeatures,
-    PerceptionFileMetadata,
-    PerceptionFramePayload,
-    PerceptionKeypointCoordinate,
-    PerceptionProcessingSummary,
-    PerceptionResult,
+    PoseFrameResponse,
+    PoseLandmarkCoordinate,
+    PoseSequenceResponse,
     UploadValidationResult,
 )
+
+VISIBILITY_THRESHOLD = 0.50
+EMA_ALPHA = 0.35
+POSE_MODEL_NAME = "mediapipe_pose"
+PREPROCESSING_VERSION = "phase1_v0_1_0"
+
+
+@dataclass(frozen=True)
+class DecodedVideoFrame:
+    frame_index: int
+    timestamp_ms: float
+    frame_bgr: Any
 
 
 @dataclass
@@ -56,63 +74,35 @@ class PerceptionService:
         file_size_bytes: int,
         tracked_joints: list[str],
         file_bytes: bytes,
-    ) -> PerceptionResult:
-        seed = self._derive_seed(
-            session_id=session_id,
-            drill_id=drill_id,
-            file_name=file_name,
-            file_size_bytes=file_size_bytes,
-            file_bytes=file_bytes,
-        )
-        frame_count = min(180, 48 + (file_size_bytes // 250_000) + (seed % 36))
-        fps_estimate = float(24 + (seed % 7))
-        duration_seconds = round(frame_count / fps_estimate, 3)
-        keypoint_series = self._build_keypoint_series(
-            seed=seed,
-            tracked_joints=tracked_joints,
-            fps_estimate=fps_estimate,
-            sample_count=min(frame_count, 12),
-        )
-        available_joint_count = len(keypoint_series[0].keypoints) if keypoint_series else 0
-        average_confidence = (
-            sum(frame.confidence for frame in keypoint_series) / len(keypoint_series)
-            if keypoint_series
-            else 0.0
-        )
-        missing_frame_ratio = round(((seed % 5) + 1) / 100, 3)
-        stability_hint = round(
-            max(
-                0.0,
-                min(
-                    (average_confidence * 0.72)
-                    + (min(available_joint_count / 12, 1.0) * 0.12)
-                    + ((1 - missing_frame_ratio) * 0.16),
-                    1.0,
-                ),
-            ),
-            3,
-        )
+    ) -> PoseSequenceResponse:
+        del drill_id
+        del file_size_bytes
+        del tracked_joints
 
-        return PerceptionResult(
-            source_type="upload",
-            file_metadata=PerceptionFileMetadata(
+        try:
+            with self._temporary_video_file(
                 file_name=file_name,
                 content_type=content_type,
-                file_size_bytes=file_size_bytes,
-            ),
-            processing_summary=PerceptionProcessingSummary(
-                frame_count=frame_count,
-                duration_seconds=duration_seconds,
-                fps_estimate=fps_estimate,
-                processing_mode="scaffold",
-            ),
-            keypoint_series=keypoint_series,
-            derived_motion_features=PerceptionDerivedMotionFeatures(
-                available_joint_count=available_joint_count,
-                missing_frame_ratio=missing_frame_ratio,
-                stability_hint=stability_hint,
-            ),
-        )
+                file_bytes=file_bytes,
+            ) as video_path:
+                return self._extract_pose_sequence_from_video_file(
+                    session_id=session_id,
+                    video_path=video_path,
+                )
+        except MediaPipeUnavailableError:
+            return self._build_pose_sequence(
+                session_id=session_id,
+                frames=[],
+                status="FAILED",
+                diagnostic_flags=["MEDIAPIPE_UNAVAILABLE"],
+            )
+        except Exception:
+            return self._build_pose_sequence(
+                session_id=session_id,
+                frames=[],
+                status="FAILED",
+                diagnostic_flags=["POSE_EXTRACTION_FAILURE"],
+            )
 
     def accept_frame_batch(
         self,
@@ -120,102 +110,221 @@ class PerceptionService:
     ) -> FrameBatchAcceptanceResult:
         return build_frame_batch_acceptance(payload)
 
-    @staticmethod
-    def _derive_seed(
-        *,
-        session_id: UUID,
-        drill_id: UUID,
-        file_name: str,
-        file_size_bytes: int,
-        file_bytes: bytes,
-    ) -> int:
-        digest = hashlib.sha256()
-        digest.update(str(session_id).encode("utf-8"))
-        digest.update(str(drill_id).encode("utf-8"))
-        digest.update(file_name.encode("utf-8"))
-        digest.update(str(file_size_bytes).encode("utf-8"))
-        digest.update(file_bytes[:8192])
-        return int(digest.hexdigest()[:8], 16)
-
-    def _build_keypoint_series(
+    @contextmanager
+    def _temporary_video_file(
         self,
         *,
-        seed: int,
-        tracked_joints: list[str],
-        fps_estimate: float,
-        sample_count: int,
-    ) -> list[PerceptionFramePayload]:
-        labels = self._expand_joint_labels(tracked_joints)
-        frames: list[PerceptionFramePayload] = []
+        file_name: str,
+        content_type: str,
+        file_bytes: bytes,
+    ) -> Iterator[Path]:
+        suffix = Path(file_name).suffix or self._suffix_for_content_type(content_type)
+        temp_file = NamedTemporaryFile(delete=False, suffix=suffix)
+        temp_path = Path(temp_file.name)
 
-        for frame_index in range(sample_count):
-            keypoints: dict[str, PerceptionKeypointCoordinate] = {}
-            timestamp = round(frame_index / fps_estimate, 3)
-            confidence = round(0.74 + (((seed + frame_index * 13) % 18) / 100), 3)
+        try:
+            temp_file.write(file_bytes)
+            temp_file.flush()
+            temp_file.close()
+            yield temp_path
+        finally:
+            # Raw video bytes are discarded immediately after decoding completes.
+            if temp_path.exists():
+                temp_path.unlink()
 
-            for keypoint_index, label in enumerate(labels):
-                x, y, z = self._coordinate_for_label(
-                    label=label,
-                    seed=seed,
-                    frame_index=frame_index,
-                    keypoint_index=keypoint_index,
+    def _extract_pose_sequence_from_video_file(
+        self,
+        *,
+        session_id: UUID,
+        video_path: Path,
+    ) -> PoseSequenceResponse:
+        cv2 = self._import_cv2()
+        capture = cv2.VideoCapture(str(video_path))
+        if not capture.isOpened():
+            return self._build_pose_sequence(
+                session_id=session_id,
+                frames=[],
+                status="FAILED",
+                diagnostic_flags=["VIDEO_UNREADABLE"],
+            )
+
+        pose_backend = self._build_pose_backend()
+        raw_frames: list[PoseFrameResponse] = []
+
+        try:
+            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+            while True:
+                success, frame_bgr = capture.read()
+                if not success:
+                    break
+
+                frame_index = len(raw_frames)
+                timestamp_ms = float(capture.get(cv2.CAP_PROP_POS_MSEC) or 0.0)
+                if timestamp_ms <= 0 and fps > 0:
+                    timestamp_ms = (frame_index / fps) * 1000
+
+                raw_frame = self._extract_pose_frame(
+                    session_id=session_id,
+                    decoded_frame=DecodedVideoFrame(
+                        frame_index=frame_index,
+                        timestamp_ms=round(timestamp_ms, 3),
+                        frame_bgr=frame_bgr,
+                    ),
+                    pose_backend=pose_backend,
                 )
-                keypoints[label] = PerceptionKeypointCoordinate(x=x, y=y, z=z)
+                raw_frames.append(raw_frame)
 
-            frames.append(
-                PerceptionFramePayload(
-                    frame_index=frame_index,
-                    timestamp=timestamp,
-                    confidence=confidence,
-                    keypoints=keypoints,
+                # Drop the raw frame immediately after landmarks are extracted.
+                del frame_bgr
+        finally:
+            capture.release()
+            pose_backend.close()
+
+        if not raw_frames:
+            return self._build_pose_sequence(
+                session_id=session_id,
+                frames=[],
+                status="INSUFFICIENT_DATA",
+                diagnostic_flags=["ZERO_FRAMES"],
+            )
+
+        processed_frames = self._apply_preprocessing(raw_frames)
+        valid_frame_count = sum(1 for frame in processed_frames if frame.frame_valid)
+        status = "COMPLETED" if valid_frame_count > 0 else "INSUFFICIENT_DATA"
+        diagnostic_flags: list[str] = []
+        if valid_frame_count == 0:
+            diagnostic_flags.append("ZERO_VALID_FRAMES")
+
+        return self._build_pose_sequence(
+            session_id=session_id,
+            frames=processed_frames,
+            status=status,
+            diagnostic_flags=diagnostic_flags,
+        )
+
+    def _extract_pose_frame(
+        self,
+        *,
+        session_id: UUID,
+        decoded_frame: DecodedVideoFrame,
+        pose_backend: MediaPipePoseBackend,
+    ) -> PoseFrameResponse:
+        cv2 = self._import_cv2()
+        try:
+            frame_rgb = cv2.cvtColor(decoded_frame.frame_bgr, cv2.COLOR_BGR2RGB)
+            extracted_frame = pose_backend.extract(frame_rgb=frame_rgb)
+        except Exception:
+            extracted_frame = ExtractedPoseFrame(
+                frame_valid=False,
+                landmarks={},
+                diagnostic_flags=["POSE_EXTRACTION_ERROR"],
+            )
+        return PoseFrameResponse(
+            session_id=session_id,
+            frame_index=decoded_frame.frame_index,
+            timestamp_ms=decoded_frame.timestamp_ms,
+            landmarks={
+                name: PoseLandmarkCoordinate(
+                    x=landmark.x,
+                    y=landmark.y,
+                    visibility=landmark.visibility,
+                )
+                for name, landmark in extracted_frame.landmarks.items()
+            },
+            frame_valid=extracted_frame.frame_valid,
+            diagnostic_flags=list(extracted_frame.diagnostic_flags),
+        )
+
+    def _apply_preprocessing(
+        self,
+        frames: list[PoseFrameResponse],
+    ) -> list[PoseFrameResponse]:
+        smoothed_landmarks_by_name: dict[str, ExtractedPoseLandmark] = {}
+        processed_frames: list[PoseFrameResponse] = []
+
+        for frame in frames:
+            processed_landmarks: dict[str, PoseLandmarkCoordinate] = {}
+            frame_flags = list(frame.diagnostic_flags)
+
+            for landmark_name, landmark in frame.landmarks.items():
+                if landmark.visibility < VISIBILITY_THRESHOLD:
+                    frame_flags.append(f"LOW_VISIBILITY:{landmark_name}")
+                    processed_landmarks[landmark_name] = landmark
+                    continue
+
+                previous = smoothed_landmarks_by_name.get(landmark_name)
+                if previous is None:
+                    smoothed = ExtractedPoseLandmark(
+                        x=landmark.x,
+                        y=landmark.y,
+                        visibility=landmark.visibility,
+                    )
+                else:
+                    smoothed = ExtractedPoseLandmark(
+                        x=(EMA_ALPHA * landmark.x) + ((1 - EMA_ALPHA) * previous.x),
+                        y=(EMA_ALPHA * landmark.y) + ((1 - EMA_ALPHA) * previous.y),
+                        visibility=landmark.visibility,
+                    )
+
+                smoothed_landmarks_by_name[landmark_name] = smoothed
+                processed_landmarks[landmark_name] = PoseLandmarkCoordinate(
+                    x=round(smoothed.x, 6),
+                    y=round(smoothed.y, 6),
+                    visibility=round(smoothed.visibility, 6),
+                )
+
+            processed_frames.append(
+                PoseFrameResponse(
+                    session_id=frame.session_id,
+                    frame_index=frame.frame_index,
+                    timestamp_ms=frame.timestamp_ms,
+                    landmarks=processed_landmarks,
+                    frame_valid=frame.frame_valid,
+                    diagnostic_flags=frame_flags,
                 )
             )
 
-        return frames
+        return processed_frames
 
     @staticmethod
-    def _expand_joint_labels(tracked_joints: list[str]) -> list[str]:
-        label_map = {
-            "shoulders": ["left_shoulder", "right_shoulder"],
-            "elbows": ["left_elbow", "right_elbow"],
-            "wrists": ["left_wrist", "right_wrist"],
-            "hips": ["left_hip", "right_hip"],
-            "knees": ["left_knee", "right_knee"],
-            "ankles": ["left_ankle", "right_ankle"],
-            "torso": ["pelvis_center", "sternum_center"],
-        }
-        labels: list[str] = []
-        for joint in tracked_joints:
-            labels.extend(label_map.get(joint, [joint]))
-        return labels or ["pelvis_center", "sternum_center"]
-
-    @staticmethod
-    def _coordinate_for_label(
+    def _build_pose_sequence(
         *,
-        label: str,
-        seed: int,
-        frame_index: int,
-        keypoint_index: int,
-    ) -> tuple[float, float, float]:
-        base_positions: dict[str, tuple[float, float, float]] = {
-            "left_shoulder": (0.42, 0.18, -0.02),
-            "right_shoulder": (0.58, 0.18, 0.02),
-            "left_elbow": (0.39, 0.29, -0.03),
-            "right_elbow": (0.61, 0.29, 0.03),
-            "left_wrist": (0.37, 0.4, -0.05),
-            "right_wrist": (0.63, 0.4, 0.05),
-            "left_hip": (0.45, 0.46, -0.02),
-            "right_hip": (0.55, 0.46, 0.02),
-            "left_knee": (0.46, 0.68, -0.01),
-            "right_knee": (0.54, 0.68, 0.01),
-            "left_ankle": (0.47, 0.88, 0.0),
-            "right_ankle": (0.53, 0.88, 0.0),
-            "pelvis_center": (0.5, 0.48, 0.0),
-            "sternum_center": (0.5, 0.28, 0.0),
+        session_id: UUID,
+        frames: list[PoseFrameResponse],
+        status: str,
+        diagnostic_flags: list[str],
+    ) -> PoseSequenceResponse:
+        return PoseSequenceResponse(
+            session_id=session_id,
+            pose_model=POSE_MODEL_NAME,
+            preprocessing_version=PREPROCESSING_VERSION,
+            frame_count=len(frames),
+            valid_frame_count=sum(1 for frame in frames if frame.frame_valid),
+            status=status,
+            diagnostic_flags=diagnostic_flags,
+            sequence_data=frames,
+            created_at=None,
+        )
+
+    @staticmethod
+    def _suffix_for_content_type(content_type: str | None) -> str:
+        normalized = normalize_content_type(content_type)
+        suffixes = {
+            "video/mp4": ".mp4",
+            "video/quicktime": ".mov",
+            "video/webm": ".webm",
+            "video/x-matroska": ".mkv",
         }
-        base_x, base_y, base_z = base_positions.get(label, (0.5, 0.5, 0.0))
-        oscillation = sin((seed % 17 + frame_index + keypoint_index) * 0.35)
-        x = round(base_x + (oscillation * 0.012), 3)
-        y = round(base_y + (sin((seed % 11 + frame_index) * 0.28) * 0.01), 3)
-        z = round(base_z + (sin((seed % 13 + keypoint_index + frame_index) * 0.31) * 0.008), 3)
-        return x, y, z
+        return suffixes.get(normalized, ".mp4")
+
+    @staticmethod
+    def _import_cv2() -> Any:
+        try:
+            import cv2
+        except ModuleNotFoundError as exc:
+            raise MediaPipeUnavailableError("OpenCV is not installed.") from exc
+        return cv2
+
+    @staticmethod
+    def _build_pose_backend() -> MediaPipePoseBackend:
+        return MediaPipePoseBackend()

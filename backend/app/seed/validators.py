@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from app.models.enums import SkillLevel
-
 
 class SeedValidationError(ValueError):
     """Raised when seed definitions are incomplete or internally inconsistent."""
@@ -204,12 +202,6 @@ def validate_drill_seed(drill_seed: dict[str, object], valid_metric_names: set[s
 
     _ensure_non_empty_string(drill_seed.get("drill_name"), "drill_name", context)
     _ensure_non_empty_string(drill_seed.get("description"), "description", context)
-
-    difficulty_level = drill_seed.get("difficulty_level")
-    if not isinstance(difficulty_level, SkillLevel):
-        raise SeedValidationError(
-            f"{context}: difficulty_level must be a SkillLevel enum value."
-        )
 
     target_metric_names = _validate_target_metrics(
         drill_seed.get("target_metrics"),

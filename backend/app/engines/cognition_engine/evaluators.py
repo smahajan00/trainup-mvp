@@ -76,6 +76,9 @@ def evaluate_rule_checks(
             thresholds=thresholds,
             severity_weight=float(rule_check.get("severity_weight", 0.5)),
         )
+        if severity_level == SeverityLevel.MINOR:
+            continue
+
         issues.append(
             EvaluationIssueResponse(
                 metric=metric_name,

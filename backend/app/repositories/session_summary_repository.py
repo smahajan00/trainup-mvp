@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.drill import Drill
@@ -80,3 +80,9 @@ class SessionSummaryRepository:
             .limit(limit)
         )
         return list(self.db.scalars(statement))
+
+    def delete_by_session_id(self, *, session_id: UUID) -> None:
+        self.db.execute(
+            delete(SessionSummary).where(SessionSummary.session_id == session_id)
+        )
+        self.db.flush()
