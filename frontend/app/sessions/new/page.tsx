@@ -229,10 +229,10 @@ function SessionCreationContent({
 
   const primaryActionLabel =
     selectedInputType === "LIVE"
-      ? "Continue to Live Camera"
+      ? "Open Live Camera"
       : selectedInputType === "UPLOAD"
-        ? "Continue to Upload Video"
-        : "Choose a Training Input";
+        ? "Open Upload Flow"
+        : "Choose Your Training Mode";
   const recommendedCameraView =
     drill.canonical_view ||
     selectedCameraView ||
@@ -252,7 +252,7 @@ function SessionCreationContent({
           {drill.drill_name}
         </h2>
         <p className="mt-4 max-w-3xl text-sm text-muted-gray sm:text-base">
-          Confirm your training setup before creating the session.
+          Run through this pre-training checklist before you create the session.
         </p>
         <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
           <p className="text-sm font-semibold text-white">
@@ -293,29 +293,29 @@ function SessionCreationContent({
 
       <div className="space-y-5">
         <SectionTitle
-          eyebrow="Mode"
-          title="Choose training input"
-          description="Pick whether you want to upload a clip or use the live camera."
+          eyebrow="Checklist"
+          title="Choose your training mode"
+          description="Pick the capture flow that fits the rep you want to review."
         />
         <div className="grid gap-5 lg:grid-cols-2">
           <ModeCard
-            title="Live Session"
-            description="Use your camera for guided real-time training flow."
+            title="Live Camera"
+            description="Use your camera for a guided real-time rep capture."
             badge="Camera"
             eyebrow="Live"
-            detail="Open camera. Start when ready."
-            ctaLabel="Use Live Camera"
+            detail="Open the camera, control the rep, and review it when you stop."
+            ctaLabel="Choose Live Camera"
             icon={PlayCircle}
             isSelected={selectedInputType === "LIVE"}
             onSelect={() => setSelectedInputType("LIVE")}
           />
           <ModeCard
             title="Upload Video"
-            description="Submit a recorded clip for structured review."
+            description="Submit a recorded clip for a polished breakdown."
             badge="Video"
             eyebrow="Upload"
-            detail="Pick a clip. Review results."
-            ctaLabel="Use Upload Video"
+            detail="Drop in one clip, preview it, then run the full analysis."
+            ctaLabel="Choose Upload Video"
             icon={UploadCloud}
             isSelected={selectedInputType === "UPLOAD"}
             onSelect={() => setSelectedInputType("UPLOAD")}
@@ -326,8 +326,8 @@ function SessionCreationContent({
       <InfoCard>
         <SectionTitle
           eyebrow="Setup"
-          title="Confirm session details"
-          description="Review the selected sport, drill, and capture settings."
+          title="Confirm your training checklist"
+          description="Review the sport, drill, and capture settings before you lock in the session."
         />
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -381,7 +381,7 @@ function SessionCreationContent({
               ))}
             </Select>
             <p className="text-sm text-muted-gray">
-              Recommended camera view:{" "}
+              Recommended setup angle:{" "}
               {formatEnumLabel(recommendedCameraView)}
             </p>
           </div>
@@ -468,8 +468,8 @@ export default function NewSessionPage() {
   return (
     <AppShell
       eyebrow="Session"
-      title="Start session"
-      description="Choose how you want to train."
+      title="Pre-training checklist"
+      description="Choose your input mode, camera angle, and drill setup before you train."
       capsule="Ready"
       actions={
         <CTAButton asChild>

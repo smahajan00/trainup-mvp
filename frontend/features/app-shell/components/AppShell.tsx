@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3,
   ChevronRight,
-  LayoutDashboard,
-  LineChart,
+  House,
   LogOut,
   PanelLeft,
   Trophy,
@@ -41,10 +41,10 @@ type NavItem = {
 };
 
 const navigationItems: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Home", href: "/dashboard", icon: House },
   { label: "Sports", href: "/sports", icon: Trophy },
   { label: "Profile", href: "/profile", icon: UserCircle2 },
-  { label: "Progress", href: "/progress", icon: LineChart }
+  { label: "Dashboard", href: "/progress", icon: BarChart3 }
 ];
 
 function isActiveRoute(pathname: string, href: string) {
@@ -110,10 +110,10 @@ export function AppShell({
                   key={label}
                   href={href}
                   className={cn(
-                    "group flex items-center justify-between rounded-2xl border px-4 py-3 text-sm transition-all duration-300",
+                    "group flex items-center justify-between rounded-2xl border px-4 py-3 text-sm transition-all duration-300 motion-reduce:transition-none hover:-translate-y-0.5",
                     active
-                      ? "border-primary/25 bg-primary/12 text-white shadow-[0_10px_30px_rgba(255,122,0,0.12)]"
-                      : "border-white/8 bg-white/[0.03] text-white/70 hover:border-white/15 hover:bg-white/[0.05] hover:text-white"
+                      ? "border-primary/30 bg-primary/14 text-white shadow-[0_12px_34px_rgba(255,122,0,0.16)]"
+                      : "border-white/8 bg-white/[0.03] text-white/70 hover:border-white/18 hover:bg-white/[0.05] hover:text-white"
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -132,7 +132,9 @@ export function AppShell({
           </nav>
 
           <div className="mt-8 rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">Session</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
+              Athlete profile
+            </p>
             <p className="mt-3 text-lg font-semibold text-white">
               {session.user?.full_name ?? "Loading athlete..."}
             </p>

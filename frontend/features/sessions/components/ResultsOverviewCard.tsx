@@ -27,8 +27,8 @@ export function ResultsOverviewCard({
     <InfoCard>
       <SectionTitle
         eyebrow="Results"
-        title="Performance overview"
-        description="A quick read on how this session performed before you dive into coaching."
+        title="Performance Overview"
+        description="Start with the quick read, then move into the coaching cues that matter most."
       />
 
       <div className="mt-6 flex flex-wrap gap-2">

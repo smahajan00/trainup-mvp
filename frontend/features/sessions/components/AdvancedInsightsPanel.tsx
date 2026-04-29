@@ -30,7 +30,7 @@ export function AdvancedInsightsPanel({
               Advanced Analysis
             </h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-muted-gray">
-              Open this section for deeper interpretation without crowding the main coaching view.
+              Open this section for the deeper performance readout without crowding the main coaching view.
             </p>
           </div>
           <div className="flex items-center gap-3">

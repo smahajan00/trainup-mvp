@@ -27,13 +27,13 @@ export function ScoreTrendChartCard({ points }: ScoreTrendChartCardProps) {
     <InfoCard>
       <SectionTitle
         eyebrow="Trend"
-        title="Score trend"
-        description="Recent session scores plotted over time so you can spot direction quickly."
+        title="Performance Trend"
+        description="Recent session scores plotted over time so you can spot momentum at a glance."
       />
 
       {points.length < 2 ? (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-7 text-muted-gray">
-          Complete more sessions to unlock a performance trend line.
+          Log more sessions to unlock your trendline.
         </div>
       ) : (
         <div className="mt-6 h-[320px]">

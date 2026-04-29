@@ -14,17 +14,17 @@ type AnalysisProgressCardProps = {
 const GROUPS = [
   {
     id: "movement",
-    title: "Evaluating movement",
+    title: "Reading movement quality",
     stepIds: ["evaluation"]
   },
   {
     id: "interpretation",
-    title: "Interpreting performance",
+    title: "Building performance insight",
     stepIds: ["fuzzy", "it2", "pedagogy", "ontology", "choquet", "temporal"]
   },
   {
     id: "coaching",
-    title: "Generating coaching feedback",
+    title: "Crafting coaching cues",
     stepIds: ["feedback", "llm"]
   }
 ] as const;
@@ -62,15 +62,15 @@ export function AnalysisProgressCard({
     <InfoCard>
       <SectionTitle
         eyebrow="Analysis"
-        title="Analyze Session"
+        title="Analyze Performance"
         description={
           analysisState === "RUNNING"
-            ? "Analyzing your session..."
+            ? "Breaking down your movement..."
             : analysisState === "COMPLETED"
-              ? "Analysis complete."
+              ? "Performance breakdown complete."
               : analysisState === "FAILED"
                 ? "Analysis failed. Try again."
-                : "Run the full analysis pipeline when your input is ready."
+                : "Run the full performance pipeline when your input is ready."
         }
       />
 
@@ -98,7 +98,7 @@ export function AnalysisProgressCard({
           return (
             <div
               key={group.id}
-              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 transition-colors duration-300"
             >
               {status === "COMPLETED" ? (
                 <CheckCircle2 className="h-5 w-5 text-emerald-300" />

@@ -27,7 +27,7 @@ export function SessionInputModeToggle({
           <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
             Input Mode
           </p>
-          <p className="mt-2 flex items-center gap-2 text-sm text-white/85">
+          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-white/90">
             {isUploadMode ? (
               <UploadCloud className="h-4 w-4 text-primary" />
             ) : (
@@ -45,10 +45,10 @@ export function SessionInputModeToggle({
           </Button>
         ) : null}
       </div>
-      <p className="text-sm text-muted-gray">
+      <p className="text-sm leading-6 text-muted-gray">
         {helperText
           ? helperText
-          : "This session stays in its current input mode. Start a new session if you want to train with a different input."}
+          : "This session stays locked to its current input mode. Start a fresh session if you want to switch how you capture the next rep."}
       </p>
     </div>
   );

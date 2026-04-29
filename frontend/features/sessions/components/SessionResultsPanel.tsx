@@ -156,13 +156,13 @@ export function SessionResultsPanel({
       <InfoCard>
         <SectionTitle
           eyebrow="Results"
-          title="Session results"
+          title="Performance Board"
           description={
             analysisState === "RUNNING"
-              ? "Results will appear here as soon as analysis finishes."
+              ? "Your coaching board will appear here as soon as analysis finishes."
               : analysisState === "FAILED"
                 ? "Analysis failed. Try again."
-                : "Analyze your session to see coaching feedback."
+                : "Analyze your session to unlock coaching cues."
           }
         />
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-7 text-white/80">
@@ -170,7 +170,7 @@ export function SessionResultsPanel({
             ? analysisError ?? "Analysis failed. Try again."
             : analysisState === "RUNNING"
               ? "TrainUp is processing movement quality, coaching priorities, and advanced reasoning."
-              : "Analyze your session to see coaching feedback."}
+              : "Analyze your session to unlock coaching cues."}
         </div>
       </InfoCard>
     );
@@ -331,8 +331,8 @@ export function SessionResultsPanel({
         <InfoCard>
           <SectionTitle
             eyebrow="Coaching"
-            title="Coaching feedback"
-            description="Clear guidance on what happened, why it happened, and what to do next."
+            title="Coaching Feedback"
+            description="Clear guidance on what happened, why it happened, what to fix, and what to do next."
           />
 
           {llmFeedbackResult?.status === "COMPLETED" ? null : (

@@ -325,7 +325,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               {session.drill_name}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Start the camera, control capture, then analyze the session in one flow.
+              Start the camera, control the rep, then break down performance in one flow.
             </p>
           </div>
 
@@ -359,7 +359,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
           mode="LIVE"
           sessionDrillId={session.drill_id}
           secondaryActionLabel="Start a new upload session"
-          helperText="This session was created for live camera. Start a new session if you want to upload a recorded clip."
+          helperText="This session is locked to live camera. Start a new upload session if the next rep is already recorded."
         />
       </InfoCard>
 
@@ -367,8 +367,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
             eyebrow="Input"
-            title="Live camera"
-            description="Use the same session context while controlling the camera here."
+            title="Live camera capture"
+            description="Stay in the same session while you start, pause, resume, and finish the rep."
           />
 
           <div className="mt-6">
@@ -377,8 +377,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               videoRef={videoRef}
               autoPlay
               muted
-              emptyTitle="Camera preview"
-              emptyDescription="Start camera to capture movement."
+              emptyTitle="Camera preview ready"
+              emptyDescription="Start the camera to capture movement and keep the full body in frame."
             />
           </div>
 
@@ -428,8 +428,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Preview"
-            title="Capture state"
-            description="Keep the user-facing status simple and clear."
+            title="Capture status"
+            description="Keep the camera state, capture flow, and rep timing clear while you record."
           />
 
           {actionError ? (
@@ -476,12 +476,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
             <ul className="mt-3 space-y-2 text-sm text-white/85">
               <li>
                 {session.input_type === "LIVE"
-                  ? "Start camera to capture movement."
+                  ? "Start the camera to capture movement."
                   : "This session was created for upload video, so live capture is unavailable on this page."}
               </li>
               <li>
                 {captureState === "STOPPED"
-                  ? "Capture finalized. Analyze Session is now available."
+                  ? "Capture finalized. Analyze Performance is now available."
                   : "Stop the camera before running analysis."}
               </li>
               <li>
@@ -508,18 +508,18 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Action"
-            title="Analyze session"
+            title="Analyze performance"
             description="Run the full backend pipeline after capture is stopped."
           />
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <CTAButton
-              type="button"
-              onClick={handleAnalyzeSession}
-              disabled={!canAnalyze || analysisState === "RUNNING"}
-            >
-              {analysisState === "RUNNING" ? "Analyzing session" : "Analyze Session"}
-            </CTAButton>
+          <CTAButton
+            type="button"
+            onClick={handleAnalyzeSession}
+            disabled={!canAnalyze || analysisState === "RUNNING"}
+          >
+              {analysisState === "RUNNING" ? "Analyzing performance" : "Analyze Performance"}
+          </CTAButton>
             <Badge variant="slate">
               {captureState === "IDLE"
                 ? "Start camera to capture movement"
@@ -554,7 +554,7 @@ export default function LiveSessionPage() {
     <AppShell
       eyebrow="Live Session"
       title="Training input"
-      description="Use the camera and analyze the session when capture is done."
+      description="Use the camera, lock the rep, and analyze the performance when capture is done."
       capsule="Input"
       actions={
         <CTAButton asChild>

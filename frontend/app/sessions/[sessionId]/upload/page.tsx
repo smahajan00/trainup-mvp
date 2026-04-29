@@ -241,7 +241,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               {session.drill_name}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Upload your clip, preview it, then run one guided analysis flow.
+              Load a clip, confirm the framing, then break down the rep in one guided flow.
             </p>
           </div>
 
@@ -275,7 +275,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
           mode="UPLOAD"
           sessionDrillId={session.drill_id}
           secondaryActionLabel="Start a new live session"
-          helperText="This session was created for upload video. Start a new session if you want to use live camera."
+          helperText="This session is locked to upload video. Start a new live session if you want camera-based capture for the next rep."
         />
       </InfoCard>
 
@@ -283,8 +283,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
             eyebrow="Input"
-            title="Upload video"
-            description="Choose one clip and keep the whole movement in frame."
+            title="Upload your performance clip"
+            description="Choose one rep, keep the whole movement in frame, and send it through the review flow."
           />
 
           {canUpload ? (
@@ -306,10 +306,10 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                   <UploadCloud className="h-7 w-7" />
                 </div>
                 <h3 className="mt-5 font-display text-2xl font-bold text-white">
-                  Drop a video here
+                  Drop your clip here
                 </h3>
                 <p className="mt-3 text-sm text-muted-gray">
-                  MP4, MOV, WEBM, or MKV. One file per session.
+                  MP4, MOV, WEBM, or MKV. One clip per session.
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3">
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_34px_rgba(255,122,0,0.22)] transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-primary/90 hover:shadow-[0_18px_42px_rgba(255,122,0,0.28)]">
@@ -349,7 +349,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                   className="rounded-2xl px-6"
                   disabled={!selectedFile || isSubmitting}
                 >
-                  {isSubmitting ? "Uploading" : "Upload video"}
+                  {isSubmitting ? "Uploading clip" : "Upload Clip"}
                 </Button>
                 <Badge variant="slate">100 MB max</Badge>
               </div>
@@ -366,8 +366,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Preview"
-            title="Review your clip"
-            description="Video preview and overlay-ready canvas stay aligned here."
+            title="Preview before analysis"
+            description="Your video preview and overlay-ready canvas stay aligned here."
           />
 
           <div className="mt-6">
@@ -375,8 +375,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               showVideo={Boolean(videoPreviewUrl)}
               videoSrc={videoPreviewUrl}
               controls
-              emptyTitle="Preview unavailable"
-              emptyDescription="Choose a video to preview it before upload."
+              emptyTitle="Clip preview waiting"
+              emptyDescription="Choose a clip to preview it before you upload."
             />
           </div>
 
@@ -386,7 +386,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
             </p>
             <p className="mt-3 text-sm text-white/85">
               {videoPreviewUrl
-                ? "Preview ready. Upload when the clip looks correct."
+                ? "Preview ready. Upload when the rep looks framed correctly."
                 : "Upload a video to begin analysis."}
             </p>
           </div>
@@ -397,8 +397,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         <InfoCard>
           <SectionTitle
             eyebrow="Validation"
-            title="Upload summary"
-            description="Frames, valid movement data, and capture issues."
+            title="Clip readiness"
+            description="Frames processed, valid movement data, and capture issues from this upload."
           />
 
           {submitError ? (
@@ -498,7 +498,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       <InfoCard>
         <SectionTitle
           eyebrow="Action"
-          title="Analyze session"
+          title="Analyze performance"
           description="Run the full evaluation and coaching pipeline with one action."
         />
 
@@ -508,7 +508,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
             onClick={handleAnalyzeSession}
             disabled={!canAnalyze || analysisState === "RUNNING"}
           >
-            {analysisState === "RUNNING" ? "Analyzing session" : "Analyze Session"}
+            {analysisState === "RUNNING" ? "Analyzing performance" : "Analyze Performance"}
           </CTAButton>
           <Badge variant="slate">
             {canAnalyze
@@ -535,7 +535,7 @@ export default function UploadSessionPage() {
     <AppShell
       eyebrow="Upload"
       title="Training input"
-      description="Upload your clip and analyze the full session."
+      description="Upload your clip, confirm the preview, and analyze the full performance."
       capsule="Input"
       actions={
         <CTAButton asChild>

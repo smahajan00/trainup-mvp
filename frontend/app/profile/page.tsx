@@ -15,7 +15,7 @@ export default function ProfilePage() {
       capsule="Profile"
       actions={
         <CTAButton asChild>
-          <Link href="/dashboard">Back to Dashboard</Link>
+          <Link href="/dashboard">Back to Home</Link>
         </CTAButton>
       }
     >

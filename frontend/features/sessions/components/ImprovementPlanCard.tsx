@@ -23,15 +23,15 @@ export function ImprovementPlanCard({
     <InfoCard>
       <SectionTitle
         eyebrow="Plan"
-        title="Improvement plan"
-        description={`This ${skillLevelLabel.toLowerCase()} session plan keeps the next focus areas concise and actionable.`}
+        title="Improvement Plan"
+        description={`This ${skillLevelLabel.toLowerCase()} session plan keeps the next focus areas concise, coachable, and easy to repeat.`}
       />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-            Focus items
-          </p>
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Focus items
+            </p>
           {focusItems.length ? (
             <div className="mt-4 flex flex-wrap gap-2">
               {focusItems.map((item) => (
@@ -41,10 +41,10 @@ export function ImprovementPlanCard({
               ))}
             </div>
           ) : (
-            <p className="mt-3 text-sm leading-6 text-white/85">
-              Coaching focus will appear after analysis.
-            </p>
-          )}
+              <p className="mt-3 text-sm leading-6 text-white/85">
+                Analyze a session to unlock coaching cues.
+              </p>
+            )}
 
           {learningObjective ? (
             <div className="mt-5">
@@ -73,7 +73,7 @@ export function ImprovementPlanCard({
               Progression advice
             </p>
             <p className="mt-3 text-sm leading-6 text-white/85">
-              {progressionAdvice ?? "Complete a few more analyzed sessions to unlock progression guidance."}
+              {progressionAdvice ?? "Log a few more analyzed sessions to unlock progression guidance."}
             </p>
           </div>
         </div>

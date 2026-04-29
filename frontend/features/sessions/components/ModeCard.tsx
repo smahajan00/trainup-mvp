@@ -34,7 +34,9 @@ export function ModeCard({
     <motion.div whileHover={{ y: -6 }} transition={{ duration: 0.2 }}>
       <InfoCard
         className={`relative h-full overflow-hidden ${
-          isSelected ? "border-primary/30 bg-primary/8" : "border-white/10"
+          isSelected
+            ? "border-primary/30 bg-primary/8 shadow-[0_20px_52px_rgba(255,122,0,0.12)]"
+            : "border-white/10"
         }`}
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_38%)]" />
@@ -67,7 +69,7 @@ export function ModeCard({
               className="w-full justify-between rounded-2xl"
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Creating" : ctaLabel}
+              {isSubmitting ? "Locking it in" : ctaLabel}
             </CTAButton>
           </div>
         </div>

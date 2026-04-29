@@ -29,7 +29,7 @@ export function CoachingFeedbackCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-            Coaching card
+            Coaching cue
           </p>
           <h3 className="mt-3 font-display text-2xl font-bold text-white">
             {title}
@@ -37,7 +37,7 @@ export function CoachingFeedbackCard({
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant={isEnhanced ? "success" : "slate"}>
-            {isEnhanced ? "Enhanced coaching" : "Deterministic coaching"}
+            {isEnhanced ? "AI-enhanced" : "Rule-based"}
           </Badge>
           {severity ? (
             <Badge variant={getSeverityVariant(severity)}>{severity}</Badge>
@@ -74,7 +74,7 @@ export function CoachingFeedbackCard({
 
       {backupNote ? (
         <div className="mt-4 rounded-2xl border border-primary/15 bg-primary/10 px-4 py-4 text-sm leading-6 text-white/85">
-          <span className="font-semibold text-white">Baseline coaching:</span>{" "}
+          <span className="font-semibold text-white">Baseline cue:</span>{" "}
           {backupNote}
         </div>
       ) : null}

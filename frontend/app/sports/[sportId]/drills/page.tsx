@@ -99,7 +99,7 @@ function SportDrillsContent({
                 asChild
                 className="rounded-2xl border border-white/10 bg-white/[0.04] text-white shadow-none hover:bg-white/[0.07]"
               >
-                <Link href="/dashboard">Back to Dashboard</Link>
+                <Link href="/dashboard">Back to Home</Link>
               </CTAButton>
             ) : null}
           </div>

@@ -26,7 +26,7 @@ export function PoseOverlayPreview({
   muted = false,
   emptyTitle,
   emptyDescription,
-  overlayMessage = "Pose detection preview will appear here",
+  overlayMessage = "Pose overlay preview will light up here during analysis",
   className
 }: PoseOverlayPreviewProps) {
   const internalVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -101,6 +101,9 @@ export function PoseOverlayPreview({
           </h3>
           <p className="mt-4 max-w-xl text-sm text-muted-gray">
             {emptyDescription}
+          </p>
+          <p className="mt-4 text-xs uppercase tracking-[0.24em] text-white/45">
+            Overlay-ready preview surface
           </p>
         </div>
       )}

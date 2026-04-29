@@ -80,7 +80,7 @@ export function MiniProgressPreview({
           setProgressError(
             error instanceof Error
               ? error.message
-              : "Progress preview is unavailable right now."
+              : "Dashboard preview is unavailable right now."
           );
         }
       } finally {
@@ -119,13 +119,13 @@ export function MiniProgressPreview({
   return (
     <InfoCard>
       <SectionTitle
-        eyebrow="Progress"
-        title="Mini progress preview"
-        description="A quick look at how this session compares with your recent work."
+        eyebrow="Dashboard"
+        title="Trend preview"
+        description="A quick read on how this rep compares with your recent work."
         action={
           <Button asChild variant="outline">
             <Link href="/progress">
-              View Full Progress
+              Open Performance Dashboard
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
@@ -134,7 +134,7 @@ export function MiniProgressPreview({
 
       {currentScorePercent === null || currentScorePercent === undefined ? (
         <p className="mt-6 text-sm leading-6 text-muted-gray">
-          Complete analysis to unlock progress trends.
+          Analyze a session to unlock your trendline.
         </p>
       ) : isLoading ? (
         <p className="mt-6 text-sm leading-6 text-muted-gray">
@@ -144,7 +144,7 @@ export function MiniProgressPreview({
         <p className="mt-6 text-sm leading-6 text-muted-gray">{progressError}</p>
       ) : !previousSession ? (
         <p className="mt-6 text-sm leading-6 text-muted-gray">
-          Complete more sessions to unlock progress trends.
+          Log more sessions to unlock your trendline.
         </p>
       ) : (
         <>

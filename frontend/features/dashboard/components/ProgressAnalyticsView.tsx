@@ -307,11 +307,11 @@ export function ProgressAnalyticsView({
             </div>
             <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
               {user?.full_name
-                ? `${user.full_name}, track your training story.`
-                : "Track your training story."}
+                ? `${user.full_name}, see how your training is trending.`
+                : "See how your training is trending."}
             </h2>
             <p className="mt-4 max-w-2xl text-sm text-muted-gray sm:text-base">
-              Review score trends, recurring weaknesses, drill performance, and coaching signals from your recent analyzed sessions.
+              Read the full performance story across score trends, recurring weaknesses, drill results, and coaching signals from your recent analyzed sessions.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <CTAButton asChild>
@@ -358,8 +358,8 @@ export function ProgressAnalyticsView({
       <InfoCard>
         <SectionTitle
           eyebrow="Filters"
-          title="Filter your analytics"
-          description="Switch the sport focus, then narrow the dashboard to a specific drill when you need a tighter comparison."
+          title="Dial in your dashboard"
+          description="Set the sport focus first, then tighten the view to a single drill when you want a sharper comparison."
           action={
             selectedSportId !== "all" || selectedDrillId !== "all" ? (
               <Button
@@ -448,7 +448,7 @@ export function ProgressAnalyticsView({
         <EmptyState
           icon={History}
           title="No analyzed sessions yet"
-          description="Complete a few training sessions to unlock score trends, drill comparison, and recurring weakness analytics."
+          description="Log a few analyzed sessions to unlock score trends, drill breakdowns, and recurring coaching intelligence."
           action={
             <CTAButton asChild>
               <Link href="/sports">Start With a Drill</Link>
@@ -460,7 +460,7 @@ export function ProgressAnalyticsView({
           <SectionTitle
             eyebrow="No Match"
             title="No sessions in this filter"
-            description="Your current sport and drill filter combination has no completed sessions yet."
+            description="This sport and drill combination does not have an analyzed session yet."
           />
           <div className="mt-6 flex flex-wrap gap-3">
             <Button
@@ -523,8 +523,8 @@ export function ProgressAnalyticsView({
             <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.15),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
               <SectionTitle
                 eyebrow="Coaching"
-                title="Training insight summary"
-                description="A deterministic summary of what your recent analytics are saying."
+                title="AI Coaching Snapshot"
+                description="A concise read on what the recent analytics are saying about your movement quality."
               />
               <p className="mt-6 text-sm leading-7 text-white/85">
                 {coachingInsightSummary}
@@ -575,8 +575,8 @@ export function ProgressAnalyticsView({
             <InfoCard>
               <SectionTitle
                 eyebrow="Intelligence"
-                title="Recurring weakness intelligence"
-                description="These patterns show up most often across the filtered sessions."
+                title="Training Intelligence"
+                description="These recurring patterns show up most often inside the current dashboard view."
               />
 
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -586,7 +586,7 @@ export function ProgressAnalyticsView({
                   </p>
                   <p className="mt-3 text-sm leading-7 text-white/85">
                     {recurringInsight.recurringConceptSentence ??
-                      "Complete more sessions to identify a recurring focus area."}
+                      "Log more sessions to surface a recurring focus area."}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -623,8 +623,8 @@ export function ProgressAnalyticsView({
           <InfoCard>
             <SectionTitle
               eyebrow="Drills"
-              title="Drill comparison"
-              description="Compare how each drill is performing inside the selected sport filter."
+              title="Drill Breakdown"
+              description="Compare how each drill is performing inside the selected dashboard scope."
             />
 
             {drillComparisonData.length ? (
@@ -639,9 +639,9 @@ export function ProgressAnalyticsView({
                         <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
                           {drill.sportName}
                         </p>
-                        <h3 className="mt-3 font-display text-2xl font-bold text-white">
-                          {drill.drillName}
-                        </h3>
+            <h3 className="mt-3 font-display text-2xl font-bold text-white">
+              {drill.drillName}
+            </h3>
                       </div>
                       <Badge variant={getTrendTone(drill.trendDirection)}>
                         {drill.trendLabel}
@@ -689,7 +689,7 @@ export function ProgressAnalyticsView({
               </div>
             ) : (
               <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-7 text-muted-gray">
-                Complete more sessions to unlock drill comparison.
+                Log more sessions to unlock your drill breakdown.
               </div>
             )}
           </InfoCard>
@@ -697,7 +697,7 @@ export function ProgressAnalyticsView({
           <InfoCard>
             <SectionTitle
               eyebrow="Sessions"
-              title="Recent sessions"
+              title="Recent Sessions"
               description="Open a session to revisit the detailed coaching results."
             />
 

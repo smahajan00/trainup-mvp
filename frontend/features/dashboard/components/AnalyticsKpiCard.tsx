@@ -27,7 +27,7 @@ export function AnalyticsKpiCard({
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
           <Icon className="h-5 w-5" />
         </div>
-        <Badge variant={tone}>Analytics</Badge>
+        <Badge variant={tone}>Live metric</Badge>
       </div>
       <p className="mt-6 text-xs uppercase tracking-[0.22em] text-muted-gray">{label}</p>
       <p

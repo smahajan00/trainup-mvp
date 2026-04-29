@@ -113,10 +113,10 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
       ? "Auto-detect by default. You can override to Left or Right in session setup."
       : "Not required for this drill.";
   const outputPreview = [
-    "Video checks",
-    "Score cards",
-    "Technique issues",
-    "Session summary"
+    "Capture validation",
+    "Performance score",
+    "Coaching cues",
+    "Progress tracking"
   ];
 
   return (
@@ -146,7 +146,7 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
               </Link>
             </CTAButton>
             <p className="text-sm text-muted-gray">
-              Choose Upload Video or Live Camera in session setup.
+              Next up: choose Upload Video or Live Camera in your training checklist.
             </p>
             <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
@@ -271,7 +271,7 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
         <SectionTitle
           eyebrow="Capture Setup"
           title="Capture protocol"
-          description="Use the recommended setup before you start."
+          description="Set the camera, framing, and active side before you log the rep."
         />
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -439,8 +439,8 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
       <InfoCard>
         <SectionTitle
           eyebrow="Preview"
-          title="After upload"
-          description="Your review includes these sections."
+          title="What your review unlocks"
+          description="Every analyzed session comes back with these performance checkpoints."
         />
         <div className="mt-6 grid gap-4 lg:grid-cols-4">
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -476,7 +476,7 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
             </div>
             <p className="mt-4 text-sm font-semibold text-white">Progress</p>
             <p className="mt-2 text-sm text-muted-gray">
-              Saved metrics over time
+              Performance dashboard trends
             </p>
           </div>
         </div>
@@ -493,8 +493,8 @@ export default function DrillDetailPage({
   return (
     <AppShell
       eyebrow="Drill"
-      title="Drill detail"
-      description="Review the drill, then start."
+      title="Drill preview"
+      description="Review the setup, lock in the capture plan, then start training."
       capsule="Ready"
       actions={
         <CTAButton asChild>

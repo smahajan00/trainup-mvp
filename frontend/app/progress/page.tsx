@@ -9,10 +9,10 @@ import { ProgressAnalyticsView } from "../../features/dashboard/components/Progr
 export default function ProgressPage() {
   return (
     <AppShell
-      eyebrow="Progress"
-      title="Performance analytics"
-      description="Track score trends, drill comparisons, and recurring coaching patterns."
-      capsule="Analytics"
+      eyebrow="Dashboard"
+      title="Performance Dashboard"
+      description="Track score trends, drill breakdowns, and recurring coaching patterns from your recent sessions."
+      capsule="Analytics live"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Start Training</Link>

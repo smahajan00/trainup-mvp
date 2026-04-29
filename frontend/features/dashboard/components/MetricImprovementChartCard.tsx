@@ -19,13 +19,13 @@ export function MetricImprovementChartCard({
     <InfoCard>
       <SectionTitle
         eyebrow="Metrics"
-        title="Metric improvement"
-        description="Track which movement metrics are improving and which ones still need repetition."
+        title="Metric Momentum"
+        description="Track which movement metrics are climbing and which ones still need more clean reps."
       />
 
       {!points.length ? (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-7 text-muted-gray">
-          Complete more sessions to compare metric changes.
+          Log more sessions to compare metric changes.
         </div>
       ) : hasTrendData ? (
         <div className="mt-6 h-[320px]">

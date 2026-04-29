@@ -21,6 +21,7 @@ import { AppShell } from "../../features/app-shell/components/AppShell";
 import { InfoCard } from "../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../features/app-shell/components/SectionTitle";
 import { StatCard } from "../../features/app-shell/components/StatCard";
+import { MotivationalHeroLine } from "../../features/dashboard/components/MotivationalHeroLine";
 import { ProfileSummaryCard } from "../../features/dashboard/components/ProfileSummaryCard";
 import { QuickActionCard } from "../../features/dashboard/components/QuickActionCard";
 import { RecentSessionCard } from "../../features/sessions/components/RecentSessionCard";
@@ -156,14 +157,17 @@ function DashboardContent({
         <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
-              Welcome back
+              Ready to train smarter?
             </p>
             <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
-              {user?.full_name ? `${user.full_name}, stay sharp.` : "Stay ready to train."}
+              {user?.full_name
+                ? `${user.full_name}, build your next breakthrough.`
+                : "Build your next breakthrough."}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Start a session, check your latest work, and jump into full performance analytics when you want the deeper picture.
+              Start a training flow, review recent reps, and jump into the performance dashboard whenever you want the deeper story.
             </p>
+            <MotivationalHeroLine />
             <div className="mt-6 flex flex-wrap gap-3">
               <CTAButton asChild>
                 <Link href={startTrainingHref}>Start Training</Link>
@@ -173,21 +177,21 @@ function DashboardContent({
                 variant="outline"
                 className="border-white/10 bg-white/[0.04] text-white"
               >
-                <Link href="/progress">View Progress</Link>
+                <Link href="/progress">Open Performance Dashboard</Link>
               </Button>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3 lg:w-[420px]">
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">Focus</p>
-              <p className="mt-3 text-sm font-semibold text-white">Start your next drill</p>
+              <p className="mt-3 text-sm font-semibold text-white">Launch your next rep</p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Progress
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Dashboard
               </p>
               <p className="mt-3 text-sm font-semibold text-white">
-                {processedSessionCount} recent sessions
+                {processedSessionCount} recent sessions logged
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -212,7 +216,7 @@ function DashboardContent({
                 Training mode ready
               </h3>
               <p className="mt-4 text-sm text-muted-gray">
-                Your setup is ready for new sessions and detailed progress reviews.
+                Your athlete profile is ready for new sessions, smarter feedback, and the full performance dashboard.
               </p>
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -226,7 +230,7 @@ function DashboardContent({
                     Next module
                   </p>
                   <p className="mt-3 text-sm font-semibold text-white">
-                    Full progress analytics
+                    Performance dashboard
                   </p>
                 </div>
               </div>
@@ -249,27 +253,27 @@ function DashboardContent({
       <div className="space-y-5">
         <SectionTitle
           eyebrow="Actions"
-          title="Move fast"
-          description="Pick your next step."
+          title="Pick your next move"
+          description="Jump into training, sport selection, or your dashboard without breaking rhythm."
         />
         <div className="grid gap-5 lg:grid-cols-3">
           <QuickActionCard
             title="Choose Sport"
-            description="Open Gym, Football, or Basketball and pick a drill."
+            description="Browse your training catalog and line up the right drill."
             href="/sports"
             icon={Compass}
             badge="Catalog"
           />
           <QuickActionCard
             title="Start Training"
-            description="Jump straight into your current sport flow."
+            description="Go straight into your next session flow."
             href={startTrainingHref}
             icon={Dumbbell}
             badge={profile ? "Recommended" : "Set profile"}
           />
           <QuickActionCard
-            title="View Progress"
-            description="Open the full analytics page with trends and drill comparison."
+            title="View Dashboard"
+            description="Open the performance dashboard for trends, metrics, and drill breakdowns."
             href="/progress"
             icon={LineChart}
             badge="Analytics"
@@ -281,7 +285,7 @@ function DashboardContent({
         <SectionTitle
           eyebrow="Recent"
           title="Recent sessions"
-          description="Open your latest reviews."
+          description="Reopen your latest reps and coaching reviews."
         />
 
         {isLoadingProgress ? (
@@ -301,7 +305,7 @@ function DashboardContent({
           <EmptyState
             icon={History}
             title="No sessions yet"
-            description="Upload a video to start tracking."
+            description="Log your first session to start building your performance story."
             action={
               <CTAButton asChild>
                 <Link href="/sports">Start With a Drill</Link>
@@ -321,14 +325,14 @@ function DashboardContent({
         <SectionTitle
           eyebrow="Snapshot"
           title="Latest metrics"
-          description="Your latest saved scores."
+          description="A clean read on the latest numbers feeding your dashboard."
           action={
             <Button
               asChild
               variant="outline"
               className="border-white/10 bg-white/[0.04] text-white"
             >
-              <Link href="/progress">Open Full Progress</Link>
+              <Link href="/progress">Open Performance Dashboard</Link>
             </Button>
           }
         />
@@ -368,7 +372,7 @@ function DashboardContent({
         ) : progressError ? (
           <EmptyState
             icon={BarChart3}
-            title="Progress snapshot unavailable"
+            title="Dashboard snapshot unavailable"
             description={progressError}
           />
         ) : (
@@ -415,6 +419,7 @@ function DashboardContent({
                 </div>
               ) : (
                 <p className="mt-6 text-sm text-muted-gray">Upload a video to track scores.</p>
+                
               )}
             </InfoCard>
 
@@ -453,7 +458,9 @@ function DashboardContent({
                   ))}
                 </div>
               ) : (
-                <p className="mt-6 text-sm text-muted-gray">More sessions will unlock trends.</p>
+                <p className="mt-6 text-sm text-muted-gray">
+                  Log more sessions to unlock your trendline.
+                </p>
               )}
             </InfoCard>
           </div>
@@ -463,8 +470,8 @@ function DashboardContent({
       <div className="space-y-5">
         <SectionTitle
           eyebrow="Featured"
-          title="Browse drills"
-          description="Pick a sport and continue."
+          title="Sports hub"
+          description="Pick a sport, open a drill, and keep your training flow moving."
           action={
             <CTAButton asChild className="rounded-2xl">
               <Link href="/sports">Open Sports Hub</Link>
@@ -504,9 +511,9 @@ function DashboardContent({
 export default function DashboardPage() {
   return (
     <AppShell
-      eyebrow="Dashboard"
+      eyebrow="Home"
       title="Your training home"
-      description="Start sessions, review recent work, and jump into analytics."
+      description="Start training, revisit recent sessions, and open the performance dashboard when you want deeper analytics."
       capsule="Ready"
       actions={
         <CTAButton asChild>
