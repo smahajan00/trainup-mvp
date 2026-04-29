@@ -1,7 +1,22 @@
 import { clearAuthToken, getAuthToken } from "./auth";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+function normalizeApiBaseUrl(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
+function resolveApiBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configuredUrl) {
+    return normalizeApiBaseUrl(configuredUrl);
+  }
+
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    return `${protocol}//${window.location.hostname}:8000/api`;
+  }
+
+  return "http://127.0.0.1:8000/api";
+}
 
 export class ApiError extends Error {
   status: number;
@@ -24,6 +39,8 @@ export async function apiRequest<T>(
   options: ApiRequestOptions = {}
 ) {
   const { auth = true, headers, body, ...rest } = options;
+  const apiBaseUrl = resolveApiBaseUrl();
+  const requestUrl = `${apiBaseUrl}${path}`;
   const requestHeaders = new Headers(headers);
 
   if (!(body instanceof FormData) && !requestHeaders.has("Content-Type")) {
@@ -37,12 +54,31 @@ export async function apiRequest<T>(
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...rest,
-    body,
-    headers: requestHeaders,
-    cache: "no-store"
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(requestUrl, {
+      ...rest,
+      body,
+      headers: requestHeaders,
+      cache: "no-store"
+    });
+  } catch (error) {
+    const cause =
+      error instanceof Error && error.message
+        ? ` (${error.message})`
+        : "";
+
+    throw new ApiError(
+      `Unable to reach the TrainUp API at ${apiBaseUrl}. Check that the backend is running and the API URL is correct${cause}.`,
+      0,
+      {
+        detail: "API_UNREACHABLE",
+        path,
+        request_url: requestUrl
+      }
+    );
+  }
 
   const responseText = await response.text();
   let payload: unknown = null;

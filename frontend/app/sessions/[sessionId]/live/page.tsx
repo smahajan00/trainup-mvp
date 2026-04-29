@@ -19,17 +19,16 @@ import { SessionResultsPanel } from "../../../../features/sessions/components/Se
 import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
 import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
+import { getErrorMessage } from "../../../../lib/api";
 import { formatDateTime, formatEnumLabel } from "../../../../lib/formatters";
 import {
   endLiveSession,
   getSession,
   getSessionArtifacts,
-  startLiveSession,
   submitLiveFrameBatch
 } from "../../../../services/sessions";
 import type {
   FrameBatchResponse,
-  LiveStartResponse,
   SessionArtifactsResponse,
   TrainingSession
 } from "../../../../types/sessions";
@@ -49,7 +48,6 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [captureState, setCaptureState] = useState<CaptureState>("IDLE");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [startResult, setStartResult] = useState<LiveStartResponse | null>(null);
   const [frameBatchResult, setFrameBatchResult] = useState<FrameBatchResponse | null>(
     null
   );
@@ -84,11 +82,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         }
       } catch (error) {
         if (!ignore) {
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load the live session."
-          );
+          setLoadError(getErrorMessage(error));
         }
       } finally {
         if (!ignore) {
@@ -178,29 +172,13 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
 
     try {
       setIsStarting(true);
-      const result = await startLiveSession(sessionId, {
-        camera_permission_granted: true,
-        lighting_ready: true,
-        framing_ready: true,
-        space_ready: true,
-        client_ready: true
-      });
-
-      setStartResult(result);
-      if (!result.started) {
-        setActionError(result.message);
-        return;
-      }
-
       await videoRef.current?.play();
       setCapturedTicks(0);
       setFrameBatchResult(null);
       setCaptureState("CAPTURING");
       startCaptureClock();
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Unable to start camera capture."
-      );
+      setActionError(getErrorMessage(error));
       setCameraState("error");
     } finally {
       setIsStarting(false);
@@ -232,6 +210,11 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
     try {
       setIsStopping(true);
       stopCaptureClock();
+      await videoRef.current?.pause();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setCameraState("idle");
+      setCaptureState("STOPPED");
 
       const frameCount = Math.max(capturedTicks, 1);
       const timestamps = Array.from({ length: frameCount }, (_, index) =>
@@ -250,15 +233,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       });
       setSession(updatedSession);
       setArtifactSnapshot(await getSessionArtifacts(sessionId));
-      setCaptureState("STOPPED");
-      await videoRef.current?.pause();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setCameraState("idle");
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Unable to stop the camera."
-      );
+      setActionError(getErrorMessage(error));
     } finally {
       setIsStopping(false);
     }
@@ -302,7 +278,6 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   const canUseLiveActions = session.input_type === "LIVE" && session.status === "ACTIVE";
   const canAnalyze =
     Boolean(artifactSnapshot?.pose_sequence) ||
-    captureState === "STOPPED" ||
     (session.input_type === "LIVE" && session.status === "COMPLETED");
 
   return (
@@ -359,6 +334,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
           mode="LIVE"
           sessionDrillId={session.drill_id}
           secondaryActionLabel="Start a new upload session"
+          secondaryActionHref={`/sessions/new?drillId=${session.drill_id}&mode=UPLOAD`}
           helperText="This session is locked to live camera. Start a new upload session if the next rep is already recorded."
         />
       </InfoCard>
@@ -377,8 +353,9 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               videoRef={videoRef}
               autoPlay
               muted
-              emptyTitle="Camera preview ready"
-              emptyDescription="Start the camera to capture movement and keep the full body in frame."
+              emptyTitle="Pose overlay preview"
+              emptyDescription="Start the camera to capture movement. Skeleton guide will appear after pose detection."
+              overlayMessage="Pose overlay preview · Skeleton guide will appear after pose detection"
             />
           </div>
 
@@ -487,9 +464,15 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               <li>
                 {frameBatchResult
                   ? `Accepted frames: ${frameBatchResult.frame_count}`
-                  : "No live frame batch submitted yet."}
+                  : captureState === "STOPPED"
+                    ? "Local capture is finalized. Backend frame sync will appear here after stop processing completes."
+                    : "No live frame batch submitted yet."}
               </li>
-              <li>{startResult?.message ?? "Camera start state has not been confirmed yet."}</li>
+              <li>
+                {captureState === "CAPTURING"
+                  ? "Camera preview is running locally in the browser."
+                  : "Camera preview will use your browser only until capture is finalized."}
+              </li>
             </ul>
           </div>
 
@@ -509,7 +492,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
           <SectionTitle
             eyebrow="Action"
             title="Analyze performance"
-            description="Run the full backend pipeline after capture is stopped."
+            description="Run the full backend pipeline after live capture has been finalized and synced."
           />
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -521,11 +504,13 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               {analysisState === "RUNNING" ? "Analyzing performance" : "Analyze Performance"}
           </CTAButton>
             <Badge variant="slate">
-              {captureState === "IDLE"
-                ? "Start camera to capture movement"
-                : captureState === "STOPPED" || artifactSnapshot?.pose_sequence
-                  ? "Ready to analyze"
-                  : "Stop the camera before analysis"}
+              {canAnalyze
+                ? "Ready to analyze"
+                : captureState === "IDLE"
+                  ? "Start camera to capture movement"
+                  : captureState === "STOPPED"
+                    ? "Capture is syncing before analysis"
+                    : "Stop the camera before analysis"}
             </Badge>
           </div>
         </InfoCard>

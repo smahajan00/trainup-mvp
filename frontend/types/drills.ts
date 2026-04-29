@@ -58,6 +58,7 @@ export type DrillDetailResponse = {
   sport_name: string;
   drill_name: string;
   description: string | null;
+  demo_video_url?: string | null;
   target_metrics: DrillTargetMetrics;
   reference_payload: DrillReferencePayload;
   coaching_rules: DrillCoachingRules;

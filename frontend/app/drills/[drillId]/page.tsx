@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
+  Camera,
   ListChecks,
   PlayCircle,
   Sparkles,
@@ -112,6 +113,8 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
     : drill.supports_active_side_selection
       ? "Auto-detect by default. You can override to Left or Right in session setup."
       : "Not required for this drill.";
+  const demoVideoUrl = drill.demo_video_url ?? null;
+  const expectedDemoVideoPath = `/videos/drills/${drill.id}.mp4`;
   const outputPreview = [
     "Capture validation",
     "Performance score",
@@ -137,16 +140,30 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
           </div>
 
           <div className="grid w-full gap-3 xl:max-w-sm">
-            <CTAButton asChild className="justify-between rounded-2xl px-5 py-6">
-              <Link href={`/sessions/new?drillId=${drill.id}`}>
-                <span className="flex items-center gap-2">
-                  <PlayCircle className="h-4 w-4" />
-                  Start Training
-                </span>
-              </Link>
-            </CTAButton>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <CTAButton asChild className="justify-between rounded-2xl px-5 py-6">
+                <Link href={`/sessions/new?drillId=${drill.id}&mode=UPLOAD`}>
+                  <span className="flex items-center gap-2">
+                    <UploadCloud className="h-4 w-4" />
+                    Upload Video
+                  </span>
+                </Link>
+              </CTAButton>
+              <CTAButton
+                asChild
+                variant="outline"
+                className="justify-between rounded-2xl border-white/15 bg-white/[0.03] px-5 py-6 text-white"
+              >
+                <Link href={`/sessions/new?drillId=${drill.id}&mode=LIVE`}>
+                  <span className="flex items-center gap-2">
+                    <Camera className="h-4 w-4" />
+                    Live Camera
+                  </span>
+                </Link>
+              </CTAButton>
+            </div>
             <p className="text-sm text-muted-gray">
-              Next up: choose Upload Video or Live Camera in your training checklist.
+              Pick the capture mode here, then confirm only the drill setup details you need.
             </p>
             <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
@@ -320,6 +337,40 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
           <Badge variant="accent">Live Camera</Badge>
           <Badge variant="slate">Upload Video</Badge>
         </div>
+      </InfoCard>
+
+      <InfoCard>
+        <SectionTitle
+          eyebrow="Drill Demo"
+          title="Reference demo"
+          description="This slot is ready for a model rep once drill demo videos are added."
+        />
+
+        {demoVideoUrl ? (
+          <div className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate/40">
+            <video
+              controls
+              playsInline
+              className="aspect-video w-full bg-black object-cover"
+              src={demoVideoUrl}
+            />
+          </div>
+        ) : (
+          <div className="mt-6 flex aspect-video flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-white/15 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.12),_transparent_45%),linear-gradient(180deg,rgba(17,17,17,0.86),rgba(31,31,31,0.92))] px-8 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
+              <PlayCircle className="h-7 w-7" />
+            </div>
+            <h3 className="mt-5 font-display text-3xl font-bold text-white">
+              Demo video coming soon
+            </h3>
+            <p className="mt-4 max-w-xl text-sm text-muted-gray">
+              Future drill demos can be connected here without changing the rest of the preview flow.
+            </p>
+            <p className="mt-4 text-xs uppercase tracking-[0.24em] text-white/45">
+              Expected path: {expectedDemoVideoPath}
+            </p>
+          </div>
+        )}
       </InfoCard>
 
       <div className="grid gap-5 xl:grid-cols-3">

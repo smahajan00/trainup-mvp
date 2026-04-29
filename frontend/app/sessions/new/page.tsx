@@ -40,6 +40,10 @@ const dominantSideOptions: { value: DominantSide; label: string }[] = [
   { value: "RIGHT", label: "Right" }
 ];
 
+function isSessionInputType(value: string | null): value is SessionInputType {
+  return value === "UPLOAD" || value === "LIVE";
+}
+
 function isCameraView(value: string): value is CameraView {
   return DEFAULT_CAMERA_VIEWS.includes(value as CameraView);
 }
@@ -52,17 +56,27 @@ function SessionCreationContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const drillId = searchParams.get("drillId");
+  const requestedInputType = useMemo(() => {
+    const mode = searchParams.get("mode");
+    return isSessionInputType(mode) ? mode : null;
+  }, [searchParams]);
   const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creatingMode, setCreatingMode] = useState<SessionInputType | null>(null);
   const [selectedInputType, setSelectedInputType] = useState<SessionInputType | null>(
-    null
+    requestedInputType
   );
   const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
   const [selectedDominantSide, setSelectedDominantSide] =
     useState<DominantSide>("AUTO");
+
+  useEffect(() => {
+    if (requestedInputType) {
+      setSelectedInputType(requestedInputType);
+    }
+  }, [requestedInputType]);
 
   useEffect(() => {
     let ignore = false;
@@ -121,6 +135,7 @@ function SessionCreationContent({
     () => drill?.target_metrics.metrics.slice(0, 5) ?? [],
     [drill]
   );
+  const isModePreselected = requestedInputType !== null;
   const isCrossSportTraining = Boolean(
     profile && drill && profile.sport_id !== drill.sport_id
   );
@@ -294,33 +309,60 @@ function SessionCreationContent({
       <div className="space-y-5">
         <SectionTitle
           eyebrow="Checklist"
-          title="Choose your training mode"
-          description="Pick the capture flow that fits the rep you want to review."
+          title={isModePreselected ? "Training mode selected" : "Choose your training mode"}
+          description={
+            isModePreselected
+              ? "Your capture mode is locked in. Confirm the remaining setup details, then start training."
+              : "Pick the capture flow that fits the rep you want to review."
+          }
         />
-        <div className="grid gap-5 lg:grid-cols-2">
-          <ModeCard
-            title="Live Camera"
-            description="Use your camera for a guided real-time rep capture."
-            badge="Camera"
-            eyebrow="Live"
-            detail="Open the camera, control the rep, and review it when you stop."
-            ctaLabel="Choose Live Camera"
-            icon={PlayCircle}
-            isSelected={selectedInputType === "LIVE"}
-            onSelect={() => setSelectedInputType("LIVE")}
-          />
-          <ModeCard
-            title="Upload Video"
-            description="Submit a recorded clip for a polished breakdown."
-            badge="Video"
-            eyebrow="Upload"
-            detail="Drop in one clip, preview it, then run the full analysis."
-            ctaLabel="Choose Upload Video"
-            icon={UploadCloud}
-            isSelected={selectedInputType === "UPLOAD"}
-            onSelect={() => setSelectedInputType("UPLOAD")}
-          />
-        </div>
+        {isModePreselected ? (
+          <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                  Training mode
+                </p>
+                <p className="mt-3 text-lg font-semibold text-white">
+                  {selectedInputType === "LIVE" ? "Live Camera" : "Upload Video"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-muted-gray">
+                  {selectedInputType === "LIVE"
+                    ? "Camera controls and the live preview will open as soon as this session is created."
+                    : "You’ll move straight into clip upload and preview as soon as this session is created."}
+                </p>
+              </div>
+              <Button asChild variant="ghost" className="border border-white/10 bg-white/[0.03]">
+                <Link href={`/drills/${drill.id}`}>Change mode</Link>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-2">
+            <ModeCard
+              title="Live Camera"
+              description="Use your camera for a guided real-time rep capture."
+              badge="Camera"
+              eyebrow="Live"
+              detail="Open the camera, control the rep, and review it when you stop."
+              ctaLabel="Choose Live Camera"
+              icon={PlayCircle}
+              isSelected={selectedInputType === "LIVE"}
+              onSelect={() => setSelectedInputType("LIVE")}
+            />
+            <ModeCard
+              title="Upload Video"
+              description="Submit a recorded clip for a polished breakdown."
+              badge="Video"
+              eyebrow="Upload"
+              detail="Drop in one clip, preview it, then run the full analysis."
+              ctaLabel="Choose Upload Video"
+              icon={UploadCloud}
+              isSelected={selectedInputType === "UPLOAD"}
+              onSelect={() => setSelectedInputType("UPLOAD")}
+            />
+          </div>
+        )}
       </div>
 
       <InfoCard>
@@ -469,7 +511,7 @@ export default function NewSessionPage() {
     <AppShell
       eyebrow="Session"
       title="Pre-training checklist"
-      description="Choose your input mode, camera angle, and drill setup before you train."
+      description="Confirm the drill setup, camera angle, and active-side details before you train."
       capsule="Ready"
       actions={
         <CTAButton asChild>

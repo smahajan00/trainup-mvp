@@ -19,6 +19,7 @@ import { SessionResultsPanel } from "../../../../features/sessions/components/Se
 import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
 import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
+import { getErrorMessage } from "../../../../lib/api";
 import { formatDateTime, formatEnumLabel, formatFileSize } from "../../../../lib/formatters";
 import { validateVideoFile } from "../../../../lib/session-validation";
 import {
@@ -76,11 +77,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         }
       } catch (error) {
         if (!ignore) {
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load the upload session."
-          );
+          setLoadError(getErrorMessage(error));
         }
       } finally {
         if (!ignore) {
@@ -178,9 +175,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       setUploadResult(result);
       setArtifactSnapshot(await getSessionArtifacts(sessionId));
     } catch (error) {
-      setSubmitError(
-        error instanceof Error ? error.message : "Upload failed. Try again."
-      );
+      setSubmitError(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -275,6 +270,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
           mode="UPLOAD"
           sessionDrillId={session.drill_id}
           secondaryActionLabel="Start a new live session"
+          secondaryActionHref={`/sessions/new?drillId=${session.drill_id}&mode=LIVE`}
           helperText="This session is locked to upload video. Start a new live session if you want camera-based capture for the next rep."
         />
       </InfoCard>
@@ -375,8 +371,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               showVideo={Boolean(videoPreviewUrl)}
               videoSrc={videoPreviewUrl}
               controls
-              emptyTitle="Clip preview waiting"
-              emptyDescription="Choose a clip to preview it before you upload."
+              emptyTitle="Pose overlay preview"
+              emptyDescription="Choose a clip to preview it here. Skeleton guide will appear after pose detection."
+              overlayMessage="Pose overlay preview · Skeleton guide will appear after pose detection"
             />
           </div>
 

@@ -10,15 +10,19 @@ type SessionInputModeToggleProps = {
   sessionDrillId: string;
   secondaryActionLabel?: string;
   helperText?: string;
+  secondaryActionHref?: string;
 };
 
 export function SessionInputModeToggle({
   mode,
   sessionDrillId,
   secondaryActionLabel,
-  helperText
+  helperText,
+  secondaryActionHref
 }: SessionInputModeToggleProps) {
   const isUploadMode = mode === "UPLOAD";
+  const actionHref =
+    secondaryActionHref ?? `/sessions/new?drillId=${sessionDrillId}`;
 
   return (
     <div className="space-y-4">
@@ -38,7 +42,7 @@ export function SessionInputModeToggle({
         </div>
         {secondaryActionLabel ? (
           <Button asChild variant="outline" className="rounded-2xl">
-            <Link href={`/sessions/new?drillId=${sessionDrillId}`}>
+            <Link href={actionHref}>
               <ArrowRight className="mr-2 h-4 w-4" />
               {secondaryActionLabel}
             </Link>
