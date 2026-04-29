@@ -6,13 +6,14 @@ import {
   BarChart3,
   ClipboardCheck,
   Compass,
-  History,
   Dumbbell,
   Gauge,
-  Sparkles,
-  UserRound
+  History,
+  LineChart,
+  Sparkles
 } from "lucide-react";
 
+import { Button } from "../../components/ui/button";
 import { CTAButton } from "../../components/ui/cta-button";
 import { SkeletonLoader } from "../../components/ui/skeleton-loader";
 import { EmptyState } from "../../features/app-shell/components/EmptyState";
@@ -92,9 +93,7 @@ function DashboardContent({
       } catch (error) {
         if (!ignore) {
           setSportsError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load sports right now."
+            error instanceof Error ? error.message : "Unable to load sports right now."
           );
           setProgressError(
             error instanceof Error
@@ -122,9 +121,7 @@ function DashboardContent({
     0
   );
   const profileCompletion = calculateProfileCompletion(profile);
-  const startTrainingHref = profile
-    ? `/sports/${profile.sport_id}/drills`
-    : "/profile";
+  const startTrainingHref = profile ? `/sports/${profile.sport_id}/drills` : "/profile";
   const latestMetricsByName = recentMetrics.reduce<Record<string, RecentMetricProgress>>(
     (accumulator, metric) => {
       if (!accumulator[metric.metric_name]) {
@@ -145,8 +142,8 @@ function DashboardContent({
     },
     {}
   );
-  const trendCandidate = Object.values(metricGroups)
-    .sort((left, right) => right.length - left.length)[0] ?? [];
+  const trendCandidate =
+    Object.values(metricGroups).sort((left, right) => right.length - left.length)[0] ?? [];
   const trendMetricName = trendCandidate[0]?.metric_name ?? null;
   const trendSeries = [...trendCandidate].reverse().slice(-5);
   const processedSessionCount = recentSessions.length;
@@ -162,33 +159,28 @@ function DashboardContent({
               Welcome back
             </p>
             <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
-              {user?.full_name
-                ? `${user.full_name}, stay sharp.`
-                : "Stay ready to train."}
+              {user?.full_name ? `${user.full_name}, stay sharp.` : "Stay ready to train."}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Start a session or review progress.
+              Start a session, check your latest work, and jump into full performance analytics when you want the deeper picture.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <CTAButton asChild>
                 <Link href={startTrainingHref}>Start Training</Link>
               </CTAButton>
-              <CTAButton
+              <Button
                 asChild
-                className="border border-white/10 bg-white/[0.04] text-white shadow-none hover:bg-white/[0.07]"
+                variant="outline"
+                className="border-white/10 bg-white/[0.04] text-white"
               >
-                <Link href="/sports">Browse Sports</Link>
-              </CTAButton>
+                <Link href="/progress">View Progress</Link>
+              </Button>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3 lg:w-[420px]">
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Focus
-              </p>
-              <p className="mt-3 text-sm font-semibold text-white">
-                Upload review
-              </p>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">Focus</p>
+              <p className="mt-3 text-sm font-semibold text-white">Start your next drill</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
@@ -199,9 +191,7 @@ function DashboardContent({
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Sport
-              </p>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">Sport</p>
               <p className="mt-3 text-sm font-semibold text-white">
                 {profile?.sport_name ?? "Set profile"}
               </p>
@@ -217,30 +207,26 @@ function DashboardContent({
           <InfoCard className="relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_42%)]" />
             <div className="relative z-10">
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">
-                Readiness
-              </p>
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">Readiness</p>
               <h3 className="mt-4 font-display text-3xl font-bold text-white">
                 Training mode ready
               </h3>
               <p className="mt-4 text-sm text-muted-gray">
-                Your setup is ready.
+                Your setup is ready for new sessions and detailed progress reviews.
               </p>
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
                     Profile completion
                   </p>
-                  <p className="mt-3 text-3xl font-bold text-white">
-                    {profileCompletion}%
-                  </p>
+                  <p className="mt-3 text-3xl font-bold text-white">{profileCompletion}%</p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
                     Next module
                   </p>
                   <p className="mt-3 text-sm font-semibold text-white">
-                    Review and summary live
+                    Full progress analytics
                   </p>
                 </div>
               </div>
@@ -268,25 +254,25 @@ function DashboardContent({
         />
         <div className="grid gap-5 lg:grid-cols-3">
           <QuickActionCard
-            title="Browse Sports"
-            description="Open Gym, Football, or Basketball."
+            title="Choose Sport"
+            description="Open Gym, Football, or Basketball and pick a drill."
             href="/sports"
             icon={Compass}
             badge="Catalog"
           />
           <QuickActionCard
-            title="Continue Training"
-            description="Go straight to your sport."
+            title="Start Training"
+            description="Jump straight into your current sport flow."
             href={startTrainingHref}
             icon={Dumbbell}
             badge={profile ? "Recommended" : "Set profile"}
           />
           <QuickActionCard
-            title="View Profile"
-            description="Update your training details."
-            href="/profile"
-            icon={UserRound}
-            badge="Athlete data"
+            title="View Progress"
+            description="Open the full analytics page with trends and drill comparison."
+            href="/progress"
+            icon={LineChart}
+            badge="Analytics"
           />
         </div>
       </div>
@@ -336,6 +322,15 @@ function DashboardContent({
           eyebrow="Snapshot"
           title="Latest metrics"
           description="Your latest saved scores."
+          action={
+            <Button
+              asChild
+              variant="outline"
+              className="border-white/10 bg-white/[0.04] text-white"
+            >
+              <Link href="/progress">Open Full Progress</Link>
+            </Button>
+          }
         />
         <div className="grid gap-5 xl:grid-cols-4">
           <StatCard
@@ -419,20 +414,14 @@ function DashboardContent({
                   ))}
                 </div>
               ) : (
-                <p className="mt-6 text-sm text-muted-gray">
-                  Upload a video to track scores.
-                </p>
+                <p className="mt-6 text-sm text-muted-gray">Upload a video to track scores.</p>
               )}
             </InfoCard>
 
             <InfoCard>
               <SectionTitle
                 eyebrow="Trend"
-                title={
-                  trendMetricName
-                    ? formatEnumLabel(trendMetricName)
-                    : "No trend yet"
-                }
+                title={trendMetricName ? formatEnumLabel(trendMetricName) : "No trend yet"}
                 description="Last five saved values."
               />
               {trendSeries.length ? (
@@ -453,9 +442,7 @@ function DashboardContent({
                       <p className="mt-3 text-2xl font-bold text-white">
                         {metric.metric_value.toFixed(2)}
                       </p>
-                      <p className="mt-2 text-sm text-muted-gray">
-                        {metric.drill_name}
-                      </p>
+                      <p className="mt-2 text-sm text-muted-gray">{metric.drill_name}</p>
                       <div className="mt-4 h-2 rounded-full bg-white/10">
                         <div
                           className="h-2 rounded-full bg-primary"
@@ -466,9 +453,7 @@ function DashboardContent({
                   ))}
                 </div>
               ) : (
-                <p className="mt-6 text-sm text-muted-gray">
-                  More sessions will unlock trends.
-                </p>
+                <p className="mt-6 text-sm text-muted-gray">More sessions will unlock trends.</p>
               )}
             </InfoCard>
           </div>
@@ -521,7 +506,7 @@ export default function DashboardPage() {
     <AppShell
       eyebrow="Dashboard"
       title="Your training home"
-      description="Start sessions. Review progress."
+      description="Start sessions, review recent work, and jump into analytics."
       capsule="Ready"
       actions={
         <CTAButton asChild>

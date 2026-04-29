@@ -124,7 +124,7 @@ export function MiniProgressPreview({
         description="A quick look at how this session compares with your recent work."
         action={
           <Button asChild variant="outline">
-            <Link href="/dashboard">
+            <Link href="/progress">
               View Full Progress
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

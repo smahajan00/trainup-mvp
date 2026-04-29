@@ -44,7 +44,7 @@ const navigationItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Sports", href: "/sports", icon: Trophy },
   { label: "Profile", href: "/profile", icon: UserCircle2 },
-  { label: "Progress", href: "/progress", icon: LineChart, disabled: true }
+  { label: "Progress", href: "/progress", icon: LineChart }
 ];
 
 function isActiveRoute(pathname: string, href: string) {
