@@ -1,16 +1,21 @@
 import { apiRequest } from "../lib/api";
 import type {
+  ChoquetAggregationResult,
   DeterministicFeedbackResult,
   FrameBatchRequest,
   FrameBatchResponse,
   DeterministicEvaluationResult,
   FuzzyInterpretationResult,
+  IT2FuzzyInterpretationResult,
   LLMFeedbackResult,
   LiveEndRequest,
   LiveReadinessRequest,
   LiveStartResponse,
+  OntologyReasoningResult,
+  PedagogicalDecisionResult,
   SessionArtifactsResponse,
   SessionCreateRequest,
+  TemporalModelingResult,
   TrainingSession,
   UploadProcessingResponse
 } from "../types/sessions";
@@ -34,19 +39,19 @@ export function getSessionArtifacts(sessionId: string) {
   return apiRequest<SessionArtifactsResponse>(`/sessions/${sessionId}/artifacts`);
 }
 
-export function evaluateSession(sessionId: string) {
+export function runSessionEvaluation(sessionId: string) {
   return apiRequest<DeterministicEvaluationResult>(`/sessions/${sessionId}/evaluate`, {
     method: "POST"
   });
 }
 
-export function generateSessionFeedback(sessionId: string) {
+export function generateDeterministicSessionFeedback(sessionId: string) {
   return apiRequest<DeterministicFeedbackResult>(`/sessions/${sessionId}/feedback`, {
     method: "POST"
   });
 }
 
-export function generateFuzzySessionInterpretation(sessionId: string) {
+export function runSessionFuzzyInterpretation(sessionId: string) {
   return apiRequest<FuzzyInterpretationResult>(
     `/sessions/${sessionId}/interpret/fuzzy`,
     {
@@ -55,13 +60,49 @@ export function generateFuzzySessionInterpretation(sessionId: string) {
   );
 }
 
+export function runSessionIT2FuzzyInterpretation(sessionId: string) {
+  return apiRequest<IT2FuzzyInterpretationResult>(
+    `/sessions/${sessionId}/interpret/it2-fuzzy`,
+    {
+      method: "POST"
+    }
+  );
+}
+
+export function runSessionPedagogy(sessionId: string) {
+  return apiRequest<PedagogicalDecisionResult>(`/sessions/${sessionId}/pedagogy`, {
+    method: "POST"
+  });
+}
+
+export function runSessionOntologyReasoning(sessionId: string) {
+  return apiRequest<OntologyReasoningResult>(`/sessions/${sessionId}/ontology`, {
+    method: "POST"
+  });
+}
+
+export function runSessionChoquetAggregation(sessionId: string) {
+  return apiRequest<ChoquetAggregationResult>(
+    `/sessions/${sessionId}/aggregate/choquet`,
+    {
+      method: "POST"
+    }
+  );
+}
+
+export function runSessionTemporalModeling(sessionId: string) {
+  return apiRequest<TemporalModelingResult>(`/sessions/${sessionId}/model/temporal`, {
+    method: "POST"
+  });
+}
+
 export function generateLLMSessionFeedback(sessionId: string) {
   return apiRequest<LLMFeedbackResult>(`/sessions/${sessionId}/feedback/llm`, {
     method: "POST"
   });
 }
 
-export function submitSessionUpload(sessionId: string, file: File) {
+export function uploadSessionVideo(sessionId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
 
@@ -97,3 +138,8 @@ export function endLiveSession(sessionId: string, payload: LiveEndRequest) {
     body: JSON.stringify(payload)
   });
 }
+
+export const evaluateSession = runSessionEvaluation;
+export const generateSessionFeedback = generateDeterministicSessionFeedback;
+export const generateFuzzySessionInterpretation = runSessionFuzzyInterpretation;
+export const submitSessionUpload = uploadSessionVideo;

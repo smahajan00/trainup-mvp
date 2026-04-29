@@ -23,11 +23,12 @@ from app.engines.cognition_engine.phase2a_evaluator import (
     Phase2AEvaluator,
 )
 from app.models.drill import Drill
-from app.models.enums import CameraView, ComputationStatus, SeverityLevel
+from app.models.enums import CameraView, ComputationStatus, DominantSide, SeverityLevel
 from app.models.feedback import Feedback
 from app.models.metric_result import MetricResult
 from app.models.session_artifact import SessionArtifact
 from app.schemas.session import PoseFrameResponse, PoseLandmarkCoordinate, PoseSequenceResponse
+from app.services.dominant_side_detector import DominantSideDetector
 from app.services.session_service import (
     SAGITTAL_LANDMARK_SWAP_PAIRS,
     normalize_pose_sequence_for_camera_view,
@@ -143,7 +144,7 @@ def _assert_stable_evaluation_artifact_shape(
     *,
     expected_phases: list[str],
 ) -> None:
-    assert set(payload) == {
+    expected_top_level_keys = {
         "evaluation_version",
         "status",
         "session_id",
@@ -158,6 +159,14 @@ def _assert_stable_evaluation_artifact_shape(
         "weakest_metrics",
         "diagnostic_flags",
     }
+    optional_top_level_keys = {
+        "requested_dominant_side",
+        "resolved_dominant_side",
+        "dominant_side_confidence",
+        "dominant_side_diagnostic_flags",
+    }
+    assert expected_top_level_keys <= set(payload)
+    assert set(payload) <= expected_top_level_keys | optional_top_level_keys
     assert payload["evaluation_version"] == EXPECTED_EVALUATION_VERSION
     assert [phase["phase_id"] for phase in payload["phase_results"]] == expected_phases
     assert payload["strongest_metrics"]
@@ -294,7 +303,11 @@ def _squat_pose_frames(session_id: str, frame_count: int = 36) -> list[PoseFrame
     return frames
 
 
-def _set_shot_pose_frames(session_id: str, frame_count: int = 40) -> list[PoseFrameResponse]:
+def _set_shot_pose_frames(
+    session_id: str,
+    frame_count: int = 40,
+    dominant_side: str = "RIGHT",
+) -> list[PoseFrameResponse]:
     frames: list[PoseFrameResponse] = []
     for frame_index in range(frame_count):
         if frame_index < 12:
@@ -314,14 +327,21 @@ def _set_shot_pose_frames(session_id: str, frame_count: int = 40) -> list[PoseFr
             elbow_y = 0.28
             wrist_x = 0.56
 
+        moving_wrist_x = wrist_x
+        moving_wrist_y = wrist_y
+        moving_elbow_y = elbow_y
+        static_wrist_x = 0.41 if dominant_side == "RIGHT" else 0.62
+        static_wrist_y = 0.60
+        static_elbow_y = 0.48
+
         landmarks = {
             "nose": _landmark(0.50, 0.22),
             "left_shoulder": _landmark(0.44, 0.36),
             "right_shoulder": _landmark(0.56, 0.36),
-            "left_elbow": _landmark(0.42, 0.48),
-            "right_elbow": _landmark(0.56, elbow_y),
-            "left_wrist": _landmark(0.41, 0.60),
-            "right_wrist": _landmark(wrist_x, wrist_y),
+            "left_elbow": _landmark(0.42, moving_elbow_y if dominant_side == "LEFT" else static_elbow_y),
+            "right_elbow": _landmark(0.56, moving_elbow_y if dominant_side == "RIGHT" else static_elbow_y),
+            "left_wrist": _landmark(moving_wrist_x if dominant_side == "LEFT" else static_wrist_x, moving_wrist_y if dominant_side == "LEFT" else static_wrist_y),
+            "right_wrist": _landmark(moving_wrist_x if dominant_side == "RIGHT" else static_wrist_x, moving_wrist_y if dominant_side == "RIGHT" else static_wrist_y),
             "left_hip": _landmark(0.45, 0.58),
             "right_hip": _landmark(0.55, 0.58),
             "left_knee": _landmark(0.44, 0.73),
@@ -449,7 +469,11 @@ def _defensive_stance_pose_frames(session_id: str, frame_count: int = 38) -> lis
     return frames
 
 
-def _instep_pass_pose_frames(session_id: str, frame_count: int = 42) -> list[PoseFrameResponse]:
+def _instep_pass_pose_frames(
+    session_id: str,
+    frame_count: int = 42,
+    dominant_side: str = "RIGHT",
+) -> list[PoseFrameResponse]:
     frames: list[PoseFrameResponse] = []
     for frame_index in range(frame_count):
         if frame_index < 10:
@@ -462,16 +486,21 @@ def _instep_pass_pose_frames(session_id: str, frame_count: int = 42) -> list[Pos
             progress = -((frame_index - 27) / 14)
 
         if progress >= 0:
-            right_knee_x = 0.58 + (0.04 * progress)
-            right_knee_y = 0.72
-            right_ankle_x = 0.64 + (0.09 * progress)
-            right_ankle_y = 0.90 - (0.10 * progress)
+            moving_knee_x = 0.58 + (0.04 * progress)
+            moving_knee_y = 0.72
+            moving_ankle_x = 0.64 + (0.09 * progress)
+            moving_ankle_y = 0.90 - (0.10 * progress)
         else:
             through = min(abs(progress), 1.0)
-            right_knee_x = 0.56 - (0.03 * through)
-            right_knee_y = 0.72
-            right_ankle_x = 0.47 - (0.12 * through)
-            right_ankle_y = 0.90 - (0.08 * through)
+            moving_knee_x = 0.56 - (0.03 * through)
+            moving_knee_y = 0.72
+            moving_ankle_x = 0.47 - (0.12 * through)
+            moving_ankle_y = 0.90 - (0.08 * through)
+
+        static_knee_x = 0.43 if dominant_side == "RIGHT" else 0.57
+        static_knee_y = 0.73
+        static_ankle_x = 0.43 if dominant_side == "RIGHT" else 0.57
+        static_ankle_y = 0.90
 
         landmarks = {
             "nose": _landmark(0.50, 0.22),
@@ -483,14 +512,32 @@ def _instep_pass_pose_frames(session_id: str, frame_count: int = 42) -> list[Pos
             "right_wrist": _landmark(0.62, 0.60),
             "left_hip": _landmark(0.45, 0.56),
             "right_hip": _landmark(0.55, 0.56),
-            "left_knee": _landmark(0.43, 0.73),
-            "right_knee": _landmark(right_knee_x, right_knee_y),
-            "left_ankle": _landmark(0.43, 0.90),
-            "right_ankle": _landmark(right_ankle_x, right_ankle_y),
+            "left_knee": _landmark(
+                moving_knee_x if dominant_side == "LEFT" else static_knee_x,
+                moving_knee_y if dominant_side == "LEFT" else static_knee_y,
+            ),
+            "right_knee": _landmark(
+                moving_knee_x if dominant_side == "RIGHT" else static_knee_x,
+                moving_knee_y if dominant_side == "RIGHT" else static_knee_y,
+            ),
+            "left_ankle": _landmark(
+                moving_ankle_x if dominant_side == "LEFT" else static_ankle_x,
+                moving_ankle_y if dominant_side == "LEFT" else static_ankle_y,
+            ),
+            "right_ankle": _landmark(
+                moving_ankle_x if dominant_side == "RIGHT" else static_ankle_x,
+                moving_ankle_y if dominant_side == "RIGHT" else static_ankle_y,
+            ),
             "left_heel": _landmark(0.41, 0.92),
-            "right_heel": _landmark(right_ankle_x + 0.02, right_ankle_y + 0.02),
+            "right_heel": _landmark(
+                (moving_ankle_x if dominant_side == "RIGHT" else static_ankle_x) + 0.02,
+                (moving_ankle_y if dominant_side == "RIGHT" else static_ankle_y) + 0.02,
+            ),
             "left_foot_index": _landmark(0.45, 0.94),
-            "right_foot_index": _landmark(right_ankle_x - 0.02, right_ankle_y + 0.04),
+            "right_foot_index": _landmark(
+                (moving_ankle_x if dominant_side == "RIGHT" else static_ankle_x) - 0.02,
+                (moving_ankle_y if dominant_side == "RIGHT" else static_ankle_y) + 0.04,
+            ),
         }
         frames.append(
             PoseFrameResponse(
@@ -505,7 +552,11 @@ def _instep_pass_pose_frames(session_id: str, frame_count: int = 42) -> list[Pos
     return frames
 
 
-def _basic_shooting_pose_frames(session_id: str, frame_count: int = 46) -> list[PoseFrameResponse]:
+def _basic_shooting_pose_frames(
+    session_id: str,
+    frame_count: int = 46,
+    dominant_side: str = "RIGHT",
+) -> list[PoseFrameResponse]:
     frames: list[PoseFrameResponse] = []
     for frame_index in range(frame_count):
         if frame_index < 10:
@@ -518,18 +569,22 @@ def _basic_shooting_pose_frames(session_id: str, frame_count: int = 46) -> list[
             progress = -((frame_index - 31) / 14)
 
         if progress >= 0:
-            right_knee_x = 0.58 + (0.05 * progress)
-            right_knee_y = 0.72
-            right_ankle_x = 0.64 + (0.11 * progress)
-            right_ankle_y = 0.90 - (0.11 * progress)
+            moving_knee_x = 0.58 + (0.05 * progress)
+            moving_knee_y = 0.72
+            moving_ankle_x = 0.64 + (0.11 * progress)
+            moving_ankle_y = 0.90 - (0.11 * progress)
         else:
             through = min(abs(progress), 1.0)
-            right_knee_x = 0.56 - (0.04 * through)
-            right_knee_y = 0.72
-            right_ankle_x = 0.47 - (0.15 * through)
-            right_ankle_y = 0.90 - (0.10 * through)
+            moving_knee_x = 0.56 - (0.04 * through)
+            moving_knee_y = 0.72
+            moving_ankle_x = 0.47 - (0.15 * through)
+            moving_ankle_y = 0.90 - (0.10 * through)
 
         shoulder_shift = 0.01 * max(-progress, 0.0)
+        static_knee_x = 0.43 if dominant_side == "RIGHT" else 0.57
+        static_knee_y = 0.73
+        static_ankle_x = 0.43 if dominant_side == "RIGHT" else 0.57
+        static_ankle_y = 0.90
         landmarks = {
             "nose": _landmark(0.50 + shoulder_shift, 0.22),
             "left_shoulder": _landmark(0.42 + shoulder_shift, 0.34),
@@ -540,14 +595,32 @@ def _basic_shooting_pose_frames(session_id: str, frame_count: int = 46) -> list[
             "right_wrist": _landmark(0.62 + shoulder_shift, 0.60),
             "left_hip": _landmark(0.45, 0.56),
             "right_hip": _landmark(0.55, 0.56),
-            "left_knee": _landmark(0.43, 0.73),
-            "right_knee": _landmark(right_knee_x, right_knee_y),
-            "left_ankle": _landmark(0.43, 0.90),
-            "right_ankle": _landmark(right_ankle_x, right_ankle_y),
+            "left_knee": _landmark(
+                moving_knee_x if dominant_side == "LEFT" else static_knee_x,
+                moving_knee_y if dominant_side == "LEFT" else static_knee_y,
+            ),
+            "right_knee": _landmark(
+                moving_knee_x if dominant_side == "RIGHT" else static_knee_x,
+                moving_knee_y if dominant_side == "RIGHT" else static_knee_y,
+            ),
+            "left_ankle": _landmark(
+                moving_ankle_x if dominant_side == "LEFT" else static_ankle_x,
+                moving_ankle_y if dominant_side == "LEFT" else static_ankle_y,
+            ),
+            "right_ankle": _landmark(
+                moving_ankle_x if dominant_side == "RIGHT" else static_ankle_x,
+                moving_ankle_y if dominant_side == "RIGHT" else static_ankle_y,
+            ),
             "left_heel": _landmark(0.41, 0.92),
-            "right_heel": _landmark(right_ankle_x + 0.02, right_ankle_y + 0.02),
+            "right_heel": _landmark(
+                (moving_ankle_x if dominant_side == "RIGHT" else static_ankle_x) + 0.02,
+                (moving_ankle_y if dominant_side == "RIGHT" else static_ankle_y) + 0.02,
+            ),
             "left_foot_index": _landmark(0.45, 0.94),
-            "right_foot_index": _landmark(right_ankle_x - 0.02, right_ankle_y + 0.04),
+            "right_foot_index": _landmark(
+                (moving_ankle_x if dominant_side == "RIGHT" else static_ankle_x) - 0.02,
+                (moving_ankle_y if dominant_side == "RIGHT" else static_ankle_y) + 0.04,
+            ),
         }
         frames.append(
             PoseFrameResponse(
@@ -735,6 +808,64 @@ def test_non_left_camera_views_do_not_normalize_pose_sequence() -> None:
     )
 
 
+def test_dominant_side_detector_prefers_ankle_motion_for_leg_dominant_drills(
+    db_session,
+) -> None:
+    detector = DominantSideDetector()
+    drill = _get_drill(db_session, "Instep Pass")
+    session_id = "00000000-0000-0000-0000-000000000101"
+
+    result = detector.detect(
+        drill=drill,
+        pose_sequence=_pose_sequence(
+            session_id,
+            _instep_pass_pose_frames(session_id, dominant_side="LEFT"),
+        ),
+    )
+
+    assert result.resolved_side == DominantSide.LEFT
+    assert result.confidence > 0
+    assert result.method == "ankle_motion"
+
+
+def test_dominant_side_detector_prefers_wrist_motion_for_arm_dominant_drills(
+    db_session,
+) -> None:
+    detector = DominantSideDetector()
+    drill = _get_drill(db_session, "Set Shot Form")
+    session_id = "00000000-0000-0000-0000-000000000102"
+
+    result = detector.detect(
+        drill=drill,
+        pose_sequence=_pose_sequence(
+            session_id,
+            _set_shot_pose_frames(session_id, dominant_side="LEFT"),
+        ),
+    )
+
+    assert result.resolved_side == DominantSide.LEFT
+    assert result.confidence > 0
+    assert result.method == "wrist_motion"
+
+
+def test_dominant_side_detector_reports_insufficient_evidence(db_session) -> None:
+    detector = DominantSideDetector()
+    drill = _get_drill(db_session, "Set Shot Form")
+    session_id = "00000000-0000-0000-0000-000000000103"
+
+    result = detector.detect(
+        drill=drill,
+        pose_sequence=_pose_sequence(
+            session_id,
+            _set_shot_pose_frames(session_id, frame_count=2),
+        ),
+    )
+
+    assert result.resolved_side is None
+    assert result.method == "insufficient_evidence"
+    assert "INSUFFICIENT_VISIBLE_SIDE_SAMPLES" in result.diagnostic_flags
+
+
 def test_left_sagittal_evaluation_matches_canonical_right_sagittal(
     client,
     db_session,
@@ -793,6 +924,143 @@ def test_left_sagittal_evaluation_matches_canonical_right_sagittal(
     ]
 
 
+def test_phase2a_auto_detect_failure_does_not_silently_default_right(
+    client,
+    db_session,
+) -> None:
+    token = _register_user(client, email="auto-detect-failure@example.com")
+    drill = _get_drill(db_session, "Set Shot Form")
+    session = _create_session(
+        client,
+        token,
+        drill=drill,
+        skill_level="BEGINNER",
+        camera_view="FRONTAL",
+    )
+    _store_pose_sequence(
+        db_session,
+        session_id=session["id"],
+        frames=_set_shot_pose_frames(session["id"], frame_count=2),
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['id']}/evaluate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "INSUFFICIENT_DATA"
+    assert "DOMINANT_SIDE_RESOLUTION_FAILED" in payload["diagnostic_flags"]
+    assert "resolved_dominant_side" not in payload
+    assert "AUTO_DETECTED_DOMINANT_SIDE:RIGHT" not in payload["diagnostic_flags"]
+
+
+@pytest.mark.parametrize("dominant_side", ["LEFT", "RIGHT"])
+def test_phase2a_manual_dominant_side_bypasses_auto_detection(
+    client,
+    db_session,
+    monkeypatch,
+    dominant_side: str,
+) -> None:
+    token = _register_user(client, email=f"manual-{dominant_side.lower()}@example.com")
+    drill = _get_drill(db_session, "Instep Pass")
+    session = _create_session(
+        client,
+        token,
+        drill=drill,
+        skill_level="INTERMEDIATE",
+        camera_view="RIGHT_SAGITTAL",
+        dominant_side=dominant_side,
+    )
+    _store_pose_sequence(
+        db_session,
+        session_id=session["id"],
+        frames=_instep_pass_pose_frames(session["id"], dominant_side=dominant_side),
+    )
+
+    def fail_detect(self, **kwargs):
+        raise AssertionError("Auto-detection should not run for manual dominant_side.")
+
+    monkeypatch.setattr(DominantSideDetector, "detect", fail_detect)
+
+    response = client.post(
+        f"/api/sessions/{session['id']}/evaluate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "COMPLETED"
+    assert payload["requested_dominant_side"] == dominant_side
+    assert payload["resolved_dominant_side"] == dominant_side
+    assert "dominant_side_confidence" not in payload
+
+
+def test_phase2a_evaluation_uses_auto_detected_side_for_arm_dominant_drills(
+    client,
+    db_session,
+) -> None:
+    token = _register_user(client, email="auto-detect-resolution@example.com")
+    drill = _get_drill(db_session, "Set Shot Form")
+    auto_session = _create_session(
+        client,
+        token,
+        drill=drill,
+        skill_level="BEGINNER",
+        camera_view="FRONTAL",
+    )
+    manual_session = _create_session(
+        client,
+        token,
+        drill=drill,
+        skill_level="BEGINNER",
+        camera_view="FRONTAL",
+        dominant_side="RIGHT",
+    )
+    _store_pose_sequence(
+        db_session,
+        session_id=auto_session["id"],
+        frames=_set_shot_pose_frames(auto_session["id"], dominant_side="RIGHT"),
+    )
+    _store_pose_sequence(
+        db_session,
+        session_id=manual_session["id"],
+        frames=_set_shot_pose_frames(manual_session["id"], dominant_side="RIGHT"),
+    )
+
+    auto_response = client.post(
+        f"/api/sessions/{auto_session['id']}/evaluate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    manual_response = client.post(
+        f"/api/sessions/{manual_session['id']}/evaluate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert auto_response.status_code == 200
+    assert manual_response.status_code == 200
+    auto_payload = auto_response.json()
+    manual_payload = manual_response.json()
+    assert auto_payload["status"] == "COMPLETED"
+    assert manual_payload["status"] == "COMPLETED"
+    assert auto_payload["resolved_dominant_side"] == "RIGHT"
+    assert auto_payload["dominant_side_confidence"] > 0
+    assert "requested_dominant_side" not in auto_payload
+    assert manual_payload["requested_dominant_side"] == "RIGHT"
+    assert manual_payload["resolved_dominant_side"] == "RIGHT"
+    assert auto_payload["overall_score"] == manual_payload["overall_score"]
+    assert [
+        (phase["phase_id"], metric["metric_id"], metric["raw_value"], metric["normalized_score"])
+        for phase in auto_payload["phase_results"]
+        for metric in phase["metric_results"]
+    ] == [
+        (phase["phase_id"], metric["metric_id"], metric["raw_value"], metric["normalized_score"])
+        for phase in manual_payload["phase_results"]
+        for metric in phase["metric_results"]
+    ]
+
+
 @pytest.mark.parametrize("skill_level", ["BEGINNER", "INTERMEDIATE", "ADVANCED"])
 def test_phase2a_bodyweight_squat_evaluates_all_skill_levels(
     client,
@@ -822,6 +1090,8 @@ def test_phase2a_bodyweight_squat_evaluates_all_skill_levels(
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "COMPLETED"
+    assert "requested_dominant_side" not in payload
+    assert "resolved_dominant_side" not in payload
     assert payload["evaluation_version"] == EXPECTED_EVALUATION_VERSION
     assert payload["skill_level"] == skill_level
     assert [phase["phase_id"] for phase in payload["phase_results"]] == [

@@ -26,6 +26,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
+from app.services.dominant_side_detector import DominantSideDetector
 from app.services.drill_service import DrillService
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
 from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
@@ -110,6 +111,10 @@ def get_deterministic_feedback_service() -> DeterministicFeedbackService:
     return DeterministicFeedbackService()
 
 
+def get_dominant_side_detector() -> DominantSideDetector:
+    return DominantSideDetector()
+
+
 def get_fuzzy_interpretation_service() -> FuzzyInterpretationService:
     return FuzzyInterpretationService(enabled=settings.fuzzy_interpretation_enabled)
 
@@ -185,6 +190,7 @@ def get_session_service(
     perception: PerceptionService = Depends(get_perception_service),
     capture_protocol: CaptureProtocolValidator = Depends(get_capture_protocol_validator),
     phase2a_evaluator: Phase2AEvaluator = Depends(get_phase2a_evaluator),
+    dominant_side_detector: DominantSideDetector = Depends(get_dominant_side_detector),
     deterministic_feedback: DeterministicFeedbackService = Depends(
         get_deterministic_feedback_service
     ),
@@ -219,6 +225,7 @@ def get_session_service(
         perception=perception,
         capture_protocol=capture_protocol,
         phase2a_evaluator=phase2a_evaluator,
+        dominant_side_detector=dominant_side_detector,
         deterministic_feedback=deterministic_feedback,
         fuzzy_interpretation=fuzzy_interpretation,
         it2_fuzzy_interpretation=it2_fuzzy_interpretation,

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_serializer, model_validator
 
 from app.models.enums import (
     CameraView,
@@ -246,6 +246,10 @@ class DeterministicEvaluationResult(APIBaseModel):
     strongest_metrics: list[RankedMetricResponse] = Field(default_factory=list)
     weakest_metrics: list[RankedMetricResponse] = Field(default_factory=list)
     diagnostic_flags: list[str] = Field(default_factory=list)
+    requested_dominant_side: DominantSide | None = None
+    resolved_dominant_side: DominantSide | None = None
+    dominant_side_confidence: float | None = Field(default=None, ge=0, le=1)
+    dominant_side_diagnostic_flags: list[str] | None = None
 
     @field_validator("strongest_metrics", "weakest_metrics", mode="before")
     @classmethod
@@ -264,6 +268,19 @@ class DeterministicEvaluationResult(APIBaseModel):
                 )
             return ranked
         return value
+
+    @model_serializer(mode="wrap")
+    def _serialize_without_empty_dominant_side_metadata(self, handler):
+        payload = handler(self)
+        for field_name in (
+            "requested_dominant_side",
+            "resolved_dominant_side",
+            "dominant_side_confidence",
+            "dominant_side_diagnostic_flags",
+        ):
+            if payload.get(field_name) is None:
+                payload.pop(field_name, None)
+        return payload
 
 
 FeedbackGenerationStatus = Literal["COMPLETED", "FAILED", "NO_ACTIONABLE_ISSUES"]

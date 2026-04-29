@@ -1,19 +1,29 @@
+import type { CameraView } from "./sessions";
+
 export type DrillTargetMetrics = {
   metrics: string[];
 };
 
 export type DrillReferenceRange = {
-  min?: number;
-  max?: number;
+  min: number;
+  max: number;
+};
+
+export type DrillCaptureProtocol = {
+  required: boolean;
+  allowed_camera_views: CameraView[];
+  canonical_view: CameraView;
 };
 
 export type DrillReferencePayload = {
-  movement_type?: string;
-  phases?: string[];
-  tracked_joints?: string[];
-  ideal_ranges?: Record<string, DrillReferenceRange>;
-  stability_expectations?: Record<string, number | string>;
-  notes?: string;
+  capture_protocol?: DrillCaptureProtocol | null;
+  movement_type: string;
+  phases: string[];
+  tracked_joints: string[];
+  ideal_ranges: Record<string, DrillReferenceRange>;
+  stability_expectations: Record<string, number>;
+  notes: string;
+  requires_dominant_side?: boolean | null;
 };
 
 export type DrillRuleCheck = {
@@ -27,11 +37,11 @@ export type DrillRuleCheck = {
 };
 
 export type DrillCoachingRules = {
-  primary_focus?: string[];
-  thresholds?: Record<string, number>;
-  rule_checks?: DrillRuleCheck[];
-  positive_cues?: string[];
-  recommendation_templates?: string[];
+  primary_focus: string[];
+  thresholds: Record<string, number>;
+  rule_checks: DrillRuleCheck[];
+  positive_cues: string[];
+  recommendation_templates: string[];
 };
 
 export type DrillListItem = {
@@ -42,7 +52,7 @@ export type DrillListItem = {
   target_metrics: DrillTargetMetrics;
 };
 
-export type DrillDetail = {
+export type DrillDetailResponse = {
   id: string;
   sport_id: string;
   sport_name: string;
@@ -51,4 +61,12 @@ export type DrillDetail = {
   target_metrics: DrillTargetMetrics;
   reference_payload: DrillReferencePayload;
   coaching_rules: DrillCoachingRules;
+};
+
+export type DrillDetail = DrillDetailResponse & {
+  capture_protocol: DrillCaptureProtocol | null;
+  allowed_camera_views: CameraView[];
+  canonical_view: CameraView | null;
+  requires_dominant_side: boolean;
+  supports_active_side_selection: boolean;
 };

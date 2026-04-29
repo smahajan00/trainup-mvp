@@ -2,26 +2,50 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PlayCircle, Sparkles, UploadCloud } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
 import { CTAButton } from "../../../components/ui/cta-button";
+import { Label } from "../../../components/ui/label";
+import { Select } from "../../../components/ui/select";
 import { SkeletonLoader } from "../../../components/ui/skeleton-loader";
 import { AppShell } from "../../../features/app-shell/components/AppShell";
 import { EmptyState } from "../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../features/app-shell/components/SectionTitle";
 import { ModeCard } from "../../../features/sessions/components/ModeCard";
+import { getErrorMessage } from "../../../lib/api";
 import { formatEnumLabel, formatTokenLabel } from "../../../lib/formatters";
-import { createSession } from "../../../services/sessions";
 import { getDrillById } from "../../../services/drills";
+import { createSession } from "../../../services/sessions";
 import type { DrillDetail } from "../../../types/drills";
 import type { ProfileResponse } from "../../../types/profile";
-import type { SessionInputType } from "../../../types/sessions";
+import type {
+  CameraView,
+  DominantSide,
+  SessionInputType
+} from "../../../types/sessions";
+
+const DEFAULT_CAMERA_VIEWS: CameraView[] = [
+  "FRONTAL",
+  "LEFT_SAGITTAL",
+  "RIGHT_SAGITTAL"
+];
+
+const dominantSideOptions: { value: DominantSide; label: string }[] = [
+  { value: "AUTO", label: "Auto-detect" },
+  { value: "LEFT", label: "Left" },
+  { value: "RIGHT", label: "Right" }
+];
 
 function isValidMode(value: string | null): value is SessionInputType {
   return value === "LIVE" || value === "UPLOAD";
+}
+
+function isCameraView(value: string): value is CameraView {
+  return DEFAULT_CAMERA_VIEWS.includes(value as CameraView);
 }
 
 function SessionCreationContent({
@@ -33,12 +57,17 @@ function SessionCreationContent({
   const searchParams = useSearchParams();
   const drillId = searchParams.get("drillId");
   const requestedMode = searchParams.get("mode");
-  const autoCreateTriggered = useRef(false);
   const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creatingMode, setCreatingMode] = useState<SessionInputType | null>(null);
+  const [selectedInputType, setSelectedInputType] = useState<SessionInputType | null>(
+    isValidMode(requestedMode) ? requestedMode : null
+  );
+  const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
+  const [selectedDominantSide, setSelectedDominantSide] =
+    useState<DominantSide>("AUTO");
 
   useEffect(() => {
     let ignore = false;
@@ -58,9 +87,7 @@ function SessionCreationContent({
         }
       } catch (error) {
         if (!ignore) {
-          setLoadError(
-            error instanceof Error ? error.message : "Unable to load the drill."
-          );
+          setLoadError(getErrorMessage(error));
         }
       } finally {
         if (!ignore) {
@@ -77,44 +104,29 @@ function SessionCreationContent({
   }, [drillId]);
 
   useEffect(() => {
-    if (
-      !drillId ||
-      !drill ||
-      !profile ||
-      profile.sport_id !== drill.sport_id ||
-      !isValidMode(requestedMode) ||
-      autoCreateTriggered.current
-    ) {
+    if (isValidMode(requestedMode)) {
+      setSelectedInputType(requestedMode);
+    }
+  }, [requestedMode]);
+
+  useEffect(() => {
+    if (!drill) {
       return;
     }
 
-    autoCreateTriggered.current = true;
-    setCreatingMode(requestedMode);
-    setCreateError(null);
+    const defaultCameraView =
+      drill.canonical_view ?? drill.allowed_camera_views[0] ?? DEFAULT_CAMERA_VIEWS[0];
 
-    createSession({
-      sport_id: drill.sport_id,
-      skill_level: profile.skill_level,
-      drill_id: drillId,
-      input_type: requestedMode
-    })
-      .then((session) => {
-        const destination =
-          requestedMode === "LIVE"
-            ? `/sessions/${session.id}/live`
-            : `/sessions/${session.id}/upload`;
-        router.replace(destination);
-      })
-      .catch((error) => {
-        autoCreateTriggered.current = false;
-        setCreateError(
-          error instanceof Error
-            ? error.message
-            : "Unable to create the training session."
-        );
-        setCreatingMode(null);
-      });
-  }, [drill, drillId, profile, requestedMode, router]);
+    setSelectedCameraView((current) =>
+      current && drill.allowed_camera_views.includes(current)
+        ? current
+        : defaultCameraView
+    );
+
+    if (!drill.supports_active_side_selection) {
+      setSelectedDominantSide("AUTO");
+    }
+  }, [drill]);
 
   const metrics = useMemo(
     () => drill?.target_metrics.metrics.slice(0, 5) ?? [],
@@ -142,7 +154,7 @@ function SessionCreationContent({
         <SkeletonLoader className="h-64" />
         <div className="grid gap-5 lg:grid-cols-2">
           <SkeletonLoader className="h-[340px]" />
-          <SkeletonLoader className="h-[340px]" />
+          <SkeletonLoader className="h-[420px]" />
         </div>
       </div>
     );
@@ -163,7 +175,37 @@ function SessionCreationContent({
     );
   }
 
-  if (!profile || profile.sport_id !== drill.sport_id) {
+  if (!profile) {
+    return (
+      <EmptyState
+        icon={Sparkles}
+        title="Complete your profile before starting"
+        description="Your profile provides the sport and skill level context needed to create a training session."
+        action={
+          <CTAButton asChild>
+            <Link href="/profile">Complete Profile</Link>
+          </CTAButton>
+        }
+      />
+    );
+  }
+
+  if (!profile.skill_level) {
+    return (
+      <EmptyState
+        icon={Sparkles}
+        title="Add your skill level before starting"
+        description="Update your profile with a skill level so TrainUp can create the right session setup."
+        action={
+          <CTAButton asChild>
+            <Link href="/profile">Update Profile</Link>
+          </CTAButton>
+        }
+      />
+    );
+  }
+
+  if (profile.sport_id !== drill.sport_id) {
     return (
       <EmptyState
         icon={Sparkles}
@@ -178,19 +220,58 @@ function SessionCreationContent({
     );
   }
 
-  if (creatingMode) {
-    return (
-      <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
-        <Badge variant="accent">{formatEnumLabel(creatingMode)}</Badge>
-        <h2 className="mt-4 font-display text-4xl font-bold text-white">
-          Starting {creatingMode === "LIVE" ? "live" : "upload"} session
-        </h2>
-        <p className="mt-4 max-w-2xl text-sm text-muted-gray">
-          Opening {drill.drill_name}. You’ll move in automatically.
-        </p>
-      </InfoCard>
-    );
+  const activeDrill = drill;
+  const activeProfile = profile;
+
+  async function handleCreateSession() {
+    if (!selectedInputType) {
+      setCreateError("Choose Upload Video or Live Camera before continuing.");
+      return;
+    }
+
+    if (!selectedCameraView) {
+      setCreateError("Choose a camera view before creating the session.");
+      return;
+    }
+
+    setCreateError(null);
+    setCreatingMode(selectedInputType);
+
+    try {
+      const session = await createSession({
+        sport_id: activeDrill.sport_id,
+        skill_level: activeProfile.skill_level,
+        drill_id: activeDrill.id,
+        input_type: selectedInputType,
+        camera_view: selectedCameraView,
+        dominant_side:
+          activeDrill.supports_active_side_selection &&
+          selectedDominantSide !== "AUTO"
+            ? selectedDominantSide
+            : null
+      });
+
+      router.push(
+        selectedInputType === "LIVE"
+          ? `/sessions/${session.id}/live`
+          : `/sessions/${session.id}/upload`
+      );
+    } catch (error) {
+      setCreateError(getErrorMessage(error));
+      setCreatingMode(null);
+    }
   }
+
+  const primaryActionLabel =
+    selectedInputType === "LIVE"
+      ? "Continue to Live Camera"
+      : selectedInputType === "UPLOAD"
+        ? "Continue to Upload Video"
+        : "Choose a Training Input";
+  const recommendedCameraView =
+    drill.canonical_view ||
+    selectedCameraView ||
+    DEFAULT_CAMERA_VIEWS[0];
 
   return (
     <div className="space-y-8">
@@ -198,12 +279,15 @@ function SessionCreationContent({
         <div className="flex flex-wrap gap-2">
           <Badge variant="accent">{drill.sport_name}</Badge>
           <Badge variant="slate">{formatEnumLabel(profile.skill_level)}</Badge>
+          {selectedInputType ? (
+            <Badge variant="slate">{formatEnumLabel(selectedInputType)}</Badge>
+          ) : null}
         </div>
         <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
           {drill.drill_name}
         </h2>
         <p className="mt-4 max-w-3xl text-sm text-muted-gray sm:text-base">
-          Pick your session mode.
+          Confirm your training setup before creating the session.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
           {metrics.map((metric) => (
@@ -215,23 +299,28 @@ function SessionCreationContent({
       </InfoCard>
 
       {createError ? (
-        <EmptyState
-          icon={Sparkles}
-          title="Session creation failed"
-          description={createError}
-          action={
-            <CTAButton asChild>
-              <Link href={`/drills/${drill.id}`}>Back to Drill</Link>
-            </CTAButton>
-          }
-        />
+        <div className="rounded-[1.5rem] border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm text-rose-100">
+          {createError}
+        </div>
+      ) : null}
+
+      {creatingMode ? (
+        <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
+          <Badge variant="accent">{formatEnumLabel(creatingMode)}</Badge>
+          <h2 className="mt-4 font-display text-4xl font-bold text-white">
+            Creating session
+          </h2>
+          <p className="mt-4 max-w-2xl text-sm text-muted-gray">
+            Setting up {drill.drill_name}. You’ll move to the selected input flow next.
+          </p>
+        </InfoCard>
       ) : null}
 
       <div className="space-y-5">
         <SectionTitle
           eyebrow="Mode"
-          title="Choose session mode"
-          description="Live uses camera. Upload uses video."
+          title="Choose training input"
+          description="Pick whether you want to upload a clip or use the live camera."
         />
         <div className="grid gap-5 lg:grid-cols-2">
           <ModeCard
@@ -240,9 +329,10 @@ function SessionCreationContent({
             badge="Camera"
             eyebrow="Live"
             detail="Open camera. Start when ready."
-            ctaLabel="Start Live"
+            ctaLabel="Use Live Camera"
             icon={PlayCircle}
-            onSelect={() => router.push(`/sessions/new?drillId=${drill.id}&mode=LIVE`)}
+            isSelected={selectedInputType === "LIVE"}
+            onSelect={() => setSelectedInputType("LIVE")}
           />
           <ModeCard
             title="Upload Video"
@@ -250,12 +340,146 @@ function SessionCreationContent({
             badge="Video"
             eyebrow="Upload"
             detail="Pick a clip. Review results."
-            ctaLabel="Start Upload"
+            ctaLabel="Use Upload Video"
             icon={UploadCloud}
-            onSelect={() => router.push(`/sessions/new?drillId=${drill.id}&mode=UPLOAD`)}
+            isSelected={selectedInputType === "UPLOAD"}
+            onSelect={() => setSelectedInputType("UPLOAD")}
           />
         </div>
       </div>
+
+      <InfoCard>
+        <SectionTitle
+          eyebrow="Setup"
+          title="Confirm session details"
+          description="Review the selected sport, drill, and capture settings."
+        />
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Selected sport
+            </p>
+            <p className="mt-3 text-base font-semibold text-white">
+              {drill.sport_name}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Selected drill
+            </p>
+            <p className="mt-3 text-base font-semibold text-white">
+              {drill.drill_name}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Skill level
+            </p>
+            <p className="mt-3 text-base font-semibold text-white">
+              {formatEnumLabel(profile.skill_level)}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="camera_view">Camera view</Label>
+            <Select
+              id="camera_view"
+              value={selectedCameraView}
+              onChange={(event) =>
+                setSelectedCameraView(
+                  isCameraView(event.target.value) ? event.target.value : ""
+                )
+              }
+            >
+              {drill.allowed_camera_views.map((view) => (
+                <option key={view} value={view} className="bg-slate text-white">
+                  {formatEnumLabel(view)}
+                </option>
+              ))}
+            </Select>
+            <p className="text-sm text-muted-gray">
+              Recommended camera view:{" "}
+              {formatEnumLabel(recommendedCameraView)}
+            </p>
+          </div>
+
+          {drill.supports_active_side_selection ? (
+            <div className="space-y-2">
+              <Label htmlFor="dominant_side">Active side</Label>
+              <Select
+                id="dominant_side"
+                value={selectedDominantSide}
+                onChange={(event) =>
+                  setSelectedDominantSide(event.target.value as DominantSide)
+                }
+              >
+                {dominantSideOptions.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    className="bg-slate text-white"
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-sm text-muted-gray">
+                {drill.requires_dominant_side
+                  ? "Active side will be detected from movement. Override it only if you want to lock the drill to Left or Right."
+                  : "Auto-detect is the default. Override it if you want to force a side."}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Active side
+              </p>
+              <p className="mt-3 text-sm leading-6 text-white/85">
+                This drill does not need active-side selection during setup.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+            Capture guidance
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {drill.allowed_camera_views.map((view) => (
+              <Badge key={view} variant="slate">
+                {formatEnumLabel(view)}
+              </Badge>
+            ))}
+          </div>
+          <p className="mt-4 text-sm leading-6 text-white/85">
+            {drill.reference_payload.notes}
+          </p>
+        </div>
+
+        <div className="mt-8 flex flex-wrap gap-3">
+          <CTAButton
+            type="button"
+            onClick={handleCreateSession}
+            disabled={
+              !selectedInputType ||
+              !selectedCameraView ||
+              creatingMode !== null
+            }
+          >
+            {primaryActionLabel}
+          </CTAButton>
+          <Button asChild variant="outline">
+            <Link href={`/drills/${drill.id}`}>Back to Drill</Link>
+          </Button>
+          <Button asChild variant="ghost" className="border border-white/10 bg-white/[0.03]">
+            <Link href="/profile">Update Profile</Link>
+          </Button>
+        </div>
+      </InfoCard>
     </div>
   );
 }

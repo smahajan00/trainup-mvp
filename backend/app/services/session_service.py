@@ -58,6 +58,7 @@ from app.schemas.session import (
 )
 from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
+from app.services.dominant_side_detector import DominantSideDetector
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
 from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
 from app.services.llm_feedback_service import LLMFeedbackService
@@ -135,6 +136,7 @@ class SessionService:
     perception: PerceptionService
     capture_protocol: CaptureProtocolValidator
     phase2a_evaluator: Phase2AEvaluator
+    dominant_side_detector: DominantSideDetector
     deterministic_feedback: DeterministicFeedbackService
     fuzzy_interpretation: FuzzyInterpretationService
     it2_fuzzy_interpretation: IT2FuzzyInterpretationService
@@ -424,6 +426,7 @@ class SessionService:
         session_id: UUID,
     ) -> DeterministicEvaluationResult:
         session = self._get_owned_session(user_id=user_id, session_id=session_id)
+        requested_dominant_side = session.dominant_side
         pose_artifact = self.artifacts.get_by_session_and_type(
             session_id=session.id,
             artifact_type=POSE_SEQUENCE_ARTIFACT_TYPE,
@@ -432,6 +435,7 @@ class SessionService:
             result = self._build_evaluation_failure(
                 session=session,
                 diagnostic_flags=["MISSING_POSE_SEQUENCE"],
+                requested_dominant_side=requested_dominant_side,
             )
             self._persist_evaluation_result(session_id=session.id, result=result)
             self.db.commit()
@@ -443,6 +447,7 @@ class SessionService:
             result = self._build_evaluation_failure(
                 session=session,
                 diagnostic_flags=["MALFORMED_POSE_SEQUENCE"],
+                requested_dominant_side=requested_dominant_side,
             )
             self._replace_metric_results(session_id=session.id, metric_results=[])
             self._persist_evaluation_result(session_id=session.id, result=result)
@@ -465,6 +470,7 @@ class SessionService:
                     if pose_sequence.frame_count > 0
                     else "FAILED"
                 ),
+                requested_dominant_side=requested_dominant_side,
             )
             self._replace_metric_results(session_id=session.id, metric_results=[])
             self._persist_evaluation_result(session_id=session.id, result=result)
@@ -475,9 +481,70 @@ class SessionService:
             pose_sequence=pose_sequence,
             camera_view=session.camera_view,
         )
+        effective_dominant_side = session.dominant_side
+        dominant_side_confidence: float | None = None
+        dominant_side_diagnostic_flags: list[str] | None = None
+        if (
+            effective_dominant_side is None
+            and self.dominant_side_detector.is_side_dependent(drill=session.drill)
+        ):
+            if not self.dominant_side_detector.supports_auto_detection(
+                drill=session.drill
+            ):
+                result = self._build_evaluation_failure(
+                    session=session,
+                    diagnostic_flags=[
+                        "DOMINANT_SIDE_AUTO_DETECTION_UNSUPPORTED",
+                    ],
+                    result_status="INSUFFICIENT_DATA",
+                    requested_dominant_side=requested_dominant_side,
+                )
+                self._replace_metric_results(session_id=session.id, metric_results=[])
+                self._persist_evaluation_result(session_id=session.id, result=result)
+                self.db.commit()
+                return result
+
+            dominant_side_detection = self.dominant_side_detector.detect(
+                drill=session.drill,
+                pose_sequence=evaluation_pose_sequence,
+            )
+            dominant_side_diagnostic_flags = dominant_side_detection.diagnostic_flags
+
+            if dominant_side_detection.resolved_side is None:
+                result = self._build_evaluation_failure(
+                    session=session,
+                    diagnostic_flags=[
+                        "DOMINANT_SIDE_RESOLUTION_FAILED",
+                        *dominant_side_detection.diagnostic_flags,
+                    ],
+                    result_status="INSUFFICIENT_DATA",
+                    requested_dominant_side=requested_dominant_side,
+                    dominant_side_confidence=(
+                        dominant_side_detection.confidence
+                        if dominant_side_detection.confidence > 0
+                        else None
+                    ),
+                    dominant_side_diagnostic_flags=dominant_side_detection.diagnostic_flags,
+                )
+                self._replace_metric_results(session_id=session.id, metric_results=[])
+                self._persist_evaluation_result(session_id=session.id, result=result)
+                self.db.commit()
+                return result
+
+            effective_dominant_side = dominant_side_detection.resolved_side
+            dominant_side_confidence = dominant_side_detection.confidence
+            dominant_side_diagnostic_flags = [
+                f"AUTO_DETECTED_DOMINANT_SIDE:{effective_dominant_side.value}",
+                *dominant_side_detection.diagnostic_flags,
+            ]
+
         computation = self.phase2a_evaluator.evaluate(
             session=session,
             pose_sequence=evaluation_pose_sequence,
+            dominant_side=effective_dominant_side,
+            requested_dominant_side=requested_dominant_side,
+            dominant_side_confidence=dominant_side_confidence,
+            dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
         )
         metric_names = {
             metric_result.metric_name
@@ -495,6 +562,10 @@ class SessionService:
                     "MISSING_METRIC_TYPES",
                     *[f"MISSING_METRIC_TYPE:{name}" for name in missing_metric_names],
                 ],
+                requested_dominant_side=requested_dominant_side,
+                resolved_dominant_side=effective_dominant_side,
+                dominant_side_confidence=dominant_side_confidence,
+                dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
             )
             self._replace_metric_results(session_id=session.id, metric_results=[])
             self._persist_evaluation_result(session_id=session.id, result=result)
@@ -1275,8 +1346,8 @@ class SessionService:
                 detail="Requested sport does not match the requested drill.",
             )
 
-    @staticmethod
     def _ensure_dominant_side_requirement(
+        self,
         *,
         drill: Drill,
         payload: SessionCreateRequest,
@@ -1288,7 +1359,11 @@ class SessionService:
             if contract is not None
             else bool(reference_payload.get("requires_dominant_side"))
         )
-        if requires_dominant_side and payload.dominant_side is None:
+        if (
+            requires_dominant_side
+            and payload.dominant_side is None
+            and not self.dominant_side_detector.supports_auto_detection(drill=drill)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"dominant_side is required for {drill.drill_name} sessions.",
@@ -1660,6 +1735,10 @@ class SessionService:
         session: TrainingSession,
         diagnostic_flags: list[str],
         result_status: str = "FAILED",
+        requested_dominant_side=None,
+        resolved_dominant_side=None,
+        dominant_side_confidence: float | None = None,
+        dominant_side_diagnostic_flags: list[str] | None = None,
     ) -> DeterministicEvaluationResult:
         return DeterministicEvaluationResult(
             evaluation_version=PHASE2A_EVALUATION_VERSION,
@@ -1675,6 +1754,10 @@ class SessionService:
             strongest_metrics=[],
             weakest_metrics=[],
             diagnostic_flags=diagnostic_flags,
+            requested_dominant_side=requested_dominant_side,
+            resolved_dominant_side=resolved_dominant_side,
+            dominant_side_confidence=dominant_side_confidence,
+            dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
         )
 
     @staticmethod

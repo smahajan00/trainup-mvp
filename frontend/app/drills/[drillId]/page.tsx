@@ -20,6 +20,7 @@ import { EmptyState } from "../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../features/app-shell/components/SectionTitle";
 import {
+  formatEnumLabel,
   formatTokenLabel,
   truncateText
 } from "../../../lib/formatters";
@@ -104,6 +105,14 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
   const stabilityExpectations = Object.entries(
     drill.reference_payload.stability_expectations ?? {}
   );
+  const recommendedViewLabel = drill.capture_protocol
+    ? formatEnumLabel(drill.canonical_view ?? "FRONTAL")
+    : "No drill-specific requirement";
+  const activeSideLabel = drill.requires_dominant_side
+    ? "Detected from movement by default. You can still override to Left or Right in session setup."
+    : drill.supports_active_side_selection
+      ? "Auto-detect by default. You can override to Left or Right in session setup."
+      : "Not required for this drill.";
   const outputPreview = [
     "Video checks",
     "Score cards",
@@ -271,6 +280,61 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
           </div>
         </InfoCard>
       </div>
+
+      <InfoCard>
+        <SectionTitle
+          eyebrow="Capture Setup"
+          title="Capture protocol"
+          description="Use the recommended setup before you start."
+        />
+
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Recommended camera view
+            </p>
+            <p className="mt-3 text-base font-semibold text-white">
+              {recommendedViewLabel}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Supported views
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {drill.allowed_camera_views.map((view) => (
+                <Badge key={view} variant="slate">
+                  {formatEnumLabel(view)}
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Active side
+            </p>
+            <p className="mt-3 text-sm leading-6 text-white/85">
+              {activeSideLabel}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Recording tips
+            </p>
+            <p className="mt-3 text-sm leading-6 text-white/85">
+              {drill.reference_payload.notes || "Keep the full movement in frame with steady lighting and a stable camera."}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Badge variant="accent">Live Camera</Badge>
+          <Badge variant="slate">Upload Video</Badge>
+        </div>
+      </InfoCard>
 
       <div className="grid gap-5 xl:grid-cols-3">
         <InfoCard>

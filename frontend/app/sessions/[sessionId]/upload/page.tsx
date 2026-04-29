@@ -343,10 +343,10 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       <EmptyState
         icon={UploadCloud}
         title="This session is not in upload mode"
-        description="Open the live page or start a new upload."
+        description="Open the live page for this session, or start a new upload setup for the same drill."
         action={
           <CTAButton asChild>
-            <Link href={`/drills/${session.drill_id}`}>Back to Drill</Link>
+            <Link href={`/sessions/${session.id}/live`}>Open Live Page</Link>
           </CTAButton>
         }
       />
@@ -361,6 +361,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
             <div className="flex flex-wrap gap-2">
               <Badge variant="accent">{session.sport_name}</Badge>
               <Badge variant="slate">{formatEnumLabel(session.input_type)}</Badge>
+              {session.camera_view ? (
+                <Badge variant="slate">{formatEnumLabel(session.camera_view)}</Badge>
+              ) : null}
+              {session.dominant_side ? (
+                <Badge variant="slate">{formatEnumLabel(session.dominant_side)}</Badge>
+              ) : null}
               <SessionStatusBadge status={session.status} />
             </div>
             <h2 className="mt-5 font-display text-4xl font-bold text-white sm:text-5xl">
@@ -392,6 +398,19 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 </span>
               </Link>
             </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="justify-between rounded-2xl px-5 py-6 text-white/90"
+            >
+              <Link href={`/sessions/new?drillId=${session.drill_id}&mode=LIVE`}>
+                <span>Switch to live camera</span>
+                <Badge variant="slate">New session</Badge>
+              </Link>
+            </Button>
+            <p className="text-sm text-muted-gray">
+              Input mode is fixed per session. This starts a live setup for the same drill.
+            </p>
           </div>
         </div>
       </InfoCard>
@@ -527,6 +546,11 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 <p className="mt-3 text-sm text-emerald-50">
                   {uploadResult.next_step}
                 </p>
+                {uploadResult.capture_validation ? (
+                  <p className="mt-3 text-sm text-emerald-50/90">
+                    {uploadResult.capture_validation.message}
+                  </p>
+                ) : null}
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white/85">
                     <span className="block text-xs uppercase tracking-[0.2em] text-white/50">
@@ -560,6 +584,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               description="Keep it clear and steady."
             />
             <ul className="mt-6 space-y-3 text-sm text-white/85">
+              {session.camera_view ? (
+                <li>• Match the {formatEnumLabel(session.camera_view).toLowerCase()} view</li>
+              ) : null}
               <li>• Full movement in frame</li>
               <li>• Stable camera</li>
               <li>• Clear lighting</li>

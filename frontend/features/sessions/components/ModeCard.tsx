@@ -15,6 +15,7 @@ type ModeCardProps = {
   icon: LucideIcon;
   onSelect: () => void;
   isSubmitting?: boolean;
+  isSelected?: boolean;
 };
 
 export function ModeCard({
@@ -26,18 +27,26 @@ export function ModeCard({
   ctaLabel,
   icon: Icon,
   onSelect,
-  isSubmitting = false
+  isSubmitting = false,
+  isSelected = false
 }: ModeCardProps) {
   return (
     <motion.div whileHover={{ y: -6 }} transition={{ duration: 0.2 }}>
-      <InfoCard className="relative h-full overflow-hidden border-white/10">
+      <InfoCard
+        className={`relative h-full overflow-hidden ${
+          isSelected ? "border-primary/30 bg-primary/8" : "border-white/10"
+        }`}
+      >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_38%)]" />
         <div className="relative z-10 flex h-full flex-col">
           <div className="flex items-start justify-between gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
               <Icon className="h-6 w-6" />
             </div>
-            <Badge variant="accent">{badge}</Badge>
+            <div className="flex gap-2">
+              {isSelected ? <Badge variant="success">Selected</Badge> : null}
+              <Badge variant="accent">{badge}</Badge>
+            </div>
           </div>
 
           <div className="mt-8">

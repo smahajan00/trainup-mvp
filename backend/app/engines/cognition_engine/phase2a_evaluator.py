@@ -60,13 +60,25 @@ class Phase2AEvaluator:
         *,
         session: TrainingSession,
         pose_sequence: PoseSequenceResponse,
+        dominant_side: DominantSide | None = None,
+        requested_dominant_side: DominantSide | None = None,
+        dominant_side_confidence: float | None = None,
+        dominant_side_diagnostic_flags: list[str] | None = None,
     ) -> Phase2AEvaluationComputation:
         contract = get_phase2a_contract(session.drill.drill_name)
+        effective_dominant_side = (
+            session.dominant_side if dominant_side is None else dominant_side
+        )
+        dominant_side_diagnostic_flags = dominant_side_diagnostic_flags or []
         if contract is None:
             return Phase2AEvaluationComputation(
                 result=self._failure_result(
                     session=session,
                     diagnostic_flags=["UNSUPPORTED_DRILL"],
+                    requested_dominant_side=requested_dominant_side,
+                    resolved_dominant_side=effective_dominant_side,
+                    dominant_side_confidence=dominant_side_confidence,
+                    dominant_side_diagnostic_flags=dominant_side_diagnostic_flags or None,
                 ),
                 metric_results=[],
             )
@@ -76,6 +88,10 @@ class Phase2AEvaluator:
                 result=self._failure_result(
                     session=session,
                     diagnostic_flags=["UNSUPPORTED_SKILL_LEVEL"],
+                    requested_dominant_side=requested_dominant_side,
+                    resolved_dominant_side=effective_dominant_side,
+                    dominant_side_confidence=dominant_side_confidence,
+                    dominant_side_diagnostic_flags=dominant_side_diagnostic_flags or None,
                 ),
                 metric_results=[],
             )
@@ -84,13 +100,17 @@ class Phase2AEvaluator:
             phase_ranges = self._segment_phases(
                 contract=contract,
                 frames=pose_sequence.sequence_data,
-                dominant_side=session.dominant_side,
+                dominant_side=effective_dominant_side,
             )
         except PhaseSegmentationError as exc:
             return Phase2AEvaluationComputation(
                 result=self._failure_result(
                     session=session,
                     diagnostic_flags=["PHASE_SEGMENTATION_FAILURE", str(exc)],
+                    requested_dominant_side=requested_dominant_side,
+                    resolved_dominant_side=effective_dominant_side,
+                    dominant_side_confidence=dominant_side_confidence,
+                    dominant_side_diagnostic_flags=dominant_side_diagnostic_flags or None,
                 ),
                 metric_results=[],
             )
@@ -108,7 +128,7 @@ class Phase2AEvaluator:
                 self._compute_metric_result(
                     metric_contract=metric_contract,
                     frames=phase_frames,
-                    dominant_side=session.dominant_side,
+                    dominant_side=effective_dominant_side,
                     level_factor=LEVEL_STRICTNESS_FACTORS[session.skill_level],
                 )
                 for metric_contract in contract.metric_contracts
@@ -155,7 +175,18 @@ class Phase2AEvaluator:
             detected_issues=detected_issues,
             strongest_metrics=self._rank_metrics(metric_results, strongest=True),
             weakest_metrics=self._rank_metrics(metric_results, strongest=False),
-            diagnostic_flags=self._build_diagnostic_flags(metric_results),
+            diagnostic_flags=self._dedupe_strings(
+                [
+                    *self._build_diagnostic_flags(metric_results),
+                    *dominant_side_diagnostic_flags,
+                ]
+            ),
+            requested_dominant_side=requested_dominant_side,
+            resolved_dominant_side=effective_dominant_side,
+            dominant_side_confidence=dominant_side_confidence,
+            dominant_side_diagnostic_flags=(
+                dominant_side_diagnostic_flags or None
+            ),
         )
         return Phase2AEvaluationComputation(result=result, metric_results=metric_results)
 
@@ -1249,11 +1280,19 @@ class Phase2AEvaluator:
         return list(dict.fromkeys(flags))
 
     @staticmethod
+    def _dedupe_strings(values: list[str]) -> list[str]:
+        return list(dict.fromkeys(values))
+
+    @staticmethod
     def _failure_result(
         *,
         session: TrainingSession,
         diagnostic_flags: list[str],
         status: str = "FAILED",
+        requested_dominant_side: DominantSide | None = None,
+        resolved_dominant_side: DominantSide | None = None,
+        dominant_side_confidence: float | None = None,
+        dominant_side_diagnostic_flags: list[str] | None = None,
     ) -> DeterministicEvaluationResult:
         return DeterministicEvaluationResult(
             evaluation_version=PHASE2A_EVALUATION_VERSION,
@@ -1269,6 +1308,10 @@ class Phase2AEvaluator:
             strongest_metrics=[],
             weakest_metrics=[],
             diagnostic_flags=diagnostic_flags,
+            requested_dominant_side=requested_dominant_side,
+            resolved_dominant_side=resolved_dominant_side,
+            dominant_side_confidence=dominant_side_confidence,
+            dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
         )
 
     @staticmethod

@@ -232,10 +232,10 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       <EmptyState
         icon={CameraOff}
         title="This session is not in live mode"
-        description="Open the upload flow for this session or create a new live session from the drill detail screen."
+        description="Open the upload page for this session, or start a new live setup for the same drill."
         action={
           <CTAButton asChild>
-            <Link href={`/drills/${session.drill_id}`}>Back to Drill</Link>
+            <Link href={`/sessions/${session.id}/upload`}>Open Upload Page</Link>
           </CTAButton>
         }
       />
@@ -250,6 +250,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
             <div className="flex flex-wrap gap-2">
               <Badge variant="accent">{session.sport_name}</Badge>
               <Badge variant="slate">{formatEnumLabel(session.input_type)}</Badge>
+              {session.camera_view ? (
+                <Badge variant="slate">{formatEnumLabel(session.camera_view)}</Badge>
+              ) : null}
+              {session.dominant_side ? (
+                <Badge variant="slate">{formatEnumLabel(session.dominant_side)}</Badge>
+              ) : null}
               <SessionStatusBadge status={session.status} />
             </div>
             <h2 className="mt-5 font-display text-4xl font-bold text-white sm:text-5xl">
@@ -289,6 +295,19 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                 End
               </Button>
             </div>
+            <Button
+              asChild
+              variant="outline"
+              className="justify-between rounded-2xl px-5 py-6 text-white/90"
+            >
+              <Link href={`/sessions/new?drillId=${session.drill_id}&mode=UPLOAD`}>
+                <span>Switch to upload video</span>
+                <Badge variant="slate">New session</Badge>
+              </Link>
+            </Button>
+            <p className="text-sm text-muted-gray">
+              Input mode is fixed per session. This starts an upload setup for the same drill.
+            </p>
           </div>
         </div>
       </InfoCard>
@@ -396,6 +415,11 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
                 />
                 <div>
                   <p className="text-sm font-semibold text-white">Framing ready</p>
+                  {session.camera_view ? (
+                    <p className="mt-1 text-sm text-muted-gray">
+                      Match the {formatEnumLabel(session.camera_view).toLowerCase()} view.
+                    </p>
+                  ) : null}
                 </div>
               </label>
 

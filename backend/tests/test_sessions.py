@@ -243,7 +243,10 @@ def test_create_session_rejects_mismatched_sport(client, db_session) -> None:
     assert response.json()["detail"] == "Requested sport does not match the requested drill."
 
 
-def test_create_session_requires_dominant_side_for_set_shot_form(client, db_session) -> None:
+def test_create_session_allows_auto_detect_dominant_side_for_set_shot_form(
+    client,
+    db_session,
+) -> None:
     token = _register_user(client, full_name="Sam Price", email="dominantside@example.com")
     drill = _get_drill(db_session, "Set Shot Form")
 
@@ -259,8 +262,10 @@ def test_create_session_requires_dominant_side_for_set_shot_form(client, db_sess
         headers={"Authorization": f"Bearer {token}"},
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "dominant_side is required for Set Shot Form sessions."
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["drill_name"] == "Set Shot Form"
+    assert payload["dominant_side"] is None
 
 
 def test_get_session_owned_by_user(client, db_session) -> None:
