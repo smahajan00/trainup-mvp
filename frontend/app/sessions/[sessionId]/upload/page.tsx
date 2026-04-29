@@ -14,8 +14,8 @@ import { EmptyState } from "../../../../features/app-shell/components/EmptyState
 import { InfoCard } from "../../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../../features/app-shell/components/SectionTitle";
 import { AnalysisProgressCard } from "../../../../features/sessions/components/AnalysisProgressCard";
-import { AnalysisSnapshotCard } from "../../../../features/sessions/components/AnalysisSnapshotCard";
 import { PoseOverlayPreview } from "../../../../features/sessions/components/PoseOverlayPreview";
+import { SessionResultsPanel } from "../../../../features/sessions/components/SessionResultsPanel";
 import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
 import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
@@ -518,7 +518,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         </div>
       </InfoCard>
 
-      <AnalysisSnapshotCard artifacts={artifactSnapshot} />
+      <SessionResultsPanel
+        session={session}
+        artifacts={artifactSnapshot}
+        analysisState={analysisState}
+        analysisError={analysisError}
+      />
     </div>
   );
 }
