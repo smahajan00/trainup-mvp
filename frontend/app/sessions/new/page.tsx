@@ -21,7 +21,7 @@ import { formatEnumLabel, formatTokenLabel } from "../../../lib/formatters";
 import { getDrillById } from "../../../services/drills";
 import { createSession } from "../../../services/sessions";
 import type { DrillDetail } from "../../../types/drills";
-import type { ProfileResponse } from "../../../types/profile";
+import type { ProfileResponse, SkillLevel } from "../../../types/profile";
 import type {
   CameraView,
   DominantSide,
@@ -40,10 +40,6 @@ const dominantSideOptions: { value: DominantSide; label: string }[] = [
   { value: "RIGHT", label: "Right" }
 ];
 
-function isValidMode(value: string | null): value is SessionInputType {
-  return value === "LIVE" || value === "UPLOAD";
-}
-
 function isCameraView(value: string): value is CameraView {
   return DEFAULT_CAMERA_VIEWS.includes(value as CameraView);
 }
@@ -56,14 +52,13 @@ function SessionCreationContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const drillId = searchParams.get("drillId");
-  const requestedMode = searchParams.get("mode");
   const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creatingMode, setCreatingMode] = useState<SessionInputType | null>(null);
   const [selectedInputType, setSelectedInputType] = useState<SessionInputType | null>(
-    isValidMode(requestedMode) ? requestedMode : null
+    null
   );
   const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
   const [selectedDominantSide, setSelectedDominantSide] =
@@ -104,12 +99,6 @@ function SessionCreationContent({
   }, [drillId]);
 
   useEffect(() => {
-    if (isValidMode(requestedMode)) {
-      setSelectedInputType(requestedMode);
-    }
-  }, [requestedMode]);
-
-  useEffect(() => {
     if (!drill) {
       return;
     }
@@ -132,6 +121,13 @@ function SessionCreationContent({
     () => drill?.target_metrics.metrics.slice(0, 5) ?? [],
     [drill]
   );
+  const isCrossSportTraining = Boolean(
+    profile && drill && profile.sport_id !== drill.sport_id
+  );
+  const resolvedSkillLevel: SkillLevel = profile?.skill_level && !isCrossSportTraining
+    ? profile.skill_level
+    : "BEGINNER";
+  const usesFallbackSkillLevel = !profile?.skill_level || isCrossSportTraining;
 
   if (!drillId) {
     return (
@@ -190,38 +186,7 @@ function SessionCreationContent({
     );
   }
 
-  if (!profile.skill_level) {
-    return (
-      <EmptyState
-        icon={Sparkles}
-        title="Add your skill level before starting"
-        description="Update your profile with a skill level so TrainUp can create the right session setup."
-        action={
-          <CTAButton asChild>
-            <Link href="/profile">Update Profile</Link>
-          </CTAButton>
-        }
-      />
-    );
-  }
-
-  if (profile.sport_id !== drill.sport_id) {
-    return (
-      <EmptyState
-        icon={Sparkles}
-        title="Select this sport before starting"
-        description="Skill level is tied to your selected sport context. Update your profile for this sport, then start the drill."
-        action={
-          <CTAButton asChild>
-            <Link href="/profile">Update Profile</Link>
-          </CTAButton>
-        }
-      />
-    );
-  }
-
   const activeDrill = drill;
-  const activeProfile = profile;
 
   async function handleCreateSession() {
     if (!selectedInputType) {
@@ -240,7 +205,7 @@ function SessionCreationContent({
     try {
       const session = await createSession({
         sport_id: activeDrill.sport_id,
-        skill_level: activeProfile.skill_level,
+        skill_level: resolvedSkillLevel,
         drill_id: activeDrill.id,
         input_type: selectedInputType,
         camera_view: selectedCameraView,
@@ -278,7 +243,7 @@ function SessionCreationContent({
       <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
         <div className="flex flex-wrap gap-2">
           <Badge variant="accent">{drill.sport_name}</Badge>
-          <Badge variant="slate">{formatEnumLabel(profile.skill_level)}</Badge>
+          <Badge variant="slate">{formatEnumLabel(resolvedSkillLevel)}</Badge>
           {selectedInputType ? (
             <Badge variant="slate">{formatEnumLabel(selectedInputType)}</Badge>
           ) : null}
@@ -289,6 +254,16 @@ function SessionCreationContent({
         <p className="mt-4 max-w-3xl text-sm text-muted-gray sm:text-base">
           Confirm your training setup before creating the session.
         </p>
+        <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+          <p className="text-sm font-semibold text-white">
+            Training in {drill.sport_name}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-muted-gray">
+            {usesFallbackSkillLevel
+              ? "No skill level is set for this sport yet, so Beginner will be used for this session."
+              : `Using your ${formatEnumLabel(resolvedSkillLevel).toLowerCase()} skill level for this sport.`}
+          </p>
+        </div>
         <div className="mt-6 flex flex-wrap gap-2">
           {metrics.map((metric) => (
             <Badge key={metric} variant="slate">
@@ -377,8 +352,13 @@ function SessionCreationContent({
               Skill level
             </p>
             <p className="mt-3 text-base font-semibold text-white">
-              {formatEnumLabel(profile.skill_level)}
+              {formatEnumLabel(resolvedSkillLevel)}
             </p>
+            {usesFallbackSkillLevel ? (
+              <p className="mt-2 text-sm leading-6 text-muted-gray">
+                Using Beginner level for this sport.
+              </p>
+            ) : null}
           </div>
         </div>
 

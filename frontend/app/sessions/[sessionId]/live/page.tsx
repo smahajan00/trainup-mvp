@@ -2,14 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Camera,
-  CameraOff,
-  CheckCircle2,
-  SignalHigh,
-  Square
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Camera, Pause, Play, Square } from "lucide-react";
 
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
@@ -19,52 +13,74 @@ import { AppShell } from "../../../../features/app-shell/components/AppShell";
 import { EmptyState } from "../../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../../features/app-shell/components/SectionTitle";
+import { AnalysisProgressCard } from "../../../../features/sessions/components/AnalysisProgressCard";
+import { AnalysisSnapshotCard } from "../../../../features/sessions/components/AnalysisSnapshotCard";
+import { PoseOverlayPreview } from "../../../../features/sessions/components/PoseOverlayPreview";
+import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
+import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
 import { formatDateTime, formatEnumLabel } from "../../../../lib/formatters";
 import {
   endLiveSession,
   getSession,
+  getSessionArtifacts,
   startLiveSession,
   submitLiveFrameBatch
 } from "../../../../services/sessions";
 import type {
   FrameBatchResponse,
   LiveStartResponse,
+  SessionArtifactsResponse,
   TrainingSession
 } from "../../../../types/sessions";
 
 type CameraState = "idle" | "requesting" | "granted" | "denied" | "error";
+type CaptureState = "IDLE" | "CAPTURING" | "PAUSED" | "STOPPED";
 
 function LiveSessionContent({ sessionId }: { sessionId: string }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const captureIntervalRef = useRef<number | null>(null);
   const [session, setSession] = useState<TrainingSession | null>(null);
+  const [artifactSnapshot, setArtifactSnapshot] =
+    useState<SessionArtifactsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cameraState, setCameraState] = useState<CameraState>("idle");
-  const [lightingReady, setLightingReady] = useState(false);
-  const [framingReady, setFramingReady] = useState(false);
-  const [spaceReady, setSpaceReady] = useState(false);
+  const [captureState, setCaptureState] = useState<CaptureState>("IDLE");
   const [actionError, setActionError] = useState<string | null>(null);
   const [startResult, setStartResult] = useState<LiveStartResponse | null>(null);
-  const [frameBatchResult, setFrameBatchResult] = useState<FrameBatchResponse | null>(null);
+  const [frameBatchResult, setFrameBatchResult] = useState<FrameBatchResponse | null>(
+    null
+  );
+  const [capturedTicks, setCapturedTicks] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
-  const [isSendingBatch, setIsSendingBatch] = useState(false);
-  const [isEnding, setIsEnding] = useState(false);
-
-  const clientReady =
-    cameraState === "granted" && lightingReady && framingReady && spaceReady;
+  const [isStopping, setIsStopping] = useState(false);
+  const {
+    analysisError,
+    analysisState,
+    analysisSteps,
+    resetAnalysis,
+    runAnalysis
+  } = useSessionAnalysis(sessionId, (artifacts) => {
+    setArtifactSnapshot(artifacts);
+  });
 
   useEffect(() => {
     let ignore = false;
 
-    async function loadSession() {
+    async function loadSessionData() {
       setLoadError(null);
 
       try {
-        const sessionDetail = await getSession(sessionId);
+        const [sessionDetail, artifactsDetail] = await Promise.all([
+          getSession(sessionId),
+          getSessionArtifacts(sessionId)
+        ]);
+
         if (!ignore) {
           setSession(sessionDetail);
+          setArtifactSnapshot(artifactsDetail);
         }
       } catch (error) {
         if (!ignore) {
@@ -81,7 +97,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       }
     }
 
-    loadSession();
+    loadSessionData();
 
     return () => {
       ignore = true;
@@ -89,22 +105,32 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   useEffect(() => {
-    if (videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-  }, [cameraState]);
-
-  useEffect(() => {
     return () => {
+      if (captureIntervalRef.current !== null) {
+        window.clearInterval(captureIntervalRef.current);
+      }
+
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     };
   }, []);
 
-  const readinessWarnings = useMemo(
-    () => startResult?.readiness.warnings ?? [],
-    [startResult]
-  );
+  function startCaptureClock() {
+    if (captureIntervalRef.current !== null) {
+      window.clearInterval(captureIntervalRef.current);
+    }
+
+    captureIntervalRef.current = window.setInterval(() => {
+      setCapturedTicks((currentValue) => currentValue + 1);
+    }, 500);
+  }
+
+  function stopCaptureClock() {
+    if (captureIntervalRef.current !== null) {
+      window.clearInterval(captureIntervalRef.current);
+      captureIntervalRef.current = null;
+    }
+  }
 
   async function requestCameraPreview() {
     setActionError(null);
@@ -123,81 +149,123 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+
+      return true;
     } catch (error) {
       setCameraState("denied");
       setActionError(
-        error instanceof Error
-          ? error.message
-          : "Camera access was denied."
+        error instanceof Error ? error.message : "Camera access was denied."
       );
+      return false;
     }
   }
 
-  async function handleStart() {
+  async function handleStartCamera() {
     setActionError(null);
-    setFrameBatchResult(null);
+    resetAnalysis();
+
+    if (session?.input_type !== "LIVE") {
+      setActionError(
+        "This session was created for upload video. Live camera capture is unavailable on this session."
+      );
+      return;
+    }
+
+    const hasCamera = cameraState === "granted" || (await requestCameraPreview());
+    if (!hasCamera) {
+      return;
+    }
 
     try {
       setIsStarting(true);
       const result = await startLiveSession(sessionId, {
-        camera_permission_granted: cameraState === "granted",
-        lighting_ready: lightingReady,
-        framing_ready: framingReady,
-        space_ready: spaceReady,
-        client_ready: clientReady
+        camera_permission_granted: true,
+        lighting_ready: true,
+        framing_ready: true,
+        space_ready: true,
+        client_ready: true
       });
+
       setStartResult(result);
+      if (!result.started) {
+        setActionError(result.message);
+        return;
+      }
+
+      await videoRef.current?.play();
+      setCapturedTicks(0);
+      setFrameBatchResult(null);
+      setCaptureState("CAPTURING");
+      startCaptureClock();
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "Unable to start live mode."
+        error instanceof Error ? error.message : "Unable to start camera capture."
       );
+      setCameraState("error");
     } finally {
       setIsStarting(false);
     }
   }
 
-  async function handleSendFrameBatch() {
+  async function handlePause() {
+    stopCaptureClock();
+    await videoRef.current?.pause();
+    setCaptureState("PAUSED");
+  }
+
+  async function handleResume() {
+    await videoRef.current?.play();
+    setCaptureState("CAPTURING");
+    startCaptureClock();
+  }
+
+  async function handleStop() {
     setActionError(null);
 
-    try {
-      setIsSendingBatch(true);
-      const timestamps = Array.from({ length: 30 }, (_, index) =>
-        Number((index / 30).toFixed(3))
+    if (session?.input_type !== "LIVE") {
+      setActionError(
+        "This session was created for upload video. Live camera capture is unavailable on this session."
       );
-      const result = await submitLiveFrameBatch(sessionId, {
-        frame_count: timestamps.length,
+      return;
+    }
+
+    try {
+      setIsStopping(true);
+      stopCaptureClock();
+
+      const frameCount = Math.max(capturedTicks, 1);
+      const timestamps = Array.from({ length: frameCount }, (_, index) =>
+        Number((index * 0.5).toFixed(2))
+      );
+
+      const batchResult = await submitLiveFrameBatch(sessionId, {
+        frame_count: frameCount,
         timestamps,
         client_ready: true
       });
-      setFrameBatchResult(result);
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to send the session check."
-      );
-    } finally {
-      setIsSendingBatch(false);
-    }
-  }
+      setFrameBatchResult(batchResult);
 
-  async function handleEnd(finalStatus: "COMPLETED" | "ABORTED") {
-    setActionError(null);
-
-    try {
-      setIsEnding(true);
-      const updatedSession = await endLiveSession(sessionId, { final_status: finalStatus });
+      const updatedSession = await endLiveSession(sessionId, {
+        final_status: "COMPLETED"
+      });
       setSession(updatedSession);
+      setArtifactSnapshot(await getSessionArtifacts(sessionId));
+      setCaptureState("STOPPED");
+      await videoRef.current?.pause();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setCameraState("idle");
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : "Unable to end the live session."
+        error instanceof Error ? error.message : "Unable to stop the camera."
       );
     } finally {
-      setIsEnding(false);
+      setIsStopping(false);
     }
+  }
+
+  async function handleAnalyzeSession() {
+    await runAnalysis();
   }
 
   if (isLoading) {
@@ -205,8 +273,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       <div className="space-y-6">
         <SkeletonLoader className="h-64" />
         <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-          <SkeletonLoader className="h-[520px]" />
-          <SkeletonLoader className="h-[520px]" />
+          <SkeletonLoader className="h-[420px]" />
+          <SkeletonLoader className="h-[420px]" />
+        </div>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <SkeletonLoader className="h-[320px]" />
+          <SkeletonLoader className="h-[320px]" />
         </div>
       </div>
     );
@@ -227,20 +299,11 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
     );
   }
 
-  if (session.input_type !== "LIVE") {
-    return (
-      <EmptyState
-        icon={CameraOff}
-        title="This session is not in live mode"
-        description="Open the upload page for this session, or start a new live setup for the same drill."
-        action={
-          <CTAButton asChild>
-            <Link href={`/sessions/${session.id}/upload`}>Open Upload Page</Link>
-          </CTAButton>
-        }
-      />
-    );
-  }
+  const canUseLiveActions = session.input_type === "LIVE" && session.status === "ACTIVE";
+  const canAnalyze =
+    Boolean(artifactSnapshot?.pose_sequence) ||
+    captureState === "STOPPED" ||
+    (session.input_type === "LIVE" && session.status === "COMPLETED");
 
   return (
     <div className="space-y-8">
@@ -262,272 +325,219 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               {session.drill_name}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Check framing. Start when ready.
+              Start the camera, control capture, then analyze the session in one flow.
             </p>
           </div>
 
-          <div className="grid gap-3 xl:min-w-[340px]">
+          <div className="grid gap-3 xl:min-w-[280px]">
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Session Started
+                Started
               </p>
               <p className="mt-3 text-sm font-semibold text-white">
                 {formatDateTime(session.start_time)}
               </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <CTAButton
-                type="button"
-                onClick={handleStart}
-                disabled={!clientReady || isStarting || session.status !== "ACTIVE"}
-                className="flex-1 justify-center rounded-2xl"
-              >
-                {isStarting ? "Starting" : "Start"}
-              </CTAButton>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-2xl px-4"
-                onClick={() => handleEnd("COMPLETED")}
-                disabled={isEnding || session.status !== "ACTIVE"}
-              >
-                <Square className="mr-2 h-4 w-4" />
-                End
-              </Button>
             </div>
             <Button
               asChild
               variant="outline"
               className="justify-between rounded-2xl px-5 py-6 text-white/90"
             >
-              <Link href={`/sessions/new?drillId=${session.drill_id}&mode=UPLOAD`}>
-                <span>Switch to upload video</span>
-                <Badge variant="slate">New session</Badge>
+              <Link href={`/drills/${session.drill_id}`}>
+                <span className="flex items-center gap-2">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Drill
+                </span>
               </Link>
             </Button>
-            <p className="text-sm text-muted-gray">
-              Input mode is fixed per session. This starts an upload setup for the same drill.
-            </p>
           </div>
         </div>
       </InfoCard>
 
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+      <InfoCard>
+        <SessionInputModeToggle
+          mode="LIVE"
+          sessionDrillId={session.drill_id}
+          secondaryActionLabel="Start a new upload session"
+          helperText="This session was created for live camera. Start a new session if you want to upload a recorded clip."
+        />
+      </InfoCard>
+
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
-            eyebrow="Live"
-            title="Camera Preview"
-            description="Keep the athlete in frame."
+            eyebrow="Input"
+            title="Live camera"
+            description="Use the same session context while controlling the camera here."
           />
 
-          <div className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate/40">
-            {cameraState === "granted" && streamRef.current ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                className="aspect-video w-full bg-black object-cover"
-              />
-            ) : (
-              <div className="flex aspect-video w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.12),_transparent_45%),linear-gradient(180deg,rgba(17,17,17,0.86),rgba(31,31,31,0.92))] px-8 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
-                  <Camera className="h-7 w-7" />
-                </div>
-                <h3 className="mt-5 font-display text-3xl font-bold text-white">
-                  Camera preview
-                </h3>
-                <p className="mt-4 max-w-xl text-sm text-muted-gray">
-                  Enable camera to preview framing.
-                </p>
-              </div>
-            )}
+          <div className="mt-6">
+            <PoseOverlayPreview
+              showVideo={cameraState === "granted" && Boolean(streamRef.current)}
+              videoRef={videoRef}
+              autoPlay
+              muted
+              emptyTitle="Camera preview"
+              emptyDescription="Start camera to capture movement."
+            />
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button
+            <CTAButton
               type="button"
-              variant="outline"
-              className="rounded-2xl"
-              onClick={requestCameraPreview}
-              disabled={cameraState === "requesting" || session.status !== "ACTIVE"}
+              onClick={handleStartCamera}
+              disabled={!canUseLiveActions || isStarting || captureState === "CAPTURING"}
             >
               <Camera className="mr-2 h-4 w-4" />
-              {cameraState === "requesting"
-                ? "Opening"
-                : cameraState === "granted"
-                  ? "Refresh"
-                  : "Enable Camera"}
+              {isStarting ? "Starting camera" : "Start Camera"}
+            </CTAButton>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePause}
+              disabled={captureState !== "CAPTURING"}
+            >
+              <Pause className="mr-2 h-4 w-4" />
+              Pause
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="rounded-2xl"
-              onClick={handleSendFrameBatch}
-              disabled={
-                !startResult?.started ||
-                isSendingBatch ||
-                session.status !== "ACTIVE"
-              }
+              onClick={handleResume}
+              disabled={captureState !== "PAUSED"}
             >
-              <SignalHigh className="mr-2 h-4 w-4" />
-              {isSendingBatch ? "Sending" : "Send Check"}
+              <Play className="mr-2 h-4 w-4" />
+              Resume
             </Button>
             <Button
               type="button"
-              variant="ghost"
-              className="rounded-2xl border border-white/10 bg-white/[0.03]"
-              onClick={() => handleEnd("ABORTED")}
-              disabled={isEnding || session.status !== "ACTIVE"}
+              variant="outline"
+              onClick={handleStop}
+              disabled={
+                !canUseLiveActions ||
+                isStopping ||
+                (captureState !== "CAPTURING" && captureState !== "PAUSED")
+              }
             >
-              Abort
+              <Square className="mr-2 h-4 w-4" />
+              {isStopping ? "Stopping" : "Stop"}
             </Button>
           </div>
         </InfoCard>
 
-        <div className="space-y-5">
-          <InfoCard>
-            <SectionTitle
-              eyebrow="Readiness"
-              title="Session Checks"
-              description="Confirm each item."
-            />
+        <InfoCard>
+          <SectionTitle
+            eyebrow="Preview"
+            title="Capture state"
+            description="Keep the user-facing status simple and clear."
+          />
 
-            <div className="mt-6 space-y-4">
-              <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <input
-                  type="checkbox"
-                  checked={lightingReady}
-                  onChange={(event) => setLightingReady(event.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent text-primary"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-white">Lighting ready</p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <input
-                  type="checkbox"
-                  checked={framingReady}
-                  onChange={(event) => setFramingReady(event.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent text-primary"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-white">Framing ready</p>
-                  {session.camera_view ? (
-                    <p className="mt-1 text-sm text-muted-gray">
-                      Match the {formatEnumLabel(session.camera_view).toLowerCase()} view.
-                    </p>
-                  ) : null}
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <input
-                  type="checkbox"
-                  checked={spaceReady}
-                  onChange={(event) => setSpaceReady(event.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent text-primary"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-white">Space ready</p>
-                </div>
-              </label>
+          {actionError ? (
+            <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
+              {actionError}
             </div>
+          ) : null}
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Camera
-                </p>
-                <p className="mt-3 text-sm font-semibold text-white">
-                  {cameraState === "granted"
-                    ? "Ready"
-                    : cameraState === "requesting"
-                      ? "Opening"
-                      : cameraState === "denied"
-                        ? "Blocked"
-                        : "Off"}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Client Ready
-                </p>
-                <p className="mt-3 text-sm font-semibold text-white">
-                  {clientReady ? "Ready" : "Not ready"}
-                </p>
-              </div>
-            </div>
-
-            {readinessWarnings.length ? (
-              <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
-                  Warnings
-                </p>
-                <ul className="mt-3 space-y-2 text-sm leading-7 text-amber-100">
-                  {readinessWarnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </InfoCard>
-
-          <InfoCard>
-            <SectionTitle
-              eyebrow="Status"
-              title="Session State"
-              description="Live review is not active yet."
-            />
-
-            {actionError ? (
-              <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
-                {actionError}
-              </div>
-            ) : null}
-
-            {startResult ? (
-              <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-200" />
-                  <p className="text-sm font-semibold text-white">Session started</p>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-6 text-sm text-muted-gray">
-                Check camera. Start session.
-              </p>
-            )}
-
-            {frameBatchResult ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Check
-                </p>
-                <p className="mt-3 text-sm font-semibold text-white">
-                  Check received
-                </p>
-                <p className="mt-2 text-sm text-muted-gray">
-                  Accepted frames: {frameBatchResult.frame_count}
-                </p>
-              </div>
-            ) : null}
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Next
+                Camera
               </p>
-              <ul className="mt-3 space-y-2 text-sm text-white/85">
-                <li>• Live review</li>
-                <li>• Instant scoring</li>
-                <li>• Voice cues</li>
-              </ul>
+              <p className="mt-3 text-sm font-semibold text-white">
+                {cameraState === "granted"
+                  ? "Ready"
+                  : cameraState === "requesting"
+                    ? "Opening"
+                    : cameraState === "denied"
+                      ? "Blocked"
+                      : "Off"}
+              </p>
             </div>
-          </InfoCard>
-        </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                Capture
+              </p>
+              <p className="mt-3 text-sm font-semibold text-white">
+                {captureState === "CAPTURING"
+                  ? "Running"
+                  : captureState === "PAUSED"
+                    ? "Paused"
+                    : captureState === "STOPPED"
+                      ? "Stopped"
+                      : "Not started"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Live notes
+            </p>
+            <ul className="mt-3 space-y-2 text-sm text-white/85">
+              <li>
+                {session.input_type === "LIVE"
+                  ? "Start camera to capture movement."
+                  : "This session was created for upload video, so live capture is unavailable on this page."}
+              </li>
+              <li>
+                {captureState === "STOPPED"
+                  ? "Capture finalized. Analyze Session is now available."
+                  : "Stop the camera before running analysis."}
+              </li>
+              <li>
+                {frameBatchResult
+                  ? `Accepted frames: ${frameBatchResult.frame_count}`
+                  : "No live frame batch submitted yet."}
+              </li>
+              <li>{startResult?.message ?? "Camera start state has not been confirmed yet."}</li>
+            </ul>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Capture duration
+            </p>
+            <p className="mt-3 text-2xl font-bold text-white">
+              {(capturedTicks * 0.5).toFixed(1)}s
+            </p>
+          </div>
+        </InfoCard>
       </div>
+
+      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <InfoCard>
+          <SectionTitle
+            eyebrow="Action"
+            title="Analyze session"
+            description="Run the full backend pipeline after capture is stopped."
+          />
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <CTAButton
+              type="button"
+              onClick={handleAnalyzeSession}
+              disabled={!canAnalyze || analysisState === "RUNNING"}
+            >
+              {analysisState === "RUNNING" ? "Analyzing session" : "Analyze Session"}
+            </CTAButton>
+            <Badge variant="slate">
+              {captureState === "IDLE"
+                ? "Start camera to capture movement"
+                : captureState === "STOPPED" || artifactSnapshot?.pose_sequence
+                  ? "Ready to analyze"
+                  : "Stop the camera before analysis"}
+            </Badge>
+          </div>
+        </InfoCard>
+
+        <AnalysisProgressCard
+          analysisError={analysisError}
+          analysisState={analysisState}
+          analysisSteps={analysisSteps}
+        />
+      </div>
+
+      <AnalysisSnapshotCard artifacts={artifactSnapshot} />
     </div>
   );
 }
@@ -538,9 +548,9 @@ export default function LiveSessionPage() {
   return (
     <AppShell
       eyebrow="Live Session"
-      title="Start live training"
-      description="Open camera and begin."
-      capsule="Live"
+      title="Training input"
+      description="Use the camera and analyze the session when capture is done."
+      capsule="Input"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Browse Sports</Link>

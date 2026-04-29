@@ -1,5 +1,6 @@
 import { apiRequest } from "../lib/api";
 import type {
+  AnalysisStepStatus,
   ChoquetAggregationResult,
   DeterministicFeedbackResult,
   FrameBatchRequest,
@@ -13,6 +14,7 @@ import type {
   LiveStartResponse,
   OntologyReasoningResult,
   PedagogicalDecisionResult,
+  SessionAnalysisStep,
   SessionArtifactsResponse,
   SessionCreateRequest,
   TemporalModelingResult,
@@ -26,6 +28,41 @@ export function createSession(payload: SessionCreateRequest) {
     body: JSON.stringify(payload)
   });
 }
+
+export const SESSION_ANALYSIS_PIPELINE: ReadonlyArray<{
+  id: SessionAnalysisStep;
+  label: string;
+}> = [
+  { id: "evaluation", label: "Evaluating movement" },
+  { id: "fuzzy", label: "Interpreting performance" },
+  { id: "it2", label: "Refining uncertainty" },
+  { id: "pedagogy", label: "Selecting coaching focus" },
+  { id: "ontology", label: "Mapping movement concepts" },
+  { id: "choquet", label: "Combining issue patterns" },
+  { id: "temporal", label: "Reviewing timing" },
+  { id: "feedback", label: "Generating coaching feedback" },
+  { id: "llm", label: "Enhancing coaching language" }
+];
+
+export type SessionAnalysisPipelineOutput = {
+  evaluation: DeterministicEvaluationResult;
+  fuzzy: FuzzyInterpretationResult;
+  it2: IT2FuzzyInterpretationResult;
+  pedagogy: PedagogicalDecisionResult;
+  ontology: OntologyReasoningResult;
+  choquet: ChoquetAggregationResult;
+  temporal: TemporalModelingResult;
+  feedback: DeterministicFeedbackResult;
+  llm: LLMFeedbackResult;
+  artifacts: SessionArtifactsResponse;
+};
+
+type RunSessionAnalysisOptions = {
+  onProgress?: (update: {
+    stepId: SessionAnalysisStep;
+    status: AnalysisStepStatus;
+  }) => void;
+};
 
 export function getSession(sessionId: string) {
   return apiRequest<TrainingSession>(`/sessions/${sessionId}`);
@@ -100,6 +137,72 @@ export function generateLLMSessionFeedback(sessionId: string) {
   return apiRequest<LLMFeedbackResult>(`/sessions/${sessionId}/feedback/llm`, {
     method: "POST"
   });
+}
+
+export async function runSessionAnalysisPipeline(
+  sessionId: string,
+  options: RunSessionAnalysisOptions = {}
+) : Promise<SessionAnalysisPipelineOutput> {
+  const { onProgress } = options;
+  const results: Partial<Omit<SessionAnalysisPipelineOutput, "artifacts">> = {};
+
+  const pipeline = [
+    {
+      id: "evaluation" as const,
+      run: () => runSessionEvaluation(sessionId)
+    },
+    {
+      id: "fuzzy" as const,
+      run: () => runSessionFuzzyInterpretation(sessionId)
+    },
+    {
+      id: "it2" as const,
+      run: () => runSessionIT2FuzzyInterpretation(sessionId)
+    },
+    {
+      id: "pedagogy" as const,
+      run: () => runSessionPedagogy(sessionId)
+    },
+    {
+      id: "ontology" as const,
+      run: () => runSessionOntologyReasoning(sessionId)
+    },
+    {
+      id: "choquet" as const,
+      run: () => runSessionChoquetAggregation(sessionId)
+    },
+    {
+      id: "temporal" as const,
+      run: () => runSessionTemporalModeling(sessionId)
+    },
+    {
+      id: "feedback" as const,
+      run: () => generateDeterministicSessionFeedback(sessionId)
+    },
+    {
+      id: "llm" as const,
+      run: () => generateLLMSessionFeedback(sessionId)
+    }
+  ];
+
+  for (const step of pipeline) {
+    onProgress?.({ stepId: step.id, status: "RUNNING" });
+
+    try {
+      const result = await step.run();
+      (results as Record<SessionAnalysisStep, unknown>)[step.id] = result;
+      onProgress?.({ stepId: step.id, status: "COMPLETED" });
+    } catch (error) {
+      onProgress?.({ stepId: step.id, status: "FAILED" });
+      throw error;
+    }
+  }
+
+  const artifacts = await getSessionArtifacts(sessionId);
+  return {
+    ...(results as Omit<SessionAnalysisPipelineOutput, "artifacts">),
+    artifacts
+  };
 }
 
 export function uploadSessionVideo(sessionId: string, file: File) {

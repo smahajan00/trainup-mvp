@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
 import { CTAButton } from "../../../components/ui/cta-button";
 import { SkeletonLoader } from "../../../components/ui/skeleton-loader";
 import { AppShell } from "../../../features/app-shell/components/AppShell";
@@ -139,28 +138,15 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
 
           <div className="grid w-full gap-3 xl:max-w-sm">
             <CTAButton asChild className="justify-between rounded-2xl px-5 py-6">
-              <Link href={`/sessions/new?drillId=${drill.id}&mode=LIVE`}>
+              <Link href={`/sessions/new?drillId=${drill.id}`}>
                 <span className="flex items-center gap-2">
                   <PlayCircle className="h-4 w-4" />
-                  Start Live Session
+                  Start Training
                 </span>
               </Link>
             </CTAButton>
-            <Button
-              asChild
-              variant="outline"
-              className="justify-between rounded-2xl px-5 py-6 text-white/90"
-            >
-              <Link href={`/sessions/new?drillId=${drill.id}&mode=UPLOAD`}>
-                <span className="flex items-center gap-2">
-                  <UploadCloud className="h-4 w-4" />
-                  Upload Video
-                </span>
-                <Badge variant="slate">Video</Badge>
-              </Link>
-            </Button>
             <p className="text-sm text-muted-gray">
-              Pick live or upload.
+              Choose Upload Video or Live Camera in session setup.
             </p>
             <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">

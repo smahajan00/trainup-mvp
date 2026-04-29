@@ -2,19 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  BrainCircuit,
-  FileCheck2,
-  Gauge,
-  ScanSearch,
-  Target,
-  UploadCloud
-} from "lucide-react";
+import { ChangeEvent, DragEvent, useEffect, useState } from "react";
+import { ArrowLeft, FileCheck2, UploadCloud } from "lucide-react";
 
-import { CoachingAudioPlayer } from "../../../../components/tts/CoachingAudioPlayer";
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { CTAButton } from "../../../../components/ui/cta-button";
@@ -23,90 +13,55 @@ import { AppShell } from "../../../../features/app-shell/components/AppShell";
 import { EmptyState } from "../../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../../features/app-shell/components/SectionTitle";
+import { AnalysisProgressCard } from "../../../../features/sessions/components/AnalysisProgressCard";
+import { AnalysisSnapshotCard } from "../../../../features/sessions/components/AnalysisSnapshotCard";
+import { PoseOverlayPreview } from "../../../../features/sessions/components/PoseOverlayPreview";
+import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
+import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
 import { formatDateTime, formatEnumLabel, formatFileSize } from "../../../../lib/formatters";
 import { validateVideoFile } from "../../../../lib/session-validation";
 import {
-  evaluateSession,
-  generateLLMSessionFeedback,
-  generateSessionFeedback,
   getSession,
   getSessionArtifacts,
   submitSessionUpload
 } from "../../../../services/sessions";
 import type {
   SessionArtifactsResponse,
-  SessionFeedback,
-  SeverityLevel,
   TrainingSession,
   UploadProcessingResponse
 } from "../../../../types/sessions";
 
-function ProcessingStep({
-  title,
-  complete,
-  icon: Icon
-}: {
-  title: string;
-  complete: boolean;
-  icon: typeof UploadCloud;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border p-4 transition-all duration-300 ${
-        complete
-          ? "border-emerald-400/25 bg-emerald-500/10"
-          : "border-white/10 bg-white/[0.04]"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-white">
-          <Icon className="h-5 w-5" />
-        </div>
-        <Badge variant={complete ? "success" : "slate"}>
-          {complete ? "Complete" : "Pending"}
-        </Badge>
-      </div>
-      <h3 className="mt-5 text-base font-semibold text-white">{title}</h3>
-    </div>
-  );
-}
-
-function getSeverityVariant(severity: SeverityLevel) {
-  if (severity === "SEVERE") {
-    return "danger" as const;
-  }
-
-  if (severity === "MODERATE") {
-    return "warning" as const;
-  }
-
-  return "slate" as const;
-}
-
 function UploadSessionContent({ sessionId }: { sessionId: string }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [artifactSnapshot, setArtifactSnapshot] =
     useState<SessionArtifactsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [localErrors, setLocalErrors] = useState<string[]>([]);
   const [localWarnings, setLocalWarnings] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [uploadResult, setUploadResult] = useState<UploadProcessingResponse | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadProcessingResponse | null>(
+    null
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [actionPending, setActionPending] = useState<
-    "evaluation" | "feedback" | "llm" | null
-  >(null);
   const [isDragActive, setIsDragActive] = useState(false);
+  const {
+    analysisError,
+    analysisState,
+    analysisSteps,
+    resetAnalysis,
+    runAnalysis
+  } = useSessionAnalysis(sessionId, (artifacts) => {
+    setArtifactSnapshot(artifacts);
+  });
 
   useEffect(() => {
     let ignore = false;
 
-    async function loadSession() {
+    async function loadSessionData() {
       setLoadError(null);
 
       try {
@@ -114,6 +69,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
           getSession(sessionId),
           getSessionArtifacts(sessionId)
         ]);
+
         if (!ignore) {
           setSession(sessionDetail);
           setArtifactSnapshot(artifactsDetail);
@@ -133,72 +89,51 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       }
     }
 
-    loadSession();
+    loadSessionData();
 
     return () => {
       ignore = true;
     };
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!selectedFile) {
+      setVideoPreviewUrl(null);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(selectedFile);
+    setVideoPreviewUrl(previewUrl);
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [selectedFile]);
+
+  const poseSequenceSummary =
+    uploadResult?.pose_sequence ?? artifactSnapshot?.pose_sequence ?? null;
+  const hasPoseData = Boolean(poseSequenceSummary);
+  const captureValidation = uploadResult?.capture_validation ?? null;
   const displayWarnings = [
     ...localWarnings,
     ...(uploadResult?.validation.warnings ?? [])
   ];
   const displayErrors = [...localErrors, ...(uploadResult?.validation.errors ?? [])];
-  const poseSequenceSummary =
-    uploadResult?.pose_sequence ?? artifactSnapshot?.pose_sequence ?? null;
-  const poseSequence = artifactSnapshot?.pose_sequence ?? null;
-  const perceptionResult =
-    uploadResult?.perception_result ?? artifactSnapshot?.perception_result ?? null;
-  const cognitionResult =
-    uploadResult?.cognition_result ?? artifactSnapshot?.cognition_result ?? null;
-  const evaluationResult =
-    uploadResult?.evaluation_result ?? artifactSnapshot?.evaluation_result ?? null;
-  const feedbackResult = artifactSnapshot?.feedback_result ?? null;
-  const llmFeedbackResult = artifactSnapshot?.llm_feedback_result ?? null;
-  const sessionSummary =
-    uploadResult?.session_summary ?? artifactSnapshot?.session_summary ?? null;
-  const feedbackItems: SessionFeedback[] =
-    uploadResult?.feedback ?? artifactSnapshot?.feedback ?? [];
-  const artifactsPersisted =
-    uploadResult?.artifacts_persisted.length ??
-    artifactSnapshot?.artifacts.length ??
-    0;
-  const uploadAccepted =
-    uploadResult?.upload_received ??
-    Boolean(poseSequenceSummary || perceptionResult || cognitionResult || evaluationResult);
-  const validationComplete =
-    uploadResult?.validation.is_valid ??
-    Boolean(poseSequenceSummary || perceptionResult || cognitionResult || evaluationResult);
-  const poseFramePreview = poseSequence?.sequence_data.slice(0, 3) ?? [];
-  const keypointPreview = perceptionResult?.keypoint_series.slice(0, 3) ?? [];
-  const cognitionMetricEntries = cognitionResult
-    ? Object.entries(cognitionResult.derived_metrics)
-    : [];
-  const evaluationMetricEntries = evaluationResult
-    ? evaluationResult.phase_results.flatMap((phase) =>
-        phase.metric_results
-          .filter(
-            (metric) =>
-              metric.normalized_score !== null &&
-              metric.normalized_score !== undefined
-          )
-          .map((metric) => [
-            `${phase.phase_id}:${metric.metric_name}`,
-            metric.normalized_score ?? 0
-          ] as const)
-      )
-    : [];
-  const motionFeatureEntries = perceptionResult
-    ? Object.entries(perceptionResult.derived_motion_features)
-    : [];
-  const combinedCueText = feedbackItems.map((item) => item.coaching_cue).join(" Next cue. ");
+  const captureIssues = [
+    ...(captureValidation && !captureValidation.is_valid
+      ? [captureValidation.message]
+      : []),
+    ...(poseSequenceSummary?.diagnostic_flags ?? [])
+  ];
+
+  const canUpload = session?.input_type === "UPLOAD";
+  const canAnalyze = hasPoseData;
 
   function handleSelectedFile(file: File | null) {
     setSelectedFile(file);
     setUploadResult(null);
     setSubmitError(null);
-    setActionError(null);
+    resetAnalysis();
 
     if (!file) {
       setLocalErrors([]);
@@ -223,7 +158,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
 
   async function handleUpload() {
     if (!selectedFile) {
-      setSubmitError("Select a video file before submitting.");
+      setSubmitError("Upload a video to begin analysis.");
       return;
     }
 
@@ -231,7 +166,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     setLocalErrors(validation.errors);
     setLocalWarnings(validation.warnings);
     setSubmitError(null);
-    setUploadResult(null);
+    resetAnalysis();
 
     if (!validation.isValid) {
       return;
@@ -241,83 +176,31 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       setIsSubmitting(true);
       const result = await submitSessionUpload(sessionId, selectedFile);
       setUploadResult(result);
-      const artifactsDetail = await getSessionArtifacts(sessionId);
-      setArtifactSnapshot(artifactsDetail);
+      setArtifactSnapshot(await getSessionArtifacts(sessionId));
     } catch (error) {
       setSubmitError(
-        error instanceof Error ? error.message : "Unable to submit this video."
+        error instanceof Error ? error.message : "Upload failed. Try again."
       );
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  async function refreshArtifacts() {
-    const artifactsDetail = await getSessionArtifacts(sessionId);
-    setArtifactSnapshot(artifactsDetail);
-  }
-
-  async function handleRunEvaluation() {
-    setActionPending("evaluation");
-    setActionError(null);
-
-    try {
-      await evaluateSession(sessionId);
-      await refreshArtifacts();
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Unable to run evaluation."
-      );
-    } finally {
-      setActionPending(null);
-    }
-  }
-
-  async function handleGenerateFeedback() {
-    setActionPending("feedback");
-    setActionError(null);
-
-    try {
-      await generateSessionFeedback(sessionId);
-      await refreshArtifacts();
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Unable to generate feedback."
-      );
-    } finally {
-      setActionPending(null);
-    }
-  }
-
-  async function handleGenerateLLMFeedback() {
-    setActionPending("llm");
-    setActionError(null);
-
-    try {
-      await generateLLMSessionFeedback(sessionId);
-      await refreshArtifacts();
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : "Unable to enhance feedback."
-      );
-    } finally {
-      setActionPending(null);
-    }
+  async function handleAnalyzeSession() {
+    await runAnalysis();
   }
 
   if (isLoading) {
     return (
       <div className="space-y-6">
         <SkeletonLoader className="h-64" />
-        <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-          <SkeletonLoader className="h-[440px]" />
-          <SkeletonLoader className="h-[440px]" />
+        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+          <SkeletonLoader className="h-[420px]" />
+          <SkeletonLoader className="h-[420px]" />
         </div>
-        <div className="grid gap-5 xl:grid-cols-4">
-          <SkeletonLoader className="h-40" />
-          <SkeletonLoader className="h-40" />
-          <SkeletonLoader className="h-40" />
-          <SkeletonLoader className="h-40" />
+        <div className="grid gap-5 xl:grid-cols-2">
+          <SkeletonLoader className="h-[320px]" />
+          <SkeletonLoader className="h-[320px]" />
         </div>
       </div>
     );
@@ -332,21 +215,6 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         action={
           <CTAButton asChild>
             <Link href="/sports">Back to Sports</Link>
-          </CTAButton>
-        }
-      />
-    );
-  }
-
-  if (session.input_type !== "UPLOAD") {
-    return (
-      <EmptyState
-        icon={UploadCloud}
-        title="This session is not in upload mode"
-        description="Open the live page for this session, or start a new upload setup for the same drill."
-        action={
-          <CTAButton asChild>
-            <Link href={`/sessions/${session.id}/live`}>Open Live Page</Link>
           </CTAButton>
         }
       />
@@ -373,7 +241,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               {session.drill_name}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Upload a clip. Review your session.
+              Upload your clip, preview it, then run one guided analysis flow.
             </p>
           </div>
 
@@ -398,874 +266,259 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 </span>
               </Link>
             </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="justify-between rounded-2xl px-5 py-6 text-white/90"
-            >
-              <Link href={`/sessions/new?drillId=${session.drill_id}&mode=LIVE`}>
-                <span>Switch to live camera</span>
-                <Badge variant="slate">New session</Badge>
-              </Link>
-            </Button>
-            <p className="text-sm text-muted-gray">
-              Input mode is fixed per session. This starts a live setup for the same drill.
-            </p>
           </div>
         </div>
       </InfoCard>
 
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+      <InfoCard>
+        <SessionInputModeToggle
+          mode="UPLOAD"
+          sessionDrillId={session.drill_id}
+          secondaryActionLabel="Start a new live session"
+          helperText="This session was created for upload video. Start a new session if you want to use live camera."
+        />
+      </InfoCard>
+
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
-            eyebrow="Upload"
-            title="Upload Video"
-            description="MP4, MOV, WEBM, MKV."
+            eyebrow="Input"
+            title="Upload video"
+            description="Choose one clip and keep the whole movement in frame."
           />
 
-          <div
-            onDragOver={(event) => {
-              event.preventDefault();
-              setIsDragActive(true);
-            }}
-            onDragLeave={() => setIsDragActive(false)}
-            onDrop={handleDrop}
-            className={`mt-6 rounded-[1.75rem] border border-dashed px-6 py-10 text-center transition-all duration-300 ${
-              isDragActive
-                ? "border-primary/45 bg-primary/10"
-                : "border-white/12 bg-white/[0.03]"
-            }`}
-          >
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
-              <UploadCloud className="h-7 w-7" />
-            </div>
-            <h3 className="mt-5 font-display text-2xl font-bold text-white">
-              Drop a video here
-            </h3>
-            <p className="mt-3 text-sm text-muted-gray">
-              Keep the full movement in frame.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <CTAButton type="button" onClick={() => inputRef.current?.click()}>
-                Choose Video
-              </CTAButton>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-xl"
-                onClick={() => handleSelectedFile(null)}
+          {canUpload ? (
+            <>
+              <div
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragActive(true);
+                }}
+                onDragLeave={() => setIsDragActive(false)}
+                onDrop={handleDrop}
+                className={`mt-6 rounded-[1.75rem] border border-dashed px-6 py-10 text-center transition-all duration-300 ${
+                  isDragActive
+                    ? "border-primary/45 bg-primary/10"
+                    : "border-white/12 bg-white/[0.03]"
+                }`}
               >
-                Clear Selection
-              </Button>
-            </div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
-              className="hidden"
-              onChange={handleInputChange}
-            />
-            {selectedFile ? (
-              <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left">
-                <p className="text-sm font-semibold text-white">{selectedFile.name}</p>
-                <p className="mt-2 text-sm text-muted-gray">
-                  {selectedFile.type || "Unknown type"} · {formatFileSize(selectedFile.size)}
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
+                  <UploadCloud className="h-7 w-7" />
+                </div>
+                <h3 className="mt-5 font-display text-2xl font-bold text-white">
+                  Drop a video here
+                </h3>
+                <p className="mt-3 text-sm text-muted-gray">
+                  MP4, MOV, WEBM, or MKV. One file per session.
                 </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_34px_rgba(255,122,0,0.22)] transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-primary/90 hover:shadow-[0_18px_42px_rgba(255,122,0,0.28)]">
+                    Choose Video
+                    <input
+                      type="file"
+                      accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
+                      className="hidden"
+                      onChange={handleInputChange}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleSelectedFile(null)}
+                  >
+                    Clear selection
+                  </Button>
+                </div>
+                {selectedFile ? (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left">
+                    <p className="text-sm font-semibold text-white">
+                      {selectedFile.name}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-gray">
+                      {selectedFile.type || "Unknown type"} ·{" "}
+                      {formatFileSize(selectedFile.size)}
+                    </p>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button
-              type="button"
-              onClick={handleUpload}
-              className="rounded-2xl px-6"
-              disabled={!selectedFile || isSubmitting}
-            >
-              {isSubmitting ? "Processing" : "Upload Video"}
-            </Button>
-            <Badge variant="slate">100 MB max</Badge>
-            <Badge variant="slate">One file</Badge>
-          </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  onClick={handleUpload}
+                  className="rounded-2xl px-6"
+                  disabled={!selectedFile || isSubmitting}
+                >
+                  {isSubmitting ? "Uploading" : "Upload video"}
+                </Button>
+                <Badge variant="slate">100 MB max</Badge>
+              </div>
+            </>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm leading-7 text-amber-100">
+              This session was created for live camera. Upload is not available on
+              this session. Start a new upload session from setup if you want to
+              analyze a recorded clip.
+            </div>
+          )}
         </InfoCard>
 
-        <div className="space-y-5">
-          <InfoCard>
-            <SectionTitle
-              eyebrow="Validation"
-              title="Checks"
-              description="Format and file review."
-            />
-
-            {submitError ? (
-              <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
-                {submitError}
-              </div>
-            ) : null}
-
-            {actionError ? (
-              <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
-                {actionError}
-              </div>
-            ) : null}
-
-            {displayErrors.length ? (
-              <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-rose-200">
-                  Errors
-                </p>
-                <ul className="mt-3 space-y-2 text-sm text-rose-100">
-                  {displayErrors.map((error) => (
-                    <li key={error}>{error}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {displayWarnings.length ? (
-              <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
-                  Warnings
-                </p>
-                <ul className="mt-3 space-y-2 text-sm text-amber-100">
-                  {displayWarnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {uploadResult ? (
-              <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4">
-                <div className="flex items-center gap-3">
-                  <FileCheck2 className="h-5 w-5 text-emerald-200" />
-                  <p className="text-sm font-semibold text-white">
-                    {uploadResult.upload_received ? "Review ready" : "Video received"}
-                  </p>
-                </div>
-                <p className="mt-3 text-sm text-emerald-50">
-                  {uploadResult.next_step}
-                </p>
-                {uploadResult.capture_validation ? (
-                  <p className="mt-3 text-sm text-emerald-50/90">
-                    {uploadResult.capture_validation.message}
-                  </p>
-                ) : null}
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white/85">
-                    <span className="block text-xs uppercase tracking-[0.2em] text-white/50">
-                      Format
-                    </span>
-                    <span className="mt-2 block">
-                      {uploadResult.validation.content_type ?? "Unknown"}
-                    </span>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white/85">
-                    <span className="block text-xs uppercase tracking-[0.2em] text-white/50">
-                      File Size
-                    </span>
-                    <span className="mt-2 block">
-                      {formatFileSize(uploadResult.validation.file_size_bytes)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-6 text-sm text-muted-gray">
-                Upload a clip to see results.
-              </p>
-            )}
-          </InfoCard>
-
-          <InfoCard>
-            <SectionTitle
-              eyebrow="Tips"
-              title="Record Clean Video"
-              description="Keep it clear and steady."
-            />
-            <ul className="mt-6 space-y-3 text-sm text-white/85">
-              {session.camera_view ? (
-                <li>• Match the {formatEnumLabel(session.camera_view).toLowerCase()} view</li>
-              ) : null}
-              <li>• Full movement in frame</li>
-              <li>• Stable camera</li>
-              <li>• Clear lighting</li>
-              <li>• Clean background</li>
-            </ul>
-          </InfoCard>
-        </div>
-      </div>
-
-      <div className="space-y-5">
-          <SectionTitle
-            eyebrow="Progress"
-            title="Session Steps"
-            description="Track each stage."
-        />
-        <div className="grid gap-5 xl:grid-cols-5">
-          <ProcessingStep
-            title="Upload"
-            complete={uploadAccepted}
-            icon={UploadCloud}
-          />
-          <ProcessingStep
-            title="Validation"
-            complete={validationComplete}
-            icon={FileCheck2}
-          />
-          <ProcessingStep
-            title="Processing"
-            complete={Boolean(poseSequenceSummary || perceptionResult)}
-            icon={ScanSearch}
-          />
-          <ProcessingStep
-            title="Evaluation"
-            complete={Boolean(evaluationResult)}
-            icon={BrainCircuit}
-          />
-          <ProcessingStep
-            title="Summary"
-            complete={Boolean(sessionSummary)}
-            icon={Target}
-          />
-        </div>
-      </div>
-
-      {poseSequenceSummary ? (
         <InfoCard>
           <SectionTitle
-            eyebrow="Phase 3"
-            title="Coaching Feedback"
-            description="Run deterministic evaluation, generate coaching cues, then optionally enhance wording with the configured LLM."
+            eyebrow="Preview"
+            title="Review your clip"
+            description="Video preview and overlay-ready canvas stay aligned here."
           />
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-2xl"
-              onClick={handleRunEvaluation}
-              disabled={actionPending !== null}
-            >
-              {actionPending === "evaluation" ? "Evaluating" : "Run Evaluation"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-2xl"
-              onClick={handleGenerateFeedback}
-              disabled={!evaluationResult || actionPending !== null}
-            >
-              {actionPending === "feedback" ? "Generating" : "Generate Feedback"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-2xl"
-              onClick={handleGenerateLLMFeedback}
-              disabled={!feedbackResult || actionPending !== null}
-            >
-              {actionPending === "llm" ? "Enhancing" : "Enhance with LLM"}
-            </Button>
+          <div className="mt-6">
+            <PoseOverlayPreview
+              showVideo={Boolean(videoPreviewUrl)}
+              videoSrc={videoPreviewUrl}
+              controls
+              emptyTitle="Preview unavailable"
+              emptyDescription="Choose a video to preview it before upload."
+            />
           </div>
 
-          {feedbackResult ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-white">
-                  Deterministic Feedback
-                </p>
-                <Badge variant="slate">{formatEnumLabel(feedbackResult.status)}</Badge>
-              </div>
-              <p className="mt-3 text-sm text-white/85">
-                {feedbackResult.overall_feedback_summary}
-              </p>
-              {feedbackResult.prioritized_feedback_items.length ? (
-                <div className="mt-4 space-y-3">
-                  {feedbackResult.prioritized_feedback_items.map((item) => (
-                    <div
-                      key={`${item.priority_rank}-${item.phase_id}-${item.metric_name}`}
-                      className="rounded-2xl border border-white/10 bg-background-dark/60 px-4 py-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-white">
-                          {item.priority_rank}. {item.issue_title}
-                        </p>
-                        <Badge variant={getSeverityVariant(item.severity_level)}>
-                          {formatEnumLabel(item.severity_level)}
-                        </Badge>
-                      </div>
-                      <p className="mt-3 text-sm text-white/85">
-                        {item.coaching_cue}
-                      </p>
-                      <p className="mt-2 text-sm text-muted-gray">
-                        {item.improvement_suggestion}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {llmFeedbackResult ? (
-            <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-white">
-                  LLM-Enhanced Feedback
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant={llmFeedbackResult.fallback_used ? "warning" : "success"}>
-                    {llmFeedbackResult.fallback_used ? "Fallback" : "Enhanced"}
-                  </Badge>
-                  <Badge variant="slate">{llmFeedbackResult.model}</Badge>
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-white/90">
-                {llmFeedbackResult.enhanced_summary.llm_summary}
-              </p>
-              {llmFeedbackResult.enhanced_feedback_items.length ? (
-                <div className="mt-4 space-y-3">
-                  {llmFeedbackResult.enhanced_feedback_items.map((item) => (
-                    <div
-                      key={`${item.priority_rank}-${item.phase_id}-${item.metric_name}`}
-                      className="rounded-2xl border border-white/10 bg-background-dark/60 px-4 py-4"
-                    >
-                      <p className="text-sm font-semibold text-white">
-                        {item.priority_rank}. {formatEnumLabel(item.metric_name)}
-                      </p>
-                      <p className="mt-3 text-sm text-white/85">
-                        {item.llm_coaching_cue}
-                      </p>
-                      <p className="mt-2 text-sm text-muted-gray">
-                        {item.llm_improvement_suggestion}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Preview status
+            </p>
+            <p className="mt-3 text-sm text-white/85">
+              {videoPreviewUrl
+                ? "Preview ready. Upload when the clip looks correct."
+                : "Upload a video to begin analysis."}
+            </p>
+          </div>
         </InfoCard>
-      ) : null}
+      </div>
 
-      {poseSequenceSummary || perceptionResult ? (
-        <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-          <InfoCard>
-              <SectionTitle
-                eyebrow="Perception"
-                title="Pose Sequence"
-                description="Structured output ready for deterministic evaluation."
-              />
+      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <InfoCard>
+          <SectionTitle
+            eyebrow="Validation"
+            title="Upload summary"
+            description="Frames, valid movement data, and capture issues."
+          />
 
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Badge variant="accent">{poseSequenceSummary?.pose_model ?? "Upload"}</Badge>
-              <Badge variant="slate">{artifactsPersisted} results</Badge>
+          {submitError ? (
+            <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
+              {submitError}
             </div>
+          ) : null}
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Frames
-                </p>
-                <p className="mt-3 text-2xl font-bold text-white">
-                  {poseSequenceSummary?.frame_count ?? perceptionResult?.processing_summary.frame_count ?? 0}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Valid Frames
-                </p>
-                <p className="mt-3 text-2xl font-bold text-white">
-                  {poseSequenceSummary?.valid_frame_count ?? keypointPreview.length}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Status
-                </p>
-                <p className="mt-3 text-2xl font-bold text-white">
-                  {formatEnumLabel(poseSequenceSummary?.status ?? "COMPLETED")}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                  Preprocessing
-                </p>
-                <p className="mt-3 text-2xl font-bold text-white">
-                  {poseSequenceSummary?.preprocessing_version ?? "N/A"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Pose Model
-                  </p>
-                  <p className="mt-3 text-sm font-semibold text-white">
-                    {poseSequenceSummary?.pose_model ?? "scaffold"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Capture Validation
-                  </p>
-                  <p className="mt-3 text-sm font-semibold text-white">
-                    {formatEnumLabel(
-                      uploadResult?.capture_validation?.reason_code ??
-                        "CAPTURE_PROTOCOL_VALID"
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Sample
+          {displayErrors.length ? (
+            <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-rose-200">
+                File issues
               </p>
-              <div className="mt-4 space-y-3">
-                {poseSequence ? (
-                  poseFramePreview.map((frame) => (
-                    <div
-                      key={`${frame.frame_index}-${frame.timestamp_ms}`}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-white">
-                          Frame {frame.frame_index}
-                        </p>
-                        <Badge variant={frame.frame_valid ? "success" : "warning"}>
-                          {frame.frame_valid ? "Valid" : "Invalid"}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-sm text-muted-gray">
-                        {(frame.timestamp_ms / 1000).toFixed(3)}s ·{" "}
-                        {Object.keys(frame.landmarks).length} landmarks
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  keypointPreview.map((frame) => (
-                    <div
-                      key={`${frame.frame_index}-${frame.timestamp}`}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-white">
-                          Frame {frame.frame_index}
-                        </p>
-                        <Badge variant="slate">
-                          {Math.round(frame.confidence * 100)}%
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-sm text-muted-gray">
-                        {frame.timestamp.toFixed(3)}s · {Object.keys(frame.keypoints).length} points
-                      </p>
-                    </div>
-                  ))
-                )}
-              </div>
+              <ul className="mt-3 space-y-2 text-sm text-rose-100">
+                {displayErrors.map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
             </div>
-          </InfoCard>
+          ) : null}
 
-          <div className="space-y-5">
-            <InfoCard>
-              <SectionTitle
-                eyebrow="Processing"
-                title="Perception Diagnostics"
-                description="Phase 1 preprocessing output."
-              />
-              {poseSequenceSummary ? (
-                <div className="mt-6 space-y-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                      Output Status
-                    </p>
-                    <p className="mt-3 text-lg font-semibold text-white">
-                      {formatEnumLabel(poseSequenceSummary.status)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                      Diagnostic Flags
-                    </p>
-                    {poseSequenceSummary.diagnostic_flags.length ? (
-                      <ul className="mt-3 space-y-2 text-sm text-white/85">
-                        {poseSequenceSummary.diagnostic_flags.map((flag) => (
-                          <li key={flag}>{flag}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-3 text-sm text-muted-gray">
-                        No sequence-level flags.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-6 grid gap-3">
-                  {motionFeatureEntries.map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                        {formatEnumLabel(key)}
-                      </p>
-                      <p className="mt-3 text-lg font-semibold text-white">
-                        {typeof value === "number" ? value.toFixed(3) : String(value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </InfoCard>
+          {displayWarnings.length ? (
+            <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
+                Warnings
+              </p>
+              <ul className="mt-3 space-y-2 text-sm text-amber-100">
+                {displayWarnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
-            {cognitionResult ? (
-              <InfoCard>
-              <SectionTitle
-                eyebrow="Review"
-                title="Clip quality"
-                description="Coverage and readiness."
-              />
-
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <Badge
-                    variant={
-                      cognitionResult.processing_readiness.payload_usable
-                        ? "success"
-                        : "warning"
-                    }
-                  >
-                    {cognitionResult.processing_readiness.payload_usable
-                      ? "Usable"
-                      : "Limited"}
-                  </Badge>
-                  <Badge
-                    variant={
-                      cognitionResult.processing_readiness.minimum_frames_met
-                        ? "success"
-                        : "warning"
-                    }
-                  >
-                    {cognitionResult.processing_readiness.minimum_frames_met
-                      ? "Enough frames"
-                      : "Short clip"}
-                  </Badge>
-                </div>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  {cognitionMetricEntries.map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                        {formatEnumLabel(key)}
-                      </p>
-                      <p className="mt-3 text-2xl font-bold text-white">
-                        {(value * 100).toFixed(0)}%
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+          {poseSequenceSummary ? (
+            <>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Notes
+                    Frames processed
                   </p>
-                  <ul className="mt-3 space-y-2 text-sm text-white/85">
-                    {cognitionResult.diagnostic_flags.map((flag) => (
-                      <li key={flag}>{flag}</li>
-                    ))}
-                  </ul>
+                  <p className="mt-3 text-2xl font-bold text-white">
+                    {poseSequenceSummary.frame_count}
+                  </p>
                 </div>
-              </InfoCard>
-            ) : null}
-
-            {evaluationResult ? (
-              <InfoCard>
-                <SectionTitle
-                  eyebrow="Evaluation"
-                  title="Your Results"
-                  description="Scores, issues, and cues."
-                />
-
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <Badge
-                    variant={
-                      evaluationResult.detected_issues.length > 0 ? "warning" : "success"
-                    }
-                  >
-                    {evaluationResult.detected_issues.length} issue
-                    {evaluationResult.detected_issues.length === 1 ? "" : "s"}
-                  </Badge>
-                  <Badge variant={getSeverityVariant(evaluationResult.overall_severity)}>
-                    {formatEnumLabel(evaluationResult.overall_severity)}
-                  </Badge>
-                </div>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  {evaluationMetricEntries.map(([key, value]) => (
-                    <div
-                      key={key}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                          {formatEnumLabel(key)}
-                        </p>
-                        <p className="text-sm font-semibold text-white">
-                          {(value * 100).toFixed(0)}%
-                        </p>
-                      </div>
-                      <div className="mt-4 h-2 rounded-full bg-white/10">
-                        <div
-                          className="h-2 rounded-full bg-primary transition-all duration-500"
-                          style={{ width: `${Math.max(value * 100, 8)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Notes
+                    Valid frames
                   </p>
-                  <ul className="mt-3 space-y-2 text-sm text-white/85">
-                    {(
-                      evaluationResult.diagnostic_flags.length
-                        ? evaluationResult.diagnostic_flags
-                        : ["Deterministic evaluation complete."]
-                    ).map((flag) => (
-                      <li key={flag}>{flag}</li>
-                    ))}
-                  </ul>
+                  <p className="mt-3 text-2xl font-bold text-white">
+                    {poseSequenceSummary.valid_frame_count}
+                  </p>
                 </div>
+              </div>
 
-                <div className="mt-6">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <AlertTriangle className="h-5 w-5 text-primary" />
-                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-gray">
-                        Technique Issues
-                      </p>
-                    </div>
-                    {feedbackItems.length > 1 ? (
-                      <CoachingAudioPlayer
-                        text={combinedCueText}
-                        label="Play All Cues"
-                        compact
-                        className="border-primary/15 bg-primary/10"
-                      />
-                    ) : null}
-                  </div>
-
-                  {evaluationResult.detected_issues.length ? (
-                    <div className="mt-4 space-y-3">
-                      {evaluationResult.detected_issues.map((issue) => (
-                        <div
-                          key={`${issue.phase_id}-${issue.metric_name}-${issue.issue_direction}`}
-                          className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-white">
-                                {formatEnumLabel(issue.metric_name)}
-                              </p>
-                              <p className="mt-2 text-sm text-muted-gray">
-                                {formatEnumLabel(issue.phase_id)} ·{" "}
-                                {formatEnumLabel(issue.affected_body_part)} · deviation{" "}
-                                {(issue.deviation * 100).toFixed(0)}%{" "}
-                                ({formatEnumLabel(issue.issue_direction)}).
-                              </p>
-                            </div>
-                            <Badge variant={getSeverityVariant(issue.severity_level)}>
-                              {formatEnumLabel(issue.severity_level)}
-                            </Badge>
-                          </div>
-                        </div>
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+                <div className="flex items-center gap-3">
+                  <FileCheck2 className="h-5 w-5 text-primary" />
+                  <p className="text-sm font-semibold text-white">
+                    {captureValidation?.message ??
+                      uploadResult?.next_step ??
+                      "Upload complete."}
+                  </p>
+                </div>
+                <div className="mt-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    Capture issues
+                  </p>
+                  {captureIssues.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-white/85">
+                      {captureIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
                       ))}
-                    </div>
+                    </ul>
                   ) : (
-                    <p className="mt-4 text-sm text-muted-gray">
-                      No issues found.
+                    <p className="mt-3 text-sm text-muted-gray">
+                      No capture issues detected.
                     </p>
                   )}
                 </div>
+              </div>
+            </>
+          ) : (
+            <p className="mt-6 text-sm text-muted-gray">
+              Upload a video to begin analysis.
+            </p>
+          )}
+        </InfoCard>
 
-                {feedbackItems.length ? (
-                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <Gauge className="h-5 w-5 text-primary" />
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                        Coaching Cues
-                      </p>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {feedbackItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="rounded-2xl border border-white/10 bg-background-dark/60 px-4 py-4"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-white">
-                              {item.technique_issue}
-                            </p>
-                            <Badge variant={getSeverityVariant(item.severity_level)}>
-                              {formatEnumLabel(item.severity_level)}
-                            </Badge>
-                          </div>
-                          <p className="mt-3 text-sm text-white/85">
-                            {item.coaching_cue}
-                          </p>
-                          <div className="mt-4">
-                            <CoachingAudioPlayer
-                              text={item.coaching_cue}
-                              label={`Play cue for ${item.technique_issue}`}
-                              compact
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </InfoCard>
-            ) : null}
+        <AnalysisProgressCard
+          analysisError={analysisError}
+          analysisState={analysisState}
+          analysisSteps={analysisSteps}
+        />
+      </div>
 
-            {sessionSummary ? (
-              <InfoCard>
-                <SectionTitle
-                  eyebrow="Summary"
-                  title="Session summary"
-                  description="Accuracy, strengths, and next actions."
-                  action={
-                    <CoachingAudioPlayer
-                      text={sessionSummary.summary_text}
-                      label="Play Summary"
-                      compact
-                      className="border-primary/15 bg-primary/10"
-                    />
-                  }
-                />
+      <InfoCard>
+        <SectionTitle
+          eyebrow="Action"
+          title="Analyze session"
+          description="Run the full evaluation and coaching pipeline with one action."
+        />
 
-                <div className="mt-6 grid gap-4 sm:grid-cols-[0.8fr_1.2fr]">
-                  <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
-                    <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
-                      Accuracy
-                    </p>
-                    <p className="mt-4 font-display text-5xl font-bold text-white">
-                      {sessionSummary.overall_accuracy.toFixed(1)}%
-                    </p>
-                    <p className="mt-3 text-sm text-emerald-50/90">
-                      Average across key checks.
-                    </p>
-                  </div>
-
-                  <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-                    <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                      Summary
-                    </p>
-                    <p className="mt-4 text-sm text-white/90">
-                      {sessionSummary.summary_text}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-5 lg:grid-cols-3">
-                  <div className="rounded-3xl border border-emerald-400/25 bg-emerald-500/10 p-5">
-                    <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">
-                      Strengths
-                    </p>
-                    {sessionSummary.strengths.metrics.length ? (
-                      <div className="mt-4 space-y-3">
-                        {sessionSummary.strengths.metrics.map((metric) => (
-                          <div
-                            key={metric.name}
-                            className="rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-4"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-semibold text-white">
-                                {formatEnumLabel(metric.name)}
-                              </p>
-                              <Badge variant="success">
-                                {(metric.score * 100).toFixed(0)}%
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-4 text-sm text-emerald-50/90">
-                        No clear strengths yet.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="rounded-3xl border border-amber-400/25 bg-amber-500/10 p-5">
-                    <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
-                      Weaknesses
-                    </p>
-                    {sessionSummary.weaknesses.issues.length ? (
-                      <div className="mt-4 space-y-3">
-                        {sessionSummary.weaknesses.issues.map((issue) => (
-                          <div
-                            key={`${issue.metric}-${issue.issue_label}`}
-                            className="rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-4"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-semibold text-white">
-                                {issue.issue_label}
-                              </p>
-                              <Badge variant={getSeverityVariant(issue.severity)}>
-                                {formatEnumLabel(issue.severity)}
-                              </Badge>
-                            </div>
-                            <p className="mt-3 text-sm text-white/80">
-                              {formatEnumLabel(issue.metric)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-4 text-sm text-amber-50/90">
-                        No issues flagged.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="rounded-3xl border border-primary/20 bg-primary/10 p-5">
-                    <p className="text-xs uppercase tracking-[0.22em] text-primary">
-                      Recommendations
-                    </p>
-                    {sessionSummary.recommendations.actions.length ? (
-                      <div className="mt-4 space-y-3">
-                        {sessionSummary.recommendations.actions.map((action) => (
-                          <div
-                            key={action}
-                            className="rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-4"
-                          >
-                            <p className="text-sm text-white/90">{action}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-4 text-sm text-white/85">
-                        No extra actions needed.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </InfoCard>
-            ) : null}
-          </div>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <CTAButton
+            type="button"
+            onClick={handleAnalyzeSession}
+            disabled={!canAnalyze || analysisState === "RUNNING"}
+          >
+            {analysisState === "RUNNING" ? "Analyzing session" : "Analyze Session"}
+          </CTAButton>
+          <Badge variant="slate">
+            {canAnalyze
+              ? "Ready to analyze"
+              : "Upload a video to begin analysis"}
+          </Badge>
         </div>
-      ) : null}
+      </InfoCard>
+
+      <AnalysisSnapshotCard artifacts={artifactSnapshot} />
     </div>
   );
 }
@@ -1276,9 +529,9 @@ export default function UploadSessionPage() {
   return (
     <AppShell
       eyebrow="Upload"
-      title="Upload review"
-      description="Upload a video and review results."
-      capsule="Review"
+      title="Training input"
+      description="Upload your clip and analyze the full session."
+      capsule="Input"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Browse Sports</Link>

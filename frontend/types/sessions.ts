@@ -6,6 +6,28 @@ export type SessionStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 export type CameraView = "FRONTAL" | "LEFT_SAGITTAL" | "RIGHT_SAGITTAL";
 export type DominantSide = "AUTO" | "LEFT" | "RIGHT";
 export type StoredDominantSide = Exclude<DominantSide, "AUTO">;
+export type AnalysisState = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED";
+export type AnalysisStepStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED";
+export type SessionAnalysisStep =
+  | "evaluation"
+  | "fuzzy"
+  | "it2"
+  | "pedagogy"
+  | "ontology"
+  | "choquet"
+  | "temporal"
+  | "feedback"
+  | "llm";
+
+export type AnalysisProgressStep = {
+  id: SessionAnalysisStep;
+  label: string;
+  status: AnalysisStepStatus;
+};
 
 export type TrainingSession = {
   id: string;
