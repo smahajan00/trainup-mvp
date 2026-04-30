@@ -133,8 +133,9 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     };
   }, [selectedFile]);
 
-  const poseSequenceSummary =
-    uploadResult?.pose_sequence ?? artifactSnapshot?.pose_sequence ?? null;
+  const currentPoseSequence =
+    selectedFile && !uploadResult ? null : artifactSnapshot?.pose_sequence ?? null;
+  const poseSequenceSummary = uploadResult?.pose_sequence ?? currentPoseSequence;
   const hasPoseData = Boolean(poseSequenceSummary);
   const captureValidation = uploadResult?.capture_validation ?? null;
   const displayWarnings = [
@@ -394,12 +395,13 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
 
           <div className="mt-6">
             <PoseOverlayPreview
-              showVideo={Boolean(videoPreviewUrl)}
+              mode="upload"
               videoSrc={videoPreviewUrl}
+              poseSequence={currentPoseSequence}
+              isActive={Boolean(videoPreviewUrl)}
               controls
-              emptyTitle="Pose overlay preview"
-              emptyDescription="Choose a clip to preview it here. Skeleton guide will appear after pose detection."
-              overlayMessage="Pose overlay preview · Skeleton guide will appear after pose detection"
+              emptyTitle="Upload a clip for skeleton overlay"
+              emptyDescription="Choose a clip to preview it here. Skeleton overlay appears after upload processing creates pose data."
             />
           </div>
 
@@ -408,9 +410,12 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
               Preview status
             </p>
             <p className="mt-3 text-sm text-white/85">
-              {videoPreviewUrl
-                ? "Preview ready. Upload when the rep looks framed correctly."
-                : "Upload a video to begin analysis."}
+              {currentPoseSequence?.status === "COMPLETED" &&
+              currentPoseSequence.valid_frame_count > 0
+                ? "Pose overlay active. Play or seek the clip to inspect the skeleton."
+                : videoPreviewUrl
+                  ? "Preview ready. Upload when the rep looks framed correctly."
+                  : "Upload a video to begin analysis."}
             </p>
           </div>
         </InfoCard>

@@ -36,10 +36,45 @@ import type {
 type CameraState = "idle" | "requesting" | "granted" | "denied" | "error";
 type CaptureState = "IDLE" | "CAPTURING" | "PAUSED" | "STOPPED";
 
+function isPlayInterruption(error: unknown) {
+  if (!(error instanceof DOMException || error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.name === "AbortError" ||
+    /play\(\) request was interrupted|interrupted by a new load request/i.test(
+      error.message
+    )
+  );
+}
+
+async function playVideoSafely(video: HTMLVideoElement | null) {
+  if (!video) {
+    return true;
+  }
+
+  if (!video.paused && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    return true;
+  }
+
+  try {
+    await video.play();
+    return true;
+  } catch (error) {
+    if (isPlayInterruption(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 function LiveSessionContent({ sessionId }: { sessionId: string }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [artifactSnapshot, setArtifactSnapshot] =
     useState<SessionArtifactsResponse | null>(null);
@@ -140,6 +175,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
 
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = stream;
+      setCameraStream(stream);
       setCameraState("granted");
 
       if (videoRef.current) {
@@ -174,7 +210,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
 
     try {
       setIsStarting(true);
-      await videoRef.current?.play();
+      const playStarted = await playVideoSafely(videoRef.current);
+      if (!playStarted) {
+        window.setTimeout(() => {
+          void playVideoSafely(videoRef.current);
+        }, 150);
+      }
       setCapturedTicks(0);
       setFrameBatchResult(null);
       setCaptureState("CAPTURING");
@@ -194,7 +235,12 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   }
 
   async function handleResume() {
-    await videoRef.current?.play();
+    const playStarted = await playVideoSafely(videoRef.current);
+    if (!playStarted) {
+      window.setTimeout(() => {
+        void playVideoSafely(videoRef.current);
+      }, 150);
+    }
     setCaptureState("CAPTURING");
     startCaptureClock();
   }
@@ -215,6 +261,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       await videoRef.current?.pause();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+      setCameraStream(null);
       setCameraState("idle");
       setCaptureState("STOPPED");
 
@@ -341,7 +388,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         />
       </InfoCard>
 
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)]">
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
             eyebrow="Input"
@@ -351,13 +398,16 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
 
           <div className="mt-6">
             <PoseOverlayPreview
-              showVideo={cameraState === "granted" && Boolean(streamRef.current)}
+              mode="live"
+              stream={cameraStream}
               videoRef={videoRef}
+              isActive={cameraState === "granted" && Boolean(cameraStream)}
+              isPaused={captureState === "PAUSED"}
+              mirrored
               autoPlay
               muted
-              emptyTitle="Pose overlay preview"
-              emptyDescription="Start the camera to capture movement. Skeleton guide will appear after pose detection."
-              overlayMessage="Pose overlay preview · Skeleton guide will appear after pose detection"
+              emptyTitle="Live skeleton overlay"
+              emptyDescription="Start the camera to capture movement. The skeleton overlay runs locally in your browser."
             />
           </div>
 
