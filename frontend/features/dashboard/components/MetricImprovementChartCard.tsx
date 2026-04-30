@@ -1,6 +1,15 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
 
 import { InfoCard } from "../../app-shell/components/InfoCard";
 import { SectionTitle } from "../../app-shell/components/SectionTitle";
@@ -16,7 +25,7 @@ export function MetricImprovementChartCard({
   const hasTrendData = points.some((point) => point.hasTrend);
 
   return (
-    <InfoCard>
+    <InfoCard className="min-w-0">
       <SectionTitle
         eyebrow="Metrics"
         title="Metric Momentum"
@@ -28,7 +37,7 @@ export function MetricImprovementChartCard({
           Log more sessions to compare metric changes.
         </div>
       ) : hasTrendData ? (
-        <div className="mt-6 h-[320px]">
+        <div className="mt-6 h-[300px] min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={points}
@@ -45,7 +54,7 @@ export function MetricImprovementChartCard({
               <YAxis
                 dataKey="shortLabel"
                 type="category"
-                width={110}
+                width={116}
                 tick={{ fill: "rgba(255,255,255,0.75)", fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
@@ -84,11 +93,13 @@ export function MetricImprovementChartCard({
           {points.map((point) => (
             <div
               key={point.metricName}
-              className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+              className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
             >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-white">{point.shortLabel}</p>
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-semibold text-white">
+                    {point.shortLabel}
+                  </p>
                   <p className="mt-2 text-sm text-muted-gray">
                     {point.samples} tracked value{point.samples === 1 ? "" : "s"}
                   </p>

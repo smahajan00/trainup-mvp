@@ -9,6 +9,7 @@ import {
   Gauge,
   History,
   ShieldAlert,
+  Target,
   TrendingDown,
   TrendingUp,
   Trophy
@@ -19,30 +20,8 @@ import { Button } from "../../../components/ui/button";
 import { CTAButton } from "../../../components/ui/cta-button";
 import { Select } from "../../../components/ui/select";
 import { SkeletonLoader } from "../../../components/ui/skeleton-loader";
-import { EmptyState } from "../../app-shell/components/EmptyState";
-import { InfoCard } from "../../app-shell/components/InfoCard";
-import { SectionTitle } from "../../app-shell/components/SectionTitle";
-import {
-  buildAnalyzedSession,
-  buildDashboardInsightSummary,
-  buildDrillComparisonData,
-  buildMetricImprovementData,
-  buildRecurringInsightSummary,
-  buildScoreTrendData,
-  buildTrendSummary,
-  formatScoreLabel,
-  getDrillOptionsForSport,
-  getSeverityVariant
-} from "../analytics-utils";
-import { AnalyticsKpiCard } from "./AnalyticsKpiCard";
-import { MetricImprovementChartCard } from "./MetricImprovementChartCard";
-import { ScoreTrendChartCard } from "./ScoreTrendChartCard";
 import { getErrorMessage } from "../../../lib/api";
-import {
-  calculateProfileCompletion,
-  formatDateTime,
-  formatEnumLabel
-} from "../../../lib/formatters";
+import { formatDateTime, formatEnumLabel } from "../../../lib/formatters";
 import { getDrillsBySport } from "../../../services/drills";
 import { getRecentProgress } from "../../../services/progress";
 import { getSessionArtifacts } from "../../../services/sessions";
@@ -56,6 +35,26 @@ import type {
 } from "../../../types/progress";
 import type { SessionArtifactsResponse } from "../../../types/sessions";
 import type { SportOption } from "../../../types/sports";
+import { EmptyState } from "../../app-shell/components/EmptyState";
+import { InfoCard } from "../../app-shell/components/InfoCard";
+import { SectionTitle } from "../../app-shell/components/SectionTitle";
+import {
+  buildAnalyzedSession,
+  buildDrillComparisonData,
+  buildMetricImprovementData,
+  buildRecurringInsightSummary,
+  buildScoreTrendData,
+  buildTrendSummary,
+  formatScoreLabel,
+  getDrillOptionsForSport,
+  getSeverityVariant,
+  type DashboardAnalyzedSession,
+  type DashboardDrillComparison,
+  type DashboardRecurringInsight
+} from "../analytics-utils";
+import { AnalyticsKpiCard } from "./AnalyticsKpiCard";
+import { MetricImprovementChartCard } from "./MetricImprovementChartCard";
+import { ScoreTrendChartCard } from "./ScoreTrendChartCard";
 
 type ProgressAnalyticsViewProps = {
   user: CurrentUserResponse | null;
@@ -64,6 +63,13 @@ type ProgressAnalyticsViewProps = {
 
 type SportSummary = SportOption & {
   drillCount: number;
+};
+
+type NextTrainingFocus = {
+  focusArea: string;
+  recommendedDrill: string;
+  recommendedSportName: string;
+  coachingCue: string;
 };
 
 const FILTER_SPORT_ORDER = ["Gym", "Basketball", "Football"];
@@ -95,10 +101,71 @@ function getTrendTone(direction: "up" | "down" | "flat" | "insufficient") {
   return "slate" as const;
 }
 
-export function ProgressAnalyticsView({
-  user,
-  profile
-}: ProgressAnalyticsViewProps) {
+function getLatestSession(sessions: DashboardAnalyzedSession[]) {
+  return [...sessions].sort(
+    (left, right) =>
+      new Date(right.start_time).getTime() - new Date(left.start_time).getTime()
+  )[0] ?? null;
+}
+
+function buildNextTrainingFocus(
+  sessions: DashboardAnalyzedSession[],
+  drills: DashboardDrillComparison[],
+  recurringInsight: DashboardRecurringInsight
+): NextTrainingFocus | null {
+  if (!sessions.length) {
+    return null;
+  }
+
+  const latestSession = getLatestSession(sessions);
+  const recommendedDrill =
+    [...drills].sort((left, right) => left.averageScore - right.averageScore)[0] ??
+    null;
+  const sessionForRecommendedDrill =
+    recommendedDrill && latestSession
+      ? sessions.find(
+          (session) =>
+            session.drill_name === recommendedDrill.drillName &&
+            session.coachingAction
+        ) ?? latestSession
+      : latestSession;
+
+  return {
+    focusArea:
+      recurringInsight.mostCommonIssue ??
+      sessionForRecommendedDrill?.mainIssue ??
+      sessionForRecommendedDrill?.mainFocus ??
+      "Controlled movement quality",
+    recommendedDrill: recommendedDrill?.drillName ?? latestSession?.drill_name ?? "Next drill",
+    recommendedSportName:
+      recommendedDrill?.sportName ?? latestSession?.sport_name ?? "Training",
+    coachingCue:
+      sessionForRecommendedDrill?.coachingAction ??
+      recurringInsight.temporalSentence ??
+      "Repeat the drill at controlled speed and keep the first cue simple."
+  };
+}
+
+function getFocusSessionHref(
+  nextFocus: NextTrainingFocus | null,
+  sportSummaries: SportSummary[],
+  fallbackHref: string
+) {
+  if (!nextFocus) {
+    return fallbackHref;
+  }
+
+  const sport = sportSummaries.find(
+    (item) => item.sport_name === nextFocus.recommendedSportName
+  );
+  return sport ? `/sports/${sport.id}/drills` : fallbackHref;
+}
+
+function valueOrFallback(value: string | null | undefined, fallback: string) {
+  return value && value.trim() ? value : fallback;
+}
+
+export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
   const [sportSummaries, setSportSummaries] = useState<SportSummary[]>([]);
   const [drillsBySport, setDrillsBySport] = useState<Record<string, DrillListItem[]>>(
     {}
@@ -185,7 +252,6 @@ export function ProgressAnalyticsView({
     setSelectedDrillId("all");
   }, [selectedSportId]);
 
-  const profileCompletion = calculateProfileCompletion(profile);
   const startTrainingHref = profile ? `/sports/${profile.sport_id}/drills` : "/sports";
   const availableDrills = sportSummaries.reduce(
     (total, sport) => total + sport.drillCount,
@@ -232,10 +298,6 @@ export function ProgressAnalyticsView({
   const drillComparisonData = buildDrillComparisonData(analyzedSessions);
   const recurringInsight = buildRecurringInsightSummary(analyzedSessions);
   const trendSummary = buildTrendSummary(analyzedSessions);
-  const coachingInsightSummary = buildDashboardInsightSummary(
-    analyzedSessions,
-    recurringInsight
-  );
   const averageScore = analyzedSessions.length
     ? analyzedSessions.reduce((total, session) => total + session.overall_accuracy, 0) /
       analyzedSessions.length
@@ -246,32 +308,62 @@ export function ProgressAnalyticsView({
   const mostCommonIssue = recurringInsight.mostCommonIssue;
   const activeScopeLabel =
     selectedSportName && selectedDrillName
-      ? `${selectedSportName} · ${selectedDrillName}`
+      ? `${selectedSportName} / ${selectedDrillName}`
       : selectedSportName
-        ? `${selectedSportName} · All Drills`
+        ? `${selectedSportName} / All drills`
         : "All Sports";
   const hasAnySessions = recentSessions.length > 0;
   const hasFilteredSessions = analyzedSessions.length > 0;
+  const nextTrainingFocus = buildNextTrainingFocus(
+    analyzedSessions,
+    drillComparisonData,
+    recurringInsight
+  );
+  const nextTrainingHref = getFocusSessionHref(
+    nextTrainingFocus,
+    sportSummaries,
+    startTrainingHref
+  );
+  const coachReadItems = [
+    {
+      label: "Trend",
+      value: trendSummary.value
+    },
+    {
+      label: "Key weakness",
+      value: valueOrFallback(mostCommonIssue, "No repeated weakness yet")
+    },
+    {
+      label: "Pattern",
+      value: valueOrFallback(
+        recurringInsight.interactionSentence ?? recurringInsight.temporalSentence,
+        "More analyzed sessions will reveal a clearer pattern."
+      )
+    },
+    {
+      label: "Next focus",
+      value: valueOrFallback(
+        nextTrainingFocus?.coachingCue,
+        "Complete more sessions to unlock a focused recommendation."
+      )
+    }
+  ];
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <SkeletonLoader className="h-72" />
-        <SkeletonLoader className="h-40" />
-        <div className="grid gap-5 xl:grid-cols-5">
-          <SkeletonLoader className="h-44" />
-          <SkeletonLoader className="h-44" />
-          <SkeletonLoader className="h-44" />
-          <SkeletonLoader className="h-44" />
-          <SkeletonLoader className="h-44" />
+      <div className="space-y-5">
+        <SkeletonLoader className="h-64" />
+        <SkeletonLoader className="h-28" />
+        <div className="grid gap-4 xl:grid-cols-5">
+          <SkeletonLoader className="h-32" />
+          <SkeletonLoader className="h-32" />
+          <SkeletonLoader className="h-32" />
+          <SkeletonLoader className="h-32" />
+          <SkeletonLoader className="h-32" />
         </div>
         <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-          <SkeletonLoader className="h-[380px]" />
-          <SkeletonLoader className="h-[380px]" />
-        </div>
-        <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-          <SkeletonLoader className="h-[360px]" />
-          <SkeletonLoader className="h-[360px]" />
+          <SkeletonLoader className="h-[340px]" />
+          <SkeletonLoader className="h-[340px]" />
         </div>
       </div>
     );
@@ -293,25 +385,16 @@ export function ProgressAnalyticsView({
   }
 
   return (
-    <div className="space-y-8">
-      <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.18),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
-        <div className="absolute inset-y-0 right-0 hidden w-2/5 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.18),_transparent_55%)] lg:block" />
-        <div className="relative z-10 flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="accent">Performance Dashboard</Badge>
-              <Badge variant="slate">{selectedSportName ?? "All Sports"}</Badge>
-              {profile?.skill_level ? (
-                <Badge variant="slate">{formatEnumLabel(profile.skill_level)}</Badge>
-              ) : null}
-            </div>
-            <h2 className="mt-5 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
-              {user?.full_name
-                ? `${user.full_name}, see how your training is trending.`
-                : "See how your training is trending."}
-            </h2>
-            <p className="mt-4 max-w-2xl text-sm text-muted-gray sm:text-base">
-              Read the full performance story across score trends, recurring weaknesses, drill results, and coaching signals from your recent analyzed sessions.
+    <div className="space-y-6">
+      <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-5 sm:p-7">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_430px] xl:items-end">
+          <div className="min-w-0">
+            <Badge variant="accent">Performance Dashboard</Badge>
+            <h1 className="mt-4 break-words font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
+              Performance Dashboard
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-gray sm:text-base">
+              Track your score trends, training patterns, and key focus areas across sessions.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <CTAButton asChild>
@@ -330,116 +413,114 @@ export function ProgressAnalyticsView({
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3 xl:w-[430px]">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+            <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                 Active scope
               </p>
-              <p className="mt-3 text-sm font-semibold text-white">{activeScopeLabel}</p>
+              <p className="mt-2 line-clamp-2 text-sm font-semibold text-white">
+                {activeScopeLabel}
+              </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+            <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                 Sessions in view
               </p>
-              <p className="mt-3 text-sm font-semibold text-white">
+              <p className="mt-2 text-2xl font-bold text-white">
                 {analyzedSessions.length}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+            <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                 Data window
               </p>
-              <p className="mt-3 text-sm font-semibold text-white">Up to 10 sessions</p>
+              <p className="mt-2 text-sm font-semibold text-white">Up to 10 sessions</p>
             </div>
           </div>
         </div>
       </InfoCard>
 
-      <InfoCard>
-        <SectionTitle
-          eyebrow="Filters"
-          title="Dial in your dashboard"
-          description="Set the sport focus first, then tighten the view to a single drill when you want a sharper comparison."
-          action={
-            selectedSportId !== "all" || selectedDrillId !== "all" ? (
+      <InfoCard className="p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+              Filters
+            </p>
+            <h2 className="mt-1 font-display text-2xl font-bold tracking-tight text-white">
+              Focus your training view
+            </h2>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-gray">
+              <Badge variant="slate" className="max-w-full">
+                Data coverage
+              </Badge>
+              <span>{recentSessions.length} sessions</span>
+              <span>{recentMetrics.length} metrics</span>
+              <span>{availableDrills} drills</span>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
+                size="sm"
+                variant={selectedSportId === "all" ? "default" : "outline"}
+                className="rounded-2xl"
+                onClick={() => setSelectedSportId("all")}
+              >
+                All Sports
+              </Button>
+              {sportSummaries.map((sport) => (
+                <Button
+                  key={sport.id}
+                  type="button"
+                  size="sm"
+                  variant={selectedSportId === sport.id ? "default" : "outline"}
+                  className="rounded-2xl"
+                  onClick={() => setSelectedSportId(sport.id)}
+                >
+                  {sport.sport_name}
+                </Button>
+              ))}
+            </div>
+
+            {selectedSportId !== "all" ? (
+              <div className="w-full min-w-0 sm:w-64">
+                <Select
+                  value={selectedDrillId}
+                  disabled={drillOptions.length === 0}
+                  className="h-10 rounded-2xl text-sm"
+                  onChange={(event) => setSelectedDrillId(event.target.value)}
+                >
+                  <option value="all" className="bg-slate text-white">
+                    All Drills
+                  </option>
+                  {drillOptions.map((drill) => (
+                    <option
+                      key={drill.id}
+                      value={drill.id}
+                      className="bg-slate text-white"
+                    >
+                      {drill.drill_name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
+
+            {selectedSportId !== "all" || selectedDrillId !== "all" ? (
+              <Button
+                type="button"
+                size="sm"
                 variant="outline"
                 onClick={() => {
                   setSelectedSportId("all");
                   setSelectedDrillId("all");
                 }}
               >
-                Reset Filters
+                Reset filters
               </Button>
-            ) : null
-          }
-        />
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Button
-            type="button"
-            variant={selectedSportId === "all" ? "default" : "outline"}
-            className="rounded-2xl"
-            onClick={() => setSelectedSportId("all")}
-          >
-            All Sports
-          </Button>
-          {sportSummaries.map((sport) => (
-            <Button
-              key={sport.id}
-              type="button"
-              variant={selectedSportId === sport.id ? "default" : "outline"}
-              className="rounded-2xl"
-              onClick={() => setSelectedSportId(sport.id)}
-            >
-              {sport.sport_name}
-            </Button>
-          ))}
-        </div>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-              Drill filter
-            </p>
-            <div className="mt-3">
-              <Select
-                value={selectedDrillId}
-                disabled={selectedSportId === "all" || drillOptions.length === 0}
-                onChange={(event) => setSelectedDrillId(event.target.value)}
-              >
-                <option value="all" className="bg-slate text-white">
-                  All Drills
-                </option>
-                {drillOptions.map((drill) => (
-                  <option key={drill.id} value={drill.id} className="bg-slate text-white">
-                    {drill.drill_name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-gray">
-              {selectedSportId === "all"
-                ? "Select a sport to unlock drill-level filtering."
-                : drillOptions.length
-                  ? "Compare sessions inside a single drill or keep the full sport view."
-                  : "No drills are available for this sport yet."}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-              Analytics coverage
-            </p>
-            <p className="mt-3 text-sm leading-7 text-white/85">
-              TrainUp uses the recent progress endpoint for up to 10 completed sessions and 50 saved metric values, then applies sport and drill filters client-side.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Badge variant="accent">{availableDrills} drills indexed</Badge>
-              <Badge variant="slate">{recentMetrics.length} metrics loaded</Badge>
-              <Badge variant="slate">{profileCompletion}% profile complete</Badge>
-            </div>
+            ) : null}
           </div>
         </div>
       </InfoCard>
@@ -479,207 +560,263 @@ export function ProgressAnalyticsView({
         </InfoCard>
       ) : (
         <>
-          <div className="grid gap-5 xl:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <AnalyticsKpiCard
-              label="Sessions Completed"
+              label="Sessions"
               value={String(analyzedSessions.length)}
-              description="Completed reviews in the current analytics view."
+              description="Sessions analyzed"
               icon={ClipboardCheck}
               tone="accent"
             />
             <AnalyticsKpiCard
-              label="Average Score"
+              label="Avg Score"
               value={formatScoreLabel(averageScore)}
-              description="Average overall score across the filtered sessions."
+              description="Current view"
               icon={Gauge}
               tone="success"
             />
             <AnalyticsKpiCard
-              label="Best Score"
+              label="Best"
               value={formatScoreLabel(bestScore)}
-              description="Best performance captured inside this filter scope."
+              description="Top session"
               icon={Trophy}
               tone="accent"
             />
             <AnalyticsKpiCard
-              label="Current Trend"
+              label="Trend"
               value={trendSummary.value}
-              description="How the latest scored session compares with the previous one."
+              description="Updated"
               icon={trendSummary.direction === "down" ? TrendingDown : TrendingUp}
               tone={getTrendTone(trendSummary.direction)}
             />
             <AnalyticsKpiCard
-              label="Most Common Issue"
+              label="Key Weakness"
               value={mostCommonIssue ?? "Need more sessions"}
-              description="The issue label that appears most often in recent coaching results."
+              description="Current pattern"
               icon={ShieldAlert}
               tone="warning"
             />
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-[1.18fr_0.82fr]">
+          <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
             <ScoreTrendChartCard points={scoreTrendData} />
 
-            <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.15),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
+            <InfoCard className="min-w-0 border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.12),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
               <SectionTitle
                 eyebrow="Coaching"
-                title="AI Coaching Snapshot"
-                description="A concise read on what the recent analytics are saying about your movement quality."
+                title="Coach's Read"
+                description="The current answer to what is improving and what to train next."
               />
-              <p className="mt-6 text-sm leading-7 text-white/85">
-                {coachingInsightSummary}
-              </p>
 
-              <div className="mt-6 flex flex-wrap gap-2">
-                {recurringInsight.recurringConcept ? (
-                  <Badge variant="accent">{recurringInsight.recurringConcept}</Badge>
-                ) : null}
-                {recurringInsight.bodyRegion ? (
-                  <Badge variant="slate">{recurringInsight.bodyRegion}</Badge>
-                ) : null}
-                {recurringInsight.temporalBehavior ? (
-                  <Badge variant="slate">{recurringInsight.temporalBehavior}</Badge>
-                ) : null}
+              <div className="mt-6 grid gap-3">
+                {coachReadItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                  >
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                      {item.label}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-white/85">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
               </div>
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Current scope
-                  </p>
-                  <p className="mt-3 text-sm font-semibold text-white">
-                    {activeScopeLabel}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Latest review
-                  </p>
-                  <p className="mt-3 text-sm font-semibold text-white">
-                    {formatDateTime(
-                      [...analyzedSessions].sort(
-                        (left, right) =>
-                          new Date(right.start_time).getTime() -
-                          new Date(left.start_time).getTime()
-                      )[0].start_time
-                    )}
-                  </p>
-                </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {recurringInsight.recurringConcept ? (
+                  <Badge variant="accent" className="max-w-full">
+                    {recurringInsight.recurringConcept}
+                  </Badge>
+                ) : null}
+                {recurringInsight.bodyRegion ? (
+                  <Badge variant="slate" className="max-w-full">
+                    {recurringInsight.bodyRegion}
+                  </Badge>
+                ) : null}
+                {recurringInsight.temporalBehavior ? (
+                  <Badge variant="slate" className="max-w-full">
+                    {recurringInsight.temporalBehavior}
+                  </Badge>
+                ) : null}
               </div>
             </InfoCard>
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <div className="grid items-stretch gap-5 xl:grid-cols-[1fr_1fr]">
             <MetricImprovementChartCard points={metricImprovementData} />
 
-            <InfoCard>
+            <InfoCard className="min-w-0">
               <SectionTitle
                 eyebrow="Intelligence"
                 title="Training Intelligence"
-                description="These recurring patterns show up most often inside the current dashboard view."
+                description="Recurring signals from the current dashboard view."
               />
 
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Recurring focus area
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white/85">
-                    {recurringInsight.recurringConceptSentence ??
-                      "Log more sessions to surface a recurring focus area."}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Repeated body region
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white/85">
-                    {recurringInsight.bodyRegionSentence ??
-                      "Body-region patterns will appear after more analyzed sessions."}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Interaction pattern
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white/85">
-                    {recurringInsight.interactionSentence ??
-                      "Interaction-aware patterns will appear after more analysis."}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Movement timing
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-white/85">
-                    {recurringInsight.temporalSentence ??
-                      "Timing behavior will appear after more analyzed sessions."}
-                  </p>
-                </div>
+              <div className="mt-6 grid items-stretch gap-4 sm:grid-cols-2">
+                {[
+                  {
+                    label: "Main focus",
+                    value:
+                      recurringInsight.recurringConceptSentence ??
+                      "Complete more sessions to surface a main focus."
+                  },
+                  {
+                    label: "Body control",
+                    value:
+                      recurringInsight.bodyRegionSentence ??
+                      "Body-control patterns will appear after more analyzed sessions."
+                  },
+                  {
+                    label: "Pattern",
+                    value:
+                      recurringInsight.interactionSentence ??
+                      "Pattern signals will appear after more analysis."
+                  },
+                  {
+                    label: "Timing",
+                    value:
+                      recurringInsight.temporalSentence ??
+                      "Timing behavior will appear after more analyzed sessions."
+                  }
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex min-w-0 flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                  >
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                      {item.label}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-white/85">
+                      {item.value}
+                    </p>
+                  </div>
+                ))}
               </div>
             </InfoCard>
           </div>
+
+          <InfoCard className="border-primary/15 bg-[linear-gradient(135deg,rgba(255,122,0,0.12),rgba(255,255,255,0.035))] p-5 sm:p-6">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="accent">Next Step</Badge>
+                  {nextTrainingFocus ? (
+                    <Badge variant="slate" className="max-w-full">
+                      {nextTrainingFocus.recommendedSportName}
+                    </Badge>
+                  ) : null}
+                </div>
+                <h2 className="mt-4 font-display text-3xl font-bold tracking-tight text-white">
+                  Next Training Focus
+                </h2>
+                {nextTrainingFocus ? (
+                  <div className="mt-5 grid gap-4 md:grid-cols-3">
+                    <div className="min-w-0 rounded-2xl border border-white/10 bg-background-dark/35 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                        Focus area
+                      </p>
+                      <p className="mt-2 break-words text-sm font-semibold text-white">
+                        {nextTrainingFocus.focusArea}
+                      </p>
+                    </div>
+                    <div className="min-w-0 rounded-2xl border border-white/10 bg-background-dark/35 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                        Recommended drill
+                      </p>
+                      <p className="mt-2 break-words text-sm font-semibold text-white">
+                        {nextTrainingFocus.recommendedDrill}
+                      </p>
+                    </div>
+                    <div className="min-w-0 rounded-2xl border border-white/10 bg-background-dark/35 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                        Coaching cue
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-white/85">
+                        {nextTrainingFocus.coachingCue}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm leading-6 text-muted-gray">
+                    Complete more sessions to unlock a focused recommendation.
+                  </p>
+                )}
+              </div>
+
+              <CTAButton asChild>
+                <Link href={nextTrainingHref}>
+                  Start Focus Session
+                  <Target className="ml-2 h-4 w-4" />
+                </Link>
+              </CTAButton>
+            </div>
+          </InfoCard>
 
           <InfoCard>
             <SectionTitle
               eyebrow="Drills"
               title="Drill Breakdown"
-              description="Compare how each drill is performing inside the selected dashboard scope."
+              description="Compare which drills are improving inside the selected scope."
             />
 
             {drillComparisonData.length ? (
-              <div className="mt-6 grid gap-5 xl:grid-cols-3">
+              <div className="mt-6 grid gap-4 xl:grid-cols-3">
                 {drillComparisonData.map((drill) => (
                   <div
-                    key={drill.drillName}
-                    className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5"
+                    key={`${drill.sportName}-${drill.drillName}`}
+                    className="flex min-w-0 flex-col rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                           {drill.sportName}
                         </p>
-            <h3 className="mt-3 font-display text-2xl font-bold text-white">
-              {drill.drillName}
-            </h3>
+                        <h3 className="mt-2 break-words font-display text-2xl font-bold leading-tight text-white">
+                          {drill.drillName}
+                        </h3>
                       </div>
-                      <Badge variant={getTrendTone(drill.trendDirection)}>
+                      <Badge
+                        variant={getTrendTone(drill.trendDirection)}
+                        className="shrink-0 whitespace-nowrap"
+                      >
                         {drill.trendLabel}
                       </Badge>
                     </div>
 
-                    <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-white/10 bg-background-dark/40 p-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                          Sessions
+                    <div className="mt-5 grid grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-gray">
+                          Avg
                         </p>
-                        <p className="mt-2 text-xl font-bold text-white">
-                          {drill.sessions}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-background-dark/40 p-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                          Avg score
-                        </p>
-                        <p className="mt-2 text-xl font-bold text-white">
+                        <p className="mt-1 text-2xl font-bold text-white">
                           {drill.averageScore.toFixed(0)}%
                         </p>
                       </div>
-                      <div className="rounded-2xl border border-white/10 bg-background-dark/40 p-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-gray">
                           Best
                         </p>
-                        <p className="mt-2 text-xl font-bold text-white">
+                        <p className="mt-1 text-2xl font-bold text-white">
                           {drill.bestScore.toFixed(0)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-gray">
+                          Sessions
+                        </p>
+                        <p className="mt-1 text-2xl font-bold text-white">
+                          {drill.sessions}
                         </p>
                       </div>
                     </div>
 
-                    <div className="mt-5 rounded-2xl border border-white/10 bg-background-dark/40 p-4">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                    <div className="mt-5 border-t border-white/10 pt-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                         Main issue
                       </p>
-                      <p className="mt-3 text-sm leading-6 text-white/85">
+                      <p className="mt-2 line-clamp-3 text-sm leading-6 text-white/85">
                         {drill.mainIssue ??
                           "More analyzed sessions are needed to identify a consistent issue."}
                       </p>
@@ -698,21 +835,21 @@ export function ProgressAnalyticsView({
             <SectionTitle
               eyebrow="Sessions"
               title="Recent Sessions"
-              description="Open a session to revisit the detailed coaching results."
+              description="Open a session to revisit detailed coaching results."
             />
 
             <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.03]">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10 text-sm">
+                <table className="min-w-[920px] divide-y divide-white/10 text-sm">
                   <thead className="bg-white/[0.03]">
-                    <tr className="text-left text-xs uppercase tracking-[0.22em] text-muted-gray">
-                      <th className="px-4 py-4 font-medium">Date</th>
-                      <th className="px-4 py-4 font-medium">Sport</th>
-                      <th className="px-4 py-4 font-medium">Drill</th>
-                      <th className="px-4 py-4 font-medium">Score</th>
-                      <th className="px-4 py-4 font-medium">Severity</th>
-                      <th className="px-4 py-4 font-medium">Main Focus</th>
-                      <th className="px-4 py-4 font-medium">Action</th>
+                    <tr className="text-left text-xs uppercase tracking-[0.18em] text-muted-gray">
+                      <th className="w-[150px] px-4 py-4 font-medium">Date</th>
+                      <th className="w-[120px] px-4 py-4 font-medium">Sport</th>
+                      <th className="w-[210px] px-4 py-4 font-medium">Drill</th>
+                      <th className="w-[90px] px-4 py-4 font-medium">Score</th>
+                      <th className="w-[120px] px-4 py-4 font-medium">Severity</th>
+                      <th className="px-4 py-4 font-medium">Focus</th>
+                      <th className="w-[140px] px-4 py-4 font-medium">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
@@ -723,23 +860,32 @@ export function ProgressAnalyticsView({
                           new Date(left.start_time).getTime()
                       )
                       .map((session) => (
-                        <tr key={session.session_id} className="align-top">
-                          <td className="px-4 py-4 text-white/85">
-                            {formatDateTime(session.start_time)}
+                        <tr key={session.session_id} className="align-middle">
+                          <td className="px-4 py-4 text-white/80">
+                            <span className="block whitespace-nowrap">
+                              {formatDateTime(session.start_time)}
+                            </span>
                           </td>
                           <td className="px-4 py-4 text-white/75">{session.sport_name}</td>
                           <td className="px-4 py-4">
-                            <div className="font-semibold text-white">{session.drill_name}</div>
-                            <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-gray">
+                            <div className="max-w-[200px] break-words font-semibold leading-5 text-white">
+                              {session.drill_name}
+                            </div>
+                            <div className="mt-1 text-xs uppercase tracking-[0.16em] text-muted-gray">
                               {formatEnumLabel(session.input_type)}
                             </div>
                           </td>
-                          <td className="px-4 py-4 text-white">
-                            {session.overall_accuracy.toFixed(0)}%
+                          <td className="px-4 py-4">
+                            <span className="font-display text-2xl font-bold text-white">
+                              {session.overall_accuracy.toFixed(0)}%
+                            </span>
                           </td>
                           <td className="px-4 py-4">
                             {session.severity ? (
-                              <Badge variant={getSeverityVariant(session.severity)}>
+                              <Badge
+                                variant={getSeverityVariant(session.severity)}
+                                className="whitespace-nowrap tracking-[0.16em]"
+                              >
                                 {session.severity}
                               </Badge>
                             ) : (
@@ -747,10 +893,14 @@ export function ProgressAnalyticsView({
                             )}
                           </td>
                           <td className="px-4 py-4 text-white/85">
-                            {session.mainFocus ?? session.mainIssue ?? "Review detailed coaching"}
+                            <span className="line-clamp-2 max-w-[260px] leading-6">
+                              {session.mainFocus ??
+                                session.mainIssue ??
+                                "Review detailed coaching"}
+                            </span>
                           </td>
                           <td className="px-4 py-4">
-                            <Button asChild variant="outline">
+                            <Button asChild variant="outline" size="sm">
                               <Link
                                 href={
                                   session.input_type === "LIVE"

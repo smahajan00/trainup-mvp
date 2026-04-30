@@ -11,13 +11,14 @@ export default function ProgressPage() {
     <AppShell
       eyebrow="Dashboard"
       title="Performance Dashboard"
-      description="Track score trends, drill breakdowns, and recurring coaching patterns from your recent sessions."
-      capsule="Analytics live"
+      description="Track your score trends, training patterns, and key focus areas across sessions."
+      capsule="Performance"
       actions={
         <CTAButton asChild>
           <Link href="/sports">Start Training</Link>
         </CTAButton>
       }
+      showHeader={false}
     >
       {({ user, profile }) => <ProgressAnalyticsView user={user} profile={profile} />}
     </AppShell>

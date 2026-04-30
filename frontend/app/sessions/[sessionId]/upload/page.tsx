@@ -33,6 +33,30 @@ import type {
   UploadProcessingResponse
 } from "../../../../types/sessions";
 
+function formatCaptureIssue(issue: string) {
+  switch (issue) {
+    case "POSE_EXTRACTION_FAILURE":
+      return "Pose extraction failed. Try MP4 format, better lighting, or check that the full body is visible.";
+    case "VIDEO_UNREADABLE":
+      return "The uploaded video could not be read. Try exporting the clip again in MP4 or MOV format.";
+    case "ZERO_FRAMES":
+      return "No readable frames were found in the uploaded video.";
+    case "ZERO_VALID_FRAMES":
+      return "The clip did not contain enough full-body frames for pose detection.";
+    case "PERCEPTION_RUNTIME_UNAVAILABLE":
+      return "The pose extraction service is temporarily unavailable.";
+    case "MEDIAPIPE_RUNTIME_UNAVAILABLE":
+      return "Pose detection could not be initialized for this upload.";
+    case "OPENCV_RUNTIME_UNAVAILABLE":
+      return "Video decoding is unavailable on the server right now.";
+    default:
+      return issue
+        .replace(/^MISSING_SYSTEM_LIBRARY:/, "Missing system library: ")
+        .replace(/^POSE_EXTRACTION_EXCEPTION:/, "Pose extraction exception: ")
+        .replaceAll("_", " ");
+  }
+}
+
 function UploadSessionContent({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [artifactSnapshot, setArtifactSnapshot] =
@@ -53,6 +77,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     analysisError,
     analysisState,
     analysisSteps,
+    analysisWarnings,
+    currentStep,
     resetAnalysis,
     runAnalysis
   } = useSessionAnalysis(sessionId, (artifacts) => {
@@ -120,7 +146,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     ...(captureValidation && !captureValidation.is_valid
       ? [captureValidation.message]
       : []),
-    ...(poseSequenceSummary?.diagnostic_flags ?? [])
+    ...(poseSequenceSummary?.diagnostic_flags.map(formatCaptureIssue) ?? [])
   ];
 
   const canUpload = session?.input_type === "UPLOAD";
@@ -489,6 +515,8 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
           analysisError={analysisError}
           analysisState={analysisState}
           analysisSteps={analysisSteps}
+          analysisWarnings={analysisWarnings}
+          currentStep={currentStep}
         />
       </div>
 
@@ -520,6 +548,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         artifacts={artifactSnapshot}
         analysisState={analysisState}
         analysisError={analysisError}
+        analysisWarnings={analysisWarnings}
       />
     </div>
   );

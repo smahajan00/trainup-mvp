@@ -8,6 +8,7 @@ import {
 import type {
   AnalysisProgressStep,
   AnalysisState,
+  SessionAnalysisWarning,
   SessionArtifactsResponse,
   SessionAnalysisStep
 } from "../../../types/sessions";
@@ -16,6 +17,8 @@ function buildAnalysisSteps(): AnalysisProgressStep[] {
   return SESSION_ANALYSIS_PIPELINE.map((step) => ({
     id: step.id,
     label: step.label,
+    required: step.required,
+    dependencyNotes: step.dependencyNotes,
     status: "PENDING"
   }));
 }
@@ -23,33 +26,73 @@ function buildAnalysisSteps(): AnalysisProgressStep[] {
 function updateStepStatus(
   steps: AnalysisProgressStep[],
   stepId: SessionAnalysisStep,
-  status: AnalysisProgressStep["status"]
+  status: AnalysisProgressStep["status"],
+  warning?: SessionAnalysisWarning
 ) : AnalysisProgressStep[] {
   return steps.map((step) =>
     step.id === stepId
-      ? ({ ...step, status } satisfies AnalysisProgressStep)
+      ? ({
+          ...step,
+          status,
+          warning: warning?.message ?? null
+        } satisfies AnalysisProgressStep)
       : step.status === "RUNNING" && status === "RUNNING"
         ? ({ ...step, status: "COMPLETED" } satisfies AnalysisProgressStep)
         : step
   );
 }
 
-function deriveAnalysisFailureMessage(artifacts: SessionArtifactsResponse) {
-  const evaluationStatus = artifacts.evaluation_result?.status;
+function derivePoseFailureMessage(artifacts?: SessionArtifactsResponse) {
+  const poseSequence = artifacts?.pose_sequence;
+  const poseFlags = poseSequence?.diagnostic_flags ?? [];
 
-  if (!evaluationStatus || evaluationStatus !== "COMPLETED") {
-    return "Analysis failed. Try again.";
-  }
-
-  if (artifacts.feedback_result?.status === "FAILED") {
-    return "Analysis failed. Try again.";
-  }
-
-  if (artifacts.llm_feedback_result?.status === "FAILED") {
-    return "Analysis failed. Try again.";
+  if (
+    poseSequence &&
+    (poseSequence.status === "FAILED" || poseSequence.status === "INSUFFICIENT_DATA")
+  ) {
+    if (
+      poseFlags.includes("POSE_EXTRACTION_FAILURE") ||
+      poseFlags.includes("VIDEO_UNREADABLE") ||
+      poseFlags.includes("ZERO_FRAMES") ||
+      poseFlags.includes("ZERO_VALID_FRAMES")
+    ) {
+      return "Pose extraction failed. Try MP4 format, better lighting, or check that the full body is visible.";
+    }
   }
 
   return null;
+}
+
+function getRequiredFailureMessage(
+  failedRequiredStep: string | undefined,
+  warnings: SessionAnalysisWarning[],
+  artifacts?: SessionArtifactsResponse
+) {
+  const poseFailureMessage = derivePoseFailureMessage(artifacts);
+  if (poseFailureMessage) {
+    return poseFailureMessage;
+  }
+
+  const matchingWarning =
+    warnings.find((warning) => warning.step === failedRequiredStep) ??
+    warnings[warnings.length - 1] ??
+    null;
+
+  if (failedRequiredStep === "evaluation") {
+    return (
+      matchingWarning?.message ??
+      "Analysis could not be completed because evaluation failed."
+    );
+  }
+
+  if (failedRequiredStep === "deterministic_feedback") {
+    return (
+      matchingWarning?.message ??
+      "Analysis could not be completed because feedback failed."
+    );
+  }
+
+  return matchingWarning?.message ?? "Analysis failed. Try again.";
 }
 
 export function useSessionAnalysis(
@@ -58,6 +101,11 @@ export function useSessionAnalysis(
 ) {
   const [analysisState, setAnalysisState] = useState<AnalysisState>("IDLE");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisWarnings, setAnalysisWarnings] = useState<SessionAnalysisWarning[]>(
+    []
+  );
+  const [currentStep, setCurrentStep] = useState<SessionAnalysisStep | null>(null);
+  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [analysisSteps, setAnalysisSteps] = useState<AnalysisProgressStep[]>(
     buildAnalysisSteps
   );
@@ -65,31 +113,66 @@ export function useSessionAnalysis(
   async function runAnalysis() {
     setAnalysisState("RUNNING");
     setAnalysisError(null);
+    setAnalysisWarnings([]);
+    setCurrentStep(null);
+    setCompletedSteps([]);
     setAnalysisSteps(buildAnalysisSteps());
 
     try {
       const result = await runSessionAnalysisPipeline(sessionId, {
-        onProgress: ({ stepId, status }) => {
+        onProgress: ({ stepId, status, warning }) => {
+          setCurrentStep(status === "RUNNING" ? stepId : null);
+          if (status === "COMPLETED") {
+            setCompletedSteps((currentSteps) =>
+              currentSteps.includes(stepId)
+                ? currentSteps
+                : [...currentSteps, stepId]
+            );
+          }
+
+          if (warning) {
+            setAnalysisWarnings((currentWarnings) => [
+              ...currentWarnings.filter(
+                (currentWarning) =>
+                  currentWarning.step !== warning.step ||
+                  currentWarning.message !== warning.message
+              ),
+              warning
+            ]);
+          }
+
           setAnalysisSteps((currentSteps) =>
-            updateStepStatus(currentSteps, stepId, status)
+            updateStepStatus(currentSteps, stepId, status, warning)
           );
         }
       });
 
-      onComplete(result.artifacts);
+      if (result.artifacts) {
+        onComplete(result.artifacts);
+      }
 
-      const failureMessage = deriveAnalysisFailureMessage(result.artifacts);
-      if (failureMessage) {
+      setCurrentStep(null);
+      setCompletedSteps(result.completedSteps);
+      setAnalysisWarnings(result.warnings);
+
+      if (result.status === "FAILED") {
         setAnalysisState("FAILED");
-        setAnalysisError(failureMessage);
+        setAnalysisError(
+          getRequiredFailureMessage(
+            result.failedRequiredStep,
+            result.warnings,
+            result.artifacts
+          )
+        );
         return result;
       }
 
-      setAnalysisState("COMPLETED");
+      setAnalysisState(result.status);
       return result;
     } catch (error) {
       setAnalysisState("FAILED");
       setAnalysisError(getErrorMessage(error));
+      setCurrentStep(null);
       return null;
     }
   }
@@ -97,6 +180,9 @@ export function useSessionAnalysis(
   function resetAnalysis() {
     setAnalysisState("IDLE");
     setAnalysisError(null);
+    setAnalysisWarnings([]);
+    setCurrentStep(null);
+    setCompletedSteps([]);
     setAnalysisSteps(buildAnalysisSteps());
   }
 
@@ -104,6 +190,9 @@ export function useSessionAnalysis(
     analysisError,
     analysisState,
     analysisSteps,
+    analysisWarnings,
+    completedSteps,
+    currentStep,
     resetAnalysis,
     runAnalysis
   };

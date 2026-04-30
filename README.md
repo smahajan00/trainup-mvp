@@ -96,6 +96,27 @@ Services:
 - Health check: `http://localhost:8000/api/health`
 - PostgreSQL: `localhost:5432`
 
+### Synthetic Demo Athlete
+
+For supervisor demos, seed a clearly marked synthetic athlete history after the
+backend is running:
+
+```bash
+docker compose exec backend python scripts/seed_demo_athlete.py
+```
+
+Demo login:
+
+```text
+email: demo.athlete@trainup.local
+password: DemoPass123!
+```
+
+The script resets and recreates only `demo.athlete@trainup.local`. It creates
+synthetic sessions, summaries, progress records, feedback, and analysis
+artifacts for dashboard demonstrations. This is demo data only, not real athlete
+data, validation data, or user-study data.
+
 ### Local Development
 
 Frontend:

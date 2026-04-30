@@ -537,5 +537,5 @@ function buildTemporalSentence(temporalBehavior: string) {
     return "Your timing is generally stable across recent sessions.";
   }
 
-  return "Movement timing remains one of the recurring themes in recent sessions.";
+  return "Timing remains one of the recurring themes in recent sessions.";
 }

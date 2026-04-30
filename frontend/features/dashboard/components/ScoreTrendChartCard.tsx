@@ -24,7 +24,7 @@ export function ScoreTrendChartCard({ points }: ScoreTrendChartCardProps) {
   const latestPoint = points.find((point) => point.isLatest) ?? null;
 
   return (
-    <InfoCard>
+    <InfoCard className="min-w-0">
       <SectionTitle
         eyebrow="Trend"
         title="Performance Trend"
@@ -36,7 +36,7 @@ export function ScoreTrendChartCard({ points }: ScoreTrendChartCardProps) {
           Log more sessions to unlock your trendline.
         </div>
       ) : (
-        <div className="mt-6 h-[320px]">
+        <div className="mt-6 h-[300px] min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
               <defs>

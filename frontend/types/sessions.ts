@@ -6,27 +6,41 @@ export type SessionStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 export type CameraView = "FRONTAL" | "LEFT_SAGITTAL" | "RIGHT_SAGITTAL";
 export type DominantSide = "AUTO" | "LEFT" | "RIGHT";
 export type StoredDominantSide = Exclude<DominantSide, "AUTO">;
-export type AnalysisState = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED";
+export type SessionAnalysisPipelineStatus =
+  | "COMPLETED"
+  | "COMPLETED_WITH_WARNINGS"
+  | "FAILED";
+export type AnalysisState = "IDLE" | "RUNNING" | SessionAnalysisPipelineStatus;
 export type AnalysisStepStatus =
   | "PENDING"
   | "RUNNING"
   | "COMPLETED"
+  | "WARNING"
   | "FAILED";
 export type SessionAnalysisStep =
   | "evaluation"
   | "fuzzy"
   | "it2"
+  | "deterministic_feedback"
   | "pedagogy"
   | "ontology"
   | "choquet"
   | "temporal"
-  | "feedback"
   | "llm";
+
+export type SessionAnalysisWarning = {
+  step: string;
+  message: string;
+  diagnosticFlags: string[];
+};
 
 export type AnalysisProgressStep = {
   id: SessionAnalysisStep;
   label: string;
   status: AnalysisStepStatus;
+  required: boolean;
+  dependencyNotes?: string;
+  warning?: string | null;
 };
 
 export type TrainingSession = {

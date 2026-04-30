@@ -27,21 +27,26 @@ class MediaPipePoseBackend:
         try:
             import cv2  # noqa: F401
             import mediapipe as mp
-        except ModuleNotFoundError as exc:
+        except (ModuleNotFoundError, ImportError) as exc:
             raise MediaPipeUnavailableError(
-                "MediaPipe Pose dependencies are not installed."
+                f"MediaPipe Pose dependencies are unavailable: {exc}"
             ) from exc
 
         pose_module = self._resolve_pose_module(mp)
         self._mp_pose = pose_module
-        self._pose = self._mp_pose.Pose(
-            static_image_mode=False,
-            model_complexity=1,
-            smooth_landmarks=False,
-            enable_segmentation=False,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
+        try:
+            self._pose = self._mp_pose.Pose(
+                static_image_mode=False,
+                model_complexity=1,
+                smooth_landmarks=False,
+                enable_segmentation=False,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+        except Exception as exc:  # pragma: no cover - runtime backend guard
+            raise MediaPipeUnavailableError(
+                f"MediaPipe Pose initialization failed: {exc}"
+            ) from exc
         self._landmark_names = [
             landmark.name.lower() for landmark in self._mp_pose.PoseLandmark
         ]

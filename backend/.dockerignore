@@ -2,4 +2,9 @@ __pycache__
 .pytest_cache
 .venv
 venv
-
+.venv-py312
+.venv-py313-backup-20260421
+.mypy_cache
+.ruff_cache
+.coverage
+.DS_Store

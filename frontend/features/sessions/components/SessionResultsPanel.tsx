@@ -11,6 +11,7 @@ import type {
   DeterministicEvaluationIssue,
   IT2FuzzyMetricInterpretation,
   LLMEnhancedFeedbackItem,
+  SessionAnalysisWarning,
   SessionArtifactsResponse,
   TrainingSession
 } from "../../../types/sessions";
@@ -39,6 +40,7 @@ type SessionResultsPanelProps = {
   artifacts: SessionArtifactsResponse | null;
   analysisState: AnalysisState;
   analysisError?: string | null;
+  analysisWarnings?: SessionAnalysisWarning[];
 };
 
 function buildFallbackWhyText(
@@ -129,7 +131,8 @@ export function SessionResultsPanel({
   session,
   artifacts,
   analysisState,
-  analysisError
+  analysisError,
+  analysisWarnings = []
 }: SessionResultsPanelProps) {
   const evaluationResult = artifacts?.evaluation_result ?? null;
   const feedbackResult = artifacts?.feedback_result ?? null;
@@ -142,6 +145,24 @@ export function SessionResultsPanel({
   const choquetResult = artifacts?.choquet_aggregation_result ?? null;
   const temporalResult = artifacts?.temporal_modeling_result ?? null;
   const sessionSummary = artifacts?.session_summary ?? null;
+
+  if (analysisState === "FAILED") {
+    return (
+      <InfoCard>
+        <SectionTitle
+          eyebrow="Results"
+          title="Performance Board"
+          description="Analysis could not be completed because evaluation/feedback failed."
+        />
+        <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            <span>{analysisError ?? "Analysis failed. Try again."}</span>
+          </div>
+        </div>
+      </InfoCard>
+    );
+  }
 
   const hasRenderableResults = Boolean(
     evaluationResult?.status === "COMPLETED" ||
@@ -160,15 +181,11 @@ export function SessionResultsPanel({
           description={
             analysisState === "RUNNING"
               ? "Your coaching board will appear here as soon as analysis finishes."
-              : analysisState === "FAILED"
-                ? "Analysis failed. Try again."
-                : "Analyze your session to unlock coaching cues."
+              : "Analyze your session to unlock coaching cues."
           }
         />
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-7 text-white/80">
-          {analysisState === "FAILED"
-            ? analysisError ?? "Analysis failed. Try again."
-            : analysisState === "RUNNING"
+          {analysisState === "RUNNING"
               ? "TrainUp is processing movement quality, coaching priorities, and advanced reasoning."
               : "Analyze your session to unlock coaching cues."}
         </div>
@@ -308,9 +325,23 @@ export function SessionResultsPanel({
 
   return (
     <div className="space-y-8">
-      {analysisState === "FAILED" ? (
+      {analysisState === "COMPLETED_WITH_WARNINGS" ? (
         <div className="rounded-[1.5rem] border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-sm leading-7 text-amber-100">
-          Showing the latest completed analysis. The most recent run did not finish cleanly.
+          <p>
+            Some advanced insights could not be generated, but your core coaching feedback is ready.
+          </p>
+          {analysisWarnings.length ? (
+            <ul className="mt-3 space-y-2">
+              {analysisWarnings.map((warning) => (
+                <li key={`${warning.step}-${warning.message}`}>
+                  {warning.message}
+                  {warning.diagnosticFlags.length
+                    ? ` (${warning.diagnosticFlags.join(", ")})`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 
@@ -335,7 +366,8 @@ export function SessionResultsPanel({
             description="Clear guidance on what happened, why it happened, what to fix, and what to do next."
           />
 
-          {llmFeedbackResult?.status === "COMPLETED" ? null : (
+          {llmFeedbackResult?.status === "COMPLETED" &&
+          !llmFeedbackResult.fallback_used ? null : (
             <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm leading-7 text-amber-100">
               LLM enhancement is unavailable, showing deterministic coaching.
             </div>
@@ -421,15 +453,6 @@ export function SessionResultsPanel({
           <p className="mt-3">
             {pedagogyResult.learning_objective}
           </p>
-        </div>
-      ) : null}
-
-      {analysisError && analysisState === "FAILED" ? (
-        <div className="rounded-[1.5rem] border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm leading-7 text-rose-100">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            <span>{analysisError}</span>
-          </div>
         </div>
       ) : null}
     </div>

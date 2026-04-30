@@ -6,6 +6,7 @@ from uuid import uuid4
 from app.engines.perception_interface.mediapipe_pose_backend import (
     ExtractedPoseFrame,
     ExtractedPoseLandmark,
+    MediaPipeUnavailableError,
 )
 from app.engines.perception_interface.perception_service import PerceptionService
 
@@ -166,3 +167,40 @@ def test_extract_pose_sequence_handles_zero_valid_frames(monkeypatch) -> None:
     assert result.valid_frame_count == 0
     assert result.diagnostic_flags == ["ZERO_VALID_FRAMES"]
     assert [frame.frame_valid for frame in result.sequence_data] == [False, False]
+
+
+def test_process_uploaded_file_surfaces_runtime_dependency_details(monkeypatch) -> None:
+    service = PerceptionService()
+
+    monkeypatch.setattr(
+        service,
+        "_temporary_video_file",
+        lambda **_: __import__("contextlib").nullcontext(Path("/tmp/fake.mov")),
+    )
+    monkeypatch.setattr(
+        service,
+        "_extract_pose_sequence_from_video_file",
+        lambda **_: (_ for _ in ()).throw(
+            MediaPipeUnavailableError(
+                "OpenCV runtime dependencies are unavailable: libxcb.so.1 missing"
+            )
+        ),
+    )
+
+    result = service.process_uploaded_file(
+        session_id=uuid4(),
+        drill_id=uuid4(),
+        file_name="test.mov",
+        content_type="video/quicktime",
+        file_size_bytes=1024,
+        tracked_joints=[],
+        file_bytes=b"test",
+    )
+
+    assert result.status == "FAILED"
+    assert result.frame_count == 0
+    assert result.valid_frame_count == 0
+    assert "POSE_EXTRACTION_FAILURE" in result.diagnostic_flags
+    assert "PERCEPTION_RUNTIME_UNAVAILABLE" in result.diagnostic_flags
+    assert "OPENCV_RUNTIME_UNAVAILABLE" in result.diagnostic_flags
+    assert "MISSING_SYSTEM_LIBRARY:LIBXCB_SO_1" in result.diagnostic_flags

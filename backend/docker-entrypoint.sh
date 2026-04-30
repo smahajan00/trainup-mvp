@@ -36,5 +36,8 @@ PY
 echo "Running Alembic migrations..."
 alembic upgrade head
 
+echo "Refreshing seed data..."
+python -m app.scripts.seed_data
+
 echo "Starting backend server..."
 exec "$@"

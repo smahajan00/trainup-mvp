@@ -69,6 +69,42 @@ def test_login_success(client) -> None:
     assert payload["user"]["email"] == "taylor@example.com"
 
 
+def test_demo_local_email_login_is_allowed(client) -> None:
+    register_response = client.post(
+        "/api/auth/register",
+        json={
+            "full_name": "Demo Athlete",
+            "email": " demo.athlete@trainup.local ",
+            "password": "DemoPass123!",
+        },
+    )
+    assert register_response.status_code == 201
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "email": "DEMO.ATHLETE@TRAINUP.LOCAL",
+            "password": "DemoPass123!",
+        },
+    )
+
+    assert login_response.status_code == 200
+    assert login_response.json()["user"]["email"] == "demo.athlete@trainup.local"
+
+
+def test_non_demo_local_email_rejected(client) -> None:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "full_name": "Local User",
+            "email": "local.user@trainup.local",
+            "password": "strongpass123",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_login_invalid_credentials_rejected(client) -> None:
     register_response = client.post(
         "/api/auth/register",

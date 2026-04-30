@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ VISIBILITY_THRESHOLD = 0.50
 EMA_ALPHA = 0.35
 POSE_MODEL_NAME = "mediapipe_pose"
 PREPROCESSING_VERSION = "phase1_v0_1_0"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -89,19 +91,38 @@ class PerceptionService:
                     session_id=session_id,
                     video_path=video_path,
                 )
-        except MediaPipeUnavailableError:
-            return self._build_pose_sequence(
-                session_id=session_id,
-                frames=[],
-                status="FAILED",
-                diagnostic_flags=["MEDIAPIPE_UNAVAILABLE"],
+        except MediaPipeUnavailableError as exc:
+            logger.exception(
+                "Pose extraction runtime unavailable",
+                extra={
+                    "session_id": str(session_id),
+                    "file_name": file_name,
+                    "content_type": content_type,
+                },
             )
-        except Exception:
             return self._build_pose_sequence(
                 session_id=session_id,
                 frames=[],
                 status="FAILED",
-                diagnostic_flags=["POSE_EXTRACTION_FAILURE"],
+                diagnostic_flags=self._build_failure_diagnostic_flags(
+                    exc,
+                    runtime_unavailable=True,
+                ),
+            )
+        except Exception as exc:
+            logger.exception(
+                "Pose extraction failed",
+                extra={
+                    "session_id": str(session_id),
+                    "file_name": file_name,
+                    "content_type": content_type,
+                },
+            )
+            return self._build_pose_sequence(
+                session_id=session_id,
+                frames=[],
+                status="FAILED",
+                diagnostic_flags=self._build_failure_diagnostic_flags(exc),
             )
 
     def accept_frame_batch(
@@ -321,10 +342,42 @@ class PerceptionService:
     def _import_cv2() -> Any:
         try:
             import cv2
-        except ModuleNotFoundError as exc:
-            raise MediaPipeUnavailableError("OpenCV is not installed.") from exc
+        except (ModuleNotFoundError, ImportError) as exc:
+            raise MediaPipeUnavailableError(
+                f"OpenCV runtime dependencies are unavailable: {exc}"
+            ) from exc
         return cv2
 
     @staticmethod
     def _build_pose_backend() -> MediaPipePoseBackend:
         return MediaPipePoseBackend()
+
+    @staticmethod
+    def _build_failure_diagnostic_flags(
+        exc: Exception,
+        *,
+        runtime_unavailable: bool = False,
+    ) -> list[str]:
+        message = str(exc)
+        upper_message = message.upper()
+        diagnostic_flags = ["POSE_EXTRACTION_FAILURE"]
+
+        if runtime_unavailable:
+            diagnostic_flags.append("PERCEPTION_RUNTIME_UNAVAILABLE")
+
+        if "OPENCV" in upper_message:
+            diagnostic_flags.append("OPENCV_RUNTIME_UNAVAILABLE")
+
+        if "MEDIAPIPE" in upper_message or "POSE" in upper_message:
+            diagnostic_flags.append("MEDIAPIPE_RUNTIME_UNAVAILABLE")
+
+        for library_name in ("LIBXCB.SO.1", "LIBGL.SO.1", "LIBGTHREAD-2.0.SO.0"):
+            if library_name in upper_message:
+                diagnostic_flags.append(
+                    f"MISSING_SYSTEM_LIBRARY:{library_name.replace('.', '_')}"
+                )
+
+        diagnostic_flags.append(
+            f"POSE_EXTRACTION_EXCEPTION:{exc.__class__.__name__.upper()}"
+        )
+        return diagnostic_flags

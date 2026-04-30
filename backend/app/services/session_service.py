@@ -234,6 +234,9 @@ class SessionService:
                         ),
                     },
                 )
+                if validation.is_valid:
+                    self._clear_upload_attempt_outputs(session_id=session.id)
+                    self.db.commit()
                 return UploadProcessingResponse(
                     session_id=session.id,
                     status=session.status,
@@ -454,6 +457,11 @@ class SessionService:
             self.db.commit()
             return result
 
+        self._log_evaluation_pose_trace(
+            session=session,
+            pose_sequence=pose_sequence,
+        )
+
         if (
             pose_sequence.status != "COMPLETED"
             or pose_sequence.frame_count <= 0
@@ -545,6 +553,10 @@ class SessionService:
             requested_dominant_side=requested_dominant_side,
             dominant_side_confidence=dominant_side_confidence,
             dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
+        )
+        self._log_evaluation_result_trace(
+            session=session,
+            computation=computation,
         )
         metric_names = {
             metric_result.metric_name
@@ -1415,6 +1427,103 @@ class SessionService:
             diagnostic_flags=pose_sequence.diagnostic_flags,
         )
 
+    @staticmethod
+    def _log_evaluation_pose_trace(
+        *,
+        session: TrainingSession,
+        pose_sequence: PoseSequenceResponse,
+    ) -> None:
+        first_frame = (
+            pose_sequence.sequence_data[0]
+            if pose_sequence.sequence_data
+            else None
+        )
+        first_frame_keypoints = (
+            {
+                name: {
+                    "x": landmark.x,
+                    "y": landmark.y,
+                    "visibility": landmark.visibility,
+                }
+                for name, landmark in sorted(first_frame.landmarks.items())
+            }
+            if first_frame is not None
+            else {}
+        )
+
+        logger.warning(
+            "TEMP_EVALUATION_TRACE pose_loaded %s",
+            {
+                "session_id": str(session.id),
+                "pose_session_id": str(pose_sequence.session_id),
+                "drill_id": str(session.drill_id),
+                "drill_name": session.drill.drill_name,
+                "frame_count": pose_sequence.frame_count,
+                "valid_frame_count": pose_sequence.valid_frame_count,
+                "status": pose_sequence.status,
+                "diagnostic_flags": pose_sequence.diagnostic_flags,
+                "first_frame_index": (
+                    first_frame.frame_index if first_frame is not None else None
+                ),
+                "first_frame_keypoints": first_frame_keypoints,
+            },
+        )
+
+    @staticmethod
+    def _log_evaluation_result_trace(
+        *,
+        session: TrainingSession,
+        computation,
+    ) -> None:
+        result = computation.result
+        computed_metrics = [
+            {
+                "phase_id": metric.phase_id,
+                "metric_name": metric.metric_name,
+                "raw_value": metric.raw_value,
+                "normalized_score": metric.normalized_score,
+                "severity_level": metric.severity_level.value,
+                "valid_frame_count": metric.valid_frame_count,
+                "diagnostic_flags": metric.diagnostic_flags,
+            }
+            for metric in computation.metric_results
+        ]
+        phase_results = [
+            {
+                "phase_id": phase.phase_id,
+                "phase_score": phase.phase_score,
+                "phase_severity": phase.phase_severity.value,
+                "frame_range": {
+                    "start_frame_index": phase.frame_range.start_frame_index,
+                    "end_frame_index": phase.frame_range.end_frame_index,
+                },
+                "metric_count": len(phase.metric_results),
+                "issue_count": len(phase.detected_issues),
+            }
+            for phase in result.phase_results
+        ]
+
+        logger.warning(
+            "TEMP_EVALUATION_TRACE result_computed %s",
+            {
+                "session_id": str(session.id),
+                "result_session_id": str(result.session_id),
+                "status": result.status,
+                "overall_score": result.overall_score,
+                "overall_severity": result.overall_severity.value,
+                "computed_metrics": computed_metrics,
+                "phase_results": phase_results,
+                "diagnostic_flags": result.diagnostic_flags,
+            },
+        )
+
+    def _clear_upload_attempt_outputs(self, *, session_id: UUID) -> None:
+        self.artifacts.delete_by_session_and_types(
+            session_id=session_id,
+            artifact_types=[POSE_SEQUENCE_ARTIFACT_TYPE],
+        )
+        self._clear_phase0_outputs(session_id=session_id)
+
     def _clear_phase0_outputs(self, *, session_id: UUID) -> None:
         self.artifacts.delete_by_session_and_types(
             session_id=session_id,
@@ -1797,7 +1906,10 @@ class SessionService:
             return "Pose sequence saved. Ready for deterministic evaluation."
         if pose_sequence.status == "INSUFFICIENT_DATA":
             return "Pose sequence saved, but the clip needs more usable pose data."
-        return "Pose extraction failed. Upload a different clip and try again."
+        return (
+            "Pose extraction failed. Try MP4 format, better lighting, or check that "
+            "the full body is visible."
+        )
 
     @staticmethod
     def _build_session_summary_response(summary: SessionSummary) -> SessionSummaryResponse:

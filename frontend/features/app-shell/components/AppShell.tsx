@@ -30,6 +30,7 @@ type AppShellProps = {
   description: string;
   capsule?: string;
   actions?: React.ReactNode;
+  showHeader?: boolean;
   children: (session: ReturnType<typeof useAppSession>) => React.ReactNode;
 };
 
@@ -57,6 +58,7 @@ export function AppShell({
   description,
   capsule,
   actions,
+  showHeader = true,
   children
 }: AppShellProps) {
   const pathname = usePathname();
@@ -204,17 +206,19 @@ export function AppShell({
           </div>
 
           <div className="mt-4 space-y-6 lg:mt-0">
-            <PageHeader
-              eyebrow={eyebrow}
-              title={title}
-              description={description}
-              capsule={
-                session.profile
-                  ? `${session.profile.sport_name} · ${formatEnumLabel(session.profile.skill_level)}`
-                  : capsule
-              }
-              actions={actions}
-            />
+            {showHeader ? (
+              <PageHeader
+                eyebrow={eyebrow}
+                title={title}
+                description={description}
+                capsule={
+                  session.profile
+                    ? `${session.profile.sport_name} · ${formatEnumLabel(session.profile.skill_level)}`
+                    : capsule
+                }
+                actions={actions}
+              />
+            ) : null}
 
             {session.isLoading ? (
               <div className="space-y-6">

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -678,7 +678,10 @@ def test_upload_handles_unreadable_video(client, db_session, monkeypatch) -> Non
     assert payload["upload_received"] is True
     assert payload["pose_sequence"]["status"] == "FAILED"
     assert payload["pose_sequence"]["diagnostic_flags"] == ["VIDEO_UNREADABLE"]
-    assert payload["next_step"] == "Pose extraction failed. Upload a different clip and try again."
+    assert (
+        payload["next_step"]
+        == "Pose extraction failed. Try MP4 format, better lighting, or check that the full body is visible."
+    )
 
 
 def test_upload_handles_zero_valid_frames(client, db_session, monkeypatch) -> None:
@@ -851,6 +854,91 @@ def test_upload_capture_validation_rejects_incompatible_view(client, db_session)
     assert payload["capture_validation"]["reason_code"] == "CAPTURE_VIEW_MISMATCH"
     assert payload["capture_validation"]["expected_view"] == "RIGHT_SAGITTAL"
     assert payload["capture_validation"]["actual_view"] == "FRONTAL"
+
+
+def test_upload_capture_validation_clears_stale_analysis_artifacts(
+    client,
+    db_session,
+    monkeypatch,
+) -> None:
+    token = _register_user(client, full_name="Nia Ross", email="staleupload@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    upload_session = _create_session(
+        client,
+        token,
+        drill=drill,
+        input_type="UPLOAD",
+        camera_view="FRONTAL",
+    )
+    session_id = UUID(upload_session["id"])
+    stale_pose_sequence = _build_pose_sequence(upload_session["id"])
+    db_session.add_all(
+        [
+            SessionArtifact(
+                session_id=session_id,
+                artifact_type="pose_sequence",
+                payload_json=stale_pose_sequence.model_dump(
+                    mode="json",
+                    exclude={"created_at"},
+                ),
+            ),
+            SessionArtifact(
+                session_id=session_id,
+                artifact_type="evaluation_result",
+                payload_json={"status": "COMPLETED", "session_id": upload_session["id"]},
+            ),
+            SessionArtifact(
+                session_id=session_id,
+                artifact_type="feedback_result",
+                payload_json={"status": "COMPLETED", "session_id": upload_session["id"]},
+            ),
+        ]
+    )
+    db_session.commit()
+    extractor_called = False
+
+    def fake_process_uploaded_file(self, **kwargs):
+        nonlocal extractor_called
+        extractor_called = True
+        return _build_pose_sequence(kwargs["session_id"])
+
+    monkeypatch.setattr(
+        PerceptionService,
+        "process_uploaded_file",
+        fake_process_uploaded_file,
+    )
+
+    response = client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("squat.mp4", b"1" * 4096, "video/mp4")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert extractor_called is False
+    payload = response.json()
+    assert payload["upload_received"] is False
+    assert payload["capture_validation"]["reason_code"] == "CAPTURE_VIEW_MISMATCH"
+
+    db_session.expire_all()
+    stored_artifacts = list(
+        db_session.scalars(
+            select(SessionArtifact).where(SessionArtifact.session_id == session_id)
+        )
+    )
+    assert stored_artifacts == []
+
+    artifacts_response = client.get(
+        f"/api/sessions/{upload_session['id']}/artifacts",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert artifacts_response.status_code == 200
+    artifacts_payload = artifacts_response.json()
+    assert artifacts_payload["artifacts"] == []
+    assert artifacts_payload["pose_sequence"] is None
+    assert artifacts_payload["evaluation_result"] is None
+    assert artifacts_payload["feedback_result"] is None
 
 
 def test_capture_validation_rejects_before_pose_extraction(

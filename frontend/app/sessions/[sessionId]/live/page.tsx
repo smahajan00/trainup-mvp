@@ -58,6 +58,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
     analysisError,
     analysisState,
     analysisSteps,
+    analysisWarnings,
+    currentStep,
     resetAnalysis,
     runAnalysis
   } = useSessionAnalysis(sessionId, (artifacts) => {
@@ -519,6 +521,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
           analysisError={analysisError}
           analysisState={analysisState}
           analysisSteps={analysisSteps}
+          analysisWarnings={analysisWarnings}
+          currentStep={currentStep}
         />
       </div>
 
@@ -527,6 +531,7 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         artifacts={artifactSnapshot}
         analysisState={analysisState}
         analysisError={analysisError}
+        analysisWarnings={analysisWarnings}
       />
     </div>
   );
