@@ -78,6 +78,30 @@ class PoseFrameResponse(APIBaseModel):
 PoseSequenceStatus = Literal["COMPLETED", "FAILED", "INSUFFICIENT_DATA"]
 
 
+class PoseProcessingCacheKey(APIBaseModel):
+    file_hash: str
+    target_pose_fps: float
+    max_inference_width: int
+    preprocessing_version: str
+    pose_model: str
+
+
+class PoseProcessingMetadata(APIBaseModel):
+    original_fps: float | None = None
+    target_pose_fps: float
+    sampling_stride: int = Field(ge=1)
+    original_frame_count: int = Field(ge=0)
+    processed_frame_count: int = Field(ge=0)
+    valid_frame_count: int = Field(ge=0)
+    original_width: int | None = Field(default=None, ge=0)
+    original_height: int | None = Field(default=None, ge=0)
+    inference_width: int | None = Field(default=None, ge=0)
+    inference_height: int | None = Field(default=None, ge=0)
+    cache_key: PoseProcessingCacheKey | None = None
+    cache_hit: bool = False
+    processing_time_ms: float | None = Field(default=None, ge=0)
+
+
 class PoseSequenceSummaryResponse(APIBaseModel):
     session_id: UUID
     pose_model: Literal["mediapipe_pose"]
@@ -86,6 +110,7 @@ class PoseSequenceSummaryResponse(APIBaseModel):
     valid_frame_count: int = Field(ge=0)
     status: PoseSequenceStatus
     diagnostic_flags: list[str] = Field(default_factory=list)
+    processing_metadata: PoseProcessingMetadata | None = None
 
 
 class PoseSequenceResponse(PoseSequenceSummaryResponse):

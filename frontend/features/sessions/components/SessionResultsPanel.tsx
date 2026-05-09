@@ -41,6 +41,7 @@ type SessionResultsPanelProps = {
   analysisState: AnalysisState;
   analysisError?: string | null;
   analysisWarnings?: SessionAnalysisWarning[];
+  showAnalysisWarningBanner?: boolean;
 };
 
 function buildFallbackWhyText(
@@ -132,7 +133,8 @@ export function SessionResultsPanel({
   artifacts,
   analysisState,
   analysisError,
-  analysisWarnings = []
+  analysisWarnings = [],
+  showAnalysisWarningBanner = true
 }: SessionResultsPanelProps) {
   const evaluationResult = artifacts?.evaluation_result ?? null;
   const feedbackResult = artifacts?.feedback_result ?? null;
@@ -151,7 +153,7 @@ export function SessionResultsPanel({
       <InfoCard>
         <SectionTitle
           eyebrow="Results"
-          title="Performance Board"
+          title="Session Results"
           description="Analysis could not be completed because evaluation/feedback failed."
         />
         <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
@@ -177,17 +179,22 @@ export function SessionResultsPanel({
       <InfoCard>
         <SectionTitle
           eyebrow="Results"
-          title="Performance Board"
+          title="Session Results"
           description={
             analysisState === "RUNNING"
-              ? "Your coaching board will appear here as soon as analysis finishes."
+              ? "Your session results will appear here as soon as analysis finishes."
               : "Analyze your session to unlock coaching cues."
           }
         />
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm leading-7 text-white/80">
-          {analysisState === "RUNNING"
-              ? "TrainUp is processing movement quality, coaching priorities, and advanced reasoning."
-              : "Analyze your session to unlock coaching cues."}
+        <div className="mt-6 flex min-h-[150px] flex-col items-center justify-center rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.08),_transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.018))] px-6 py-7 text-center">
+          <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/45">
+            {analysisState === "RUNNING" ? "Processing" : "Locked"}
+          </div>
+          <p className="mt-4 max-w-xl text-sm leading-7 text-white/75">
+            {analysisState === "RUNNING"
+                ? "TrainUp is processing movement quality, coaching priorities, and advanced reasoning."
+                : "Complete performance analysis to unlock coaching feedback and movement results."}
+          </p>
         </div>
       </InfoCard>
     );
@@ -325,7 +332,7 @@ export function SessionResultsPanel({
 
   return (
     <div className="space-y-8">
-      {analysisState === "COMPLETED_WITH_WARNINGS" ? (
+      {showAnalysisWarningBanner && analysisState === "COMPLETED_WITH_WARNINGS" ? (
         <div className="rounded-[1.5rem] border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-sm leading-7 text-amber-100">
           <p>
             Some advanced insights could not be generated, but your core coaching feedback is ready.
@@ -368,13 +375,17 @@ export function SessionResultsPanel({
 
           {llmFeedbackResult?.status === "COMPLETED" &&
           !llmFeedbackResult.fallback_used ? null : (
-            <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm leading-7 text-amber-100">
+            <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
               LLM enhancement is unavailable, showing deterministic coaching.
             </div>
           )}
 
           {coachingCards.length ? (
-            <div className="mt-6 grid gap-5 xl:grid-cols-2">
+            <div
+              className={`mt-5 grid gap-5 ${
+                coachingCards.length > 1 ? "2xl:grid-cols-2" : ""
+              }`}
+            >
               {coachingCards.map((card) => (
                 <CoachingFeedbackCard
                   key={card.key}

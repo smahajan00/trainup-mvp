@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Camera, Pause, Play, Square } from "lucide-react";
 
@@ -16,18 +16,32 @@ import { SectionTitle } from "../../../../features/app-shell/components/SectionT
 import { AnalysisProgressCard } from "../../../../features/sessions/components/AnalysisProgressCard";
 import { PoseOverlayPreview } from "../../../../features/sessions/components/PoseOverlayPreview";
 import { SessionResultsPanel } from "../../../../features/sessions/components/SessionResultsPanel";
+import { SessionSetupCard } from "../../../../features/sessions/components/SessionSetupCard";
 import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
 import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
+import {
+  buildReplacementSessionPayload,
+  resolveCameraView,
+  resolveDominantSide,
+  usesFallbackSkillLevel,
+  validateSessionSetup
+} from "../../../../features/sessions/session-setup-utils";
 import { getErrorMessage } from "../../../../lib/api";
 import { formatDateTime, formatEnumLabel } from "../../../../lib/formatters";
+import { getDrillById } from "../../../../services/drills";
 import {
+  createSession,
   endLiveSession,
   getSession,
   getSessionArtifacts,
   submitLiveFrameBatch
 } from "../../../../services/sessions";
+import type { DrillDetail } from "../../../../types/drills";
+import type { ProfileResponse } from "../../../../types/profile";
 import type {
+  CameraView,
+  DominantSide,
   FrameBatchResponse,
   SessionArtifactsResponse,
   TrainingSession
@@ -70,12 +84,23 @@ async function playVideoSafely(video: HTMLVideoElement | null) {
   }
 }
 
-function LiveSessionContent({ sessionId }: { sessionId: string }) {
+function LiveSessionContent({
+  sessionId,
+  profile
+}: {
+  sessionId: string;
+  profile: ProfileResponse | null;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const setupFlowEnabled = searchParams.get("setup") === "1";
+  const wasReplaced = searchParams.get("replaced") === "1";
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [session, setSession] = useState<TrainingSession | null>(null);
+  const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [artifactSnapshot, setArtifactSnapshot] =
     useState<SessionArtifactsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +114,11 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   const [capturedTicks, setCapturedTicks] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isApplyingSetup, setIsApplyingSetup] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
+  const [selectedDominantSide, setSelectedDominantSide] =
+    useState<DominantSide>("AUTO");
   const {
     analysisError,
     analysisState,
@@ -108,14 +138,20 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
       setLoadError(null);
 
       try {
-        const [sessionDetail, artifactsDetail] = await Promise.all([
-          getSession(sessionId),
-          getSessionArtifacts(sessionId)
+        const sessionDetail = await getSession(sessionId);
+        const [artifactsDetail, drillDetail] = await Promise.all([
+          getSessionArtifacts(sessionId),
+          getDrillById(sessionDetail.drill_id)
         ]);
 
         if (!ignore) {
           setSession(sessionDetail);
+          setDrill(drillDetail);
           setArtifactSnapshot(artifactsDetail);
+          setSelectedCameraView(
+            resolveCameraView(drillDetail, sessionDetail.camera_view)
+          );
+          setSelectedDominantSide(resolveDominantSide(sessionDetail.dominant_side));
         }
       } catch (error) {
         if (!ignore) {
@@ -195,6 +231,21 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   async function handleStartCamera() {
     setActionError(null);
     resetAnalysis();
+
+    if (setupHasChanges) {
+      setSetupError("Apply setup changes before starting the camera.");
+      return;
+    }
+
+    const setupValidationError = validateSessionSetup({
+      drill,
+      cameraView: selectedCameraView,
+      dominantSide: selectedDominantSide
+    });
+    if (setupValidationError) {
+      setSetupError(setupValidationError);
+      return;
+    }
 
     if (session?.input_type !== "LIVE") {
       setActionError(
@@ -325,9 +376,66 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
   }
 
   const canUseLiveActions = session.input_type === "LIVE" && session.status === "ACTIVE";
+  const setupLocked =
+    captureState !== "IDLE" ||
+    cameraState === "requesting" ||
+    cameraState === "granted" ||
+    isStarting ||
+    isStopping ||
+    session.status !== "ACTIVE" ||
+    Boolean(artifactSnapshot?.pose_sequence);
+  const setupEditable = Boolean(setupFlowEnabled && !setupLocked);
+  const setupHasChanges =
+    selectedCameraView !== resolveCameraView(drill, session.camera_view) ||
+    selectedDominantSide !== resolveDominantSide(session.dominant_side);
   const canAnalyze =
     Boolean(artifactSnapshot?.pose_sequence) ||
     (session.input_type === "LIVE" && session.status === "COMPLETED");
+
+  async function handleApplySetupChanges() {
+    if (!session) {
+      return;
+    }
+
+    const validationError = validateSessionSetup({
+      drill,
+      cameraView: selectedCameraView,
+      dominantSide: selectedDominantSide
+    });
+
+    if (validationError) {
+      setSetupError(validationError);
+      return;
+    }
+
+    if (!selectedCameraView) {
+      return;
+    }
+
+    if (!setupHasChanges) {
+      return;
+    }
+
+    setSetupError(null);
+    setIsApplyingSetup(true);
+
+    try {
+      const replacementSession = await createSession(
+        buildReplacementSessionPayload({
+          session,
+          drill,
+          profile,
+          cameraView: selectedCameraView,
+          dominantSide: selectedDominantSide
+        })
+      );
+
+      router.replace(`/sessions/${replacementSession.id}/live?setup=1&replaced=1`);
+    } catch (error) {
+      setSetupError(getErrorMessage(error));
+      setIsApplyingSetup(false);
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -382,11 +490,43 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
         <SessionInputModeToggle
           mode="LIVE"
           sessionDrillId={session.drill_id}
-          secondaryActionLabel="Start a new upload session"
-          secondaryActionHref={`/sessions/new?drillId=${session.drill_id}&mode=UPLOAD`}
-          helperText="This session is locked to live camera. Start a new upload session if the next rep is already recorded."
+          secondaryActionLabel="Choose Upload Video"
+          secondaryActionHref={`/drills/${session.drill_id}`}
+          helperText="This session is locked to live camera. Go back to the drill launcher if the next rep is already recorded."
         />
       </InfoCard>
+
+      <SessionSetupCard
+        drill={drill}
+        drillName={session.drill_name}
+        sportName={session.sport_name}
+        skillLevel={session.skill_level}
+        inputType="LIVE"
+        cameraView={selectedCameraView}
+        dominantSide={selectedDominantSide}
+        isEditable={setupEditable}
+        isLocked={setupLocked}
+        hasChanges={setupHasChanges}
+        isApplying={isApplyingSetup}
+        setupError={setupError}
+        setupNotice={
+          wasReplaced
+            ? "Setup changes were applied. The previous unused session was discarded from this flow."
+            : null
+        }
+        usesFallbackSkillLevel={usesFallbackSkillLevel(profile, drill)}
+        onCameraViewChange={(value) => {
+          setSetupError(null);
+          setSelectedCameraView(value);
+        }}
+        onDominantSideChange={(value) => {
+          setSetupError(null);
+          setSelectedDominantSide(value);
+        }}
+        onApplyChanges={() => {
+          void handleApplySetupChanges();
+        }}
+      />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)]">
         <InfoCard className="relative overflow-hidden">
@@ -406,8 +546,8 @@ function LiveSessionContent({ sessionId }: { sessionId: string }) {
               mirrored
               autoPlay
               muted
-              emptyTitle="Live skeleton overlay"
-              emptyDescription="Start the camera to capture movement. The skeleton overlay runs locally in your browser."
+              emptyTitle="Live pose overlay"
+              emptyDescription="Start the camera to capture movement. The pose overlay runs locally in your browser."
             />
           </div>
 
@@ -602,7 +742,9 @@ export default function LiveSessionPage() {
         </CTAButton>
       }
     >
-      {() => <LiveSessionContent sessionId={params.sessionId} />}
+      {({ profile }) => (
+        <LiveSessionContent sessionId={params.sessionId} profile={profile} />
+      )}
     </AppShell>
   );
 }

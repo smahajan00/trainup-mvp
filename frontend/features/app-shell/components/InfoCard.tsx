@@ -9,7 +9,7 @@ export function InfoCard({ children, className }: InfoCardProps) {
   return (
     <section
       className={cn(
-        "relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] p-6 shadow-[0_22px_80px_rgba(0,0,0,0.28)] backdrop-blur transition-[border-color,box-shadow,transform] duration-300 motion-reduce:transition-none hover:border-white/14 hover:shadow-[0_28px_92px_rgba(0,0,0,0.36)]",
+        "relative min-w-0 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02))] p-6 shadow-[0_22px_80px_rgba(0,0,0,0.28)] backdrop-blur transition-[border-color,box-shadow,transform] duration-300 motion-reduce:transition-none hover:border-white/14 hover:shadow-[0_28px_92px_rgba(0,0,0,0.36)]",
         className
       )}
     >

@@ -91,15 +91,15 @@ function getUploadStatus({
   poseSequence?: PoseSequence | null;
 }) {
   if (!hasVideo) {
-    return "Upload and process a video to view skeleton overlay.";
+    return "Upload and process a video to view the pose overlay.";
   }
 
   if (!poseSequence) {
-    return "Upload and process a video to view skeleton overlay.";
+    return "Upload and process a video to view the pose overlay.";
   }
 
   if (poseSequence.status === "FAILED") {
-    return "Pose extraction failed, so the skeleton overlay is unavailable.";
+    return "Pose extraction failed, so the pose overlay is unavailable.";
   }
 
   if (poseSequence.status === "INSUFFICIENT_DATA") {
@@ -213,8 +213,8 @@ export function PoseOverlayPreview({
   const [overlayStatus, setOverlayStatus] = useState(
     statusText ??
       (mode === "live"
-        ? "Camera active - skeleton overlay running"
-        : "Upload and process a video to view skeleton overlay.")
+        ? "Camera active - pose overlay running"
+        : "Upload and process a video to view the pose overlay.")
   );
 
   const hasVideo = mode === "live" ? Boolean(stream && isActive) : Boolean(videoSrc);
@@ -240,10 +240,10 @@ export function PoseOverlayPreview({
       statusText ??
         (mode === "live"
           ? isPaused
-            ? "Camera paused - skeleton overlay paused"
+            ? "Camera paused - pose overlay paused"
             : hasVideo
-              ? "Camera active - skeleton overlay running"
-              : "Start the camera to run the skeleton overlay."
+              ? "Camera active - pose overlay running"
+              : "Start the camera to run the pose overlay."
           : getUploadStatus({ hasVideo, poseSequence }))
     );
   }, [hasVideo, isPaused, mode, poseSequence, statusText]);
@@ -447,13 +447,13 @@ export function PoseOverlayPreview({
         clearPoseCanvas(canvasElement);
         detectorRef.current?.close();
         detectorRef.current = null;
-        setOverlayStatus("Start the camera to run the skeleton overlay.");
+        setOverlayStatus("Start the camera to run the pose overlay.");
         return;
       }
 
       if (isPaused) {
         cancelLiveLoop();
-        setOverlayStatus("Camera paused - skeleton overlay paused");
+        setOverlayStatus("Camera paused - pose overlay paused");
         return;
       }
 
@@ -620,7 +620,7 @@ export function PoseOverlayPreview({
           ref={canvasRef}
         />
         <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/12 bg-background-dark/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/80 backdrop-blur">
-          {mode === "live" ? "Live skeleton overlay" : "Uploaded pose overlay"}
+          {mode === "live" ? "Live pose overlay" : "Uploaded pose overlay"}
         </div>
         {hasVideo ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background-dark/90 to-transparent px-5 py-4">
@@ -630,17 +630,17 @@ export function PoseOverlayPreview({
             </div>
           </div>
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.12),_transparent_45%),linear-gradient(180deg,rgba(17,17,17,0.6),rgba(31,31,31,0.78))] px-8 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
-              <Camera className="h-7 w-7" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.09),_transparent_46%),linear-gradient(180deg,rgba(17,17,17,0.72),rgba(24,24,24,0.9))] px-7 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-primary/18 bg-primary/10 text-primary shadow-[0_16px_44px_rgba(255,122,0,0.08)]">
+              <Camera className="h-6 w-6" />
             </div>
-            <h3 className="mt-5 font-display text-3xl font-bold text-white">
+            <h3 className="mt-4 font-display text-2xl font-bold text-white">
               {emptyTitle}
             </h3>
-            <p className="mt-4 max-w-xl text-sm text-muted-gray">
+            <p className="mt-2 max-w-md text-sm leading-6 text-muted-gray">
               {emptyDescription}
             </p>
-            <p className="mt-4 text-xs uppercase tracking-[0.24em] text-white/45">
+            <p className="mt-4 text-[10px] uppercase tracking-[0.22em] text-white/40">
               {overlayStatus}
             </p>
           </div>

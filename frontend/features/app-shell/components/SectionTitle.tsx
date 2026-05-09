@@ -12,23 +12,23 @@ export function SectionTitle({
   action
 }: SectionTitleProps) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
+    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0 overflow-hidden">
         {eyebrow ? (
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-neutral-400">
             {eyebrow}
           </p>
         ) : null}
-        <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+        <h2 className="mt-2 break-words font-display text-3xl font-bold leading-tight tracking-tight text-white md:text-4xl">
           {title}
         </h2>
         {description ? (
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-gray">
+          <p className="mt-2 line-clamp-2 max-w-xl break-words text-sm leading-relaxed text-neutral-300 md:text-base">
             {description}
           </p>
         ) : null}
       </div>
-      {action ? <div>{action}</div> : null}
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }

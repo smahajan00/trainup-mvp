@@ -21,8 +21,7 @@ export function SessionInputModeToggle({
   secondaryActionHref
 }: SessionInputModeToggleProps) {
   const isUploadMode = mode === "UPLOAD";
-  const actionHref =
-    secondaryActionHref ?? `/sessions/new?drillId=${sessionDrillId}`;
+  const actionHref = secondaryActionHref ?? `/drills/${sessionDrillId}`;
 
   return (
     <div className="space-y-4">

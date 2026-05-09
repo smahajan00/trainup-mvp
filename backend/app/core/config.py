@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     llm_enable_enhancement: bool = False
     fuzzy_interpretation_enabled: bool = True
     it2_fuzzy_enabled: bool = True
+    pose_target_fps: float = 12.0
+    pose_max_width: int = 720
+    pose_cache_enabled: bool = True
     backend_cors_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",

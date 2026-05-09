@@ -17,6 +17,7 @@ from app.models.session_summary import SessionSummary
 from app.schemas.session import (
     PoseFrameResponse,
     PoseLandmarkCoordinate,
+    PoseProcessingMetadata,
     PoseSequenceResponse,
 )
 from app.services.capture_protocol_validator import CaptureProtocolValidator
@@ -88,6 +89,7 @@ def _build_pose_sequence(
     frame_count: int = 2,
     valid_frame_count: int = 2,
     diagnostic_flags: list[str] | None = None,
+    processing_metadata: PoseProcessingMetadata | None = None,
 ) -> PoseSequenceResponse:
     frames: list[PoseFrameResponse] = []
     for frame_index in range(frame_count):
@@ -126,6 +128,7 @@ def _build_pose_sequence(
         valid_frame_count=valid_frame_count,
         status=status,
         diagnostic_flags=diagnostic_flags or [],
+        processing_metadata=processing_metadata,
         sequence_data=frames,
         created_at=None,
     )
@@ -575,6 +578,68 @@ def test_reprocess_replaces_existing_pose_sequence_artifact(client, db_session, 
     assert second_payload["pose_sequence"]["status"] == "INSUFFICIENT_DATA"
     assert second_payload["pose_sequence"]["valid_frame_count"] == 0
     assert second_payload["pose_sequence"]["diagnostic_flags"] == ["ZERO_VALID_FRAMES"]
+
+
+def test_upload_reuses_cached_pose_sequence_for_same_file(client, db_session, monkeypatch) -> None:
+    token = _register_user(client, full_name="Casey Cache", email="cacheupload@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    upload_session = _create_session(
+        client,
+        token,
+        drill=drill,
+        input_type="UPLOAD",
+        camera_view="RIGHT_SAGITTAL",
+    )
+    extraction_calls = 0
+
+    def fake_process(self, **kwargs):
+        nonlocal extraction_calls
+        extraction_calls += 1
+        cache_key = kwargs["cache_key"]
+        return _build_pose_sequence(
+            kwargs["session_id"],
+            frame_count=3,
+            valid_frame_count=3,
+            processing_metadata=PoseProcessingMetadata(
+                original_fps=30.0,
+                target_pose_fps=cache_key.target_pose_fps,
+                sampling_stride=3,
+                original_frame_count=9,
+                processed_frame_count=3,
+                valid_frame_count=3,
+                original_width=1280,
+                original_height=720,
+                inference_width=720,
+                inference_height=405,
+                cache_key=cache_key,
+                cache_hit=False,
+                processing_time_ms=120.0,
+            ),
+        )
+
+    monkeypatch.setattr(
+        PerceptionService,
+        "process_uploaded_file",
+        fake_process,
+    )
+
+    first_response = client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("same.mp4", b"same-video" * 512, "video/mp4")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    second_response = client.post(
+        f"/api/sessions/{upload_session['id']}/upload",
+        files={"file": ("same-again.mp4", b"same-video" * 512, "video/mp4")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert extraction_calls == 1
+    second_payload = second_response.json()
+    assert second_payload["pose_sequence"]["frame_count"] == 3
+    assert second_payload["pose_sequence"]["processing_metadata"]["cache_hit"] is True
 
 
 def test_get_session_artifacts_rejected_for_other_user(client, db_session) -> None:

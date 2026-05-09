@@ -25,13 +25,25 @@ import {
   truncateText
 } from "../../../lib/formatters";
 import { getMetricDescription } from "../../../lib/metric-descriptions";
+import { useStartSessionFromDrill } from "../../../features/sessions/hooks/useStartSessionFromDrill";
 import { getDrillById } from "../../../services/drills";
 import type { DrillDetail } from "../../../types/drills";
+import type { ProfileResponse } from "../../../types/profile";
 
-function DrillDetailContent({ drillId }: { drillId: string }) {
+function DrillDetailContent({
+  drillId,
+  profile
+}: {
+  drillId: string;
+  profile: ProfileResponse | null;
+}) {
   const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { startError, startingMode, startSession } = useStartSessionFromDrill({
+    drill,
+    profile
+  });
 
   useEffect(() => {
     let ignore = false;
@@ -141,29 +153,45 @@ function DrillDetailContent({ drillId }: { drillId: string }) {
 
           <div className="grid w-full gap-3 xl:max-w-sm">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <CTAButton asChild className="justify-between rounded-2xl px-5 py-6">
-                <Link href={`/sessions/new?drillId=${drill.id}&mode=UPLOAD`}>
-                  <span className="flex items-center gap-2">
-                    <UploadCloud className="h-4 w-4" />
-                    Upload Video
-                  </span>
-                </Link>
+              <CTAButton
+                type="button"
+                className="justify-between rounded-2xl px-5 py-6"
+                disabled={startingMode !== null}
+                onClick={() => {
+                  void startSession("UPLOAD");
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <UploadCloud className="h-4 w-4" />
+                  {startingMode === "UPLOAD"
+                    ? "Creating upload session..."
+                    : "Upload Video"}
+                </span>
               </CTAButton>
               <CTAButton
-                asChild
+                type="button"
                 variant="outline"
                 className="justify-between rounded-2xl border-white/15 bg-white/[0.03] px-5 py-6 text-white"
+                disabled={startingMode !== null}
+                onClick={() => {
+                  void startSession("LIVE");
+                }}
               >
-                <Link href={`/sessions/new?drillId=${drill.id}&mode=LIVE`}>
-                  <span className="flex items-center gap-2">
-                    <Camera className="h-4 w-4" />
-                    Live Camera
-                  </span>
-                </Link>
+                <span className="flex items-center gap-2">
+                  <Camera className="h-4 w-4" />
+                  {startingMode === "LIVE"
+                    ? "Creating live session..."
+                    : "Live Camera"}
+                </span>
               </CTAButton>
             </div>
+            {startError ? (
+              <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm leading-6 text-rose-100">
+                {startError}
+              </div>
+            ) : null}
             <p className="text-sm text-muted-gray">
-              Pick the capture mode here, then confirm only the drill setup details you need.
+              Pick a capture mode to open the training flow. Setup controls are available before capture starts.
             </p>
             <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
@@ -553,7 +581,9 @@ export default function DrillDetailPage({
         </CTAButton>
       }
     >
-      {() => <DrillDetailContent drillId={params.drillId} />}
+      {({ profile }) => (
+        <DrillDetailContent drillId={params.drillId} profile={profile} />
+      )}
     </AppShell>
   );
 }

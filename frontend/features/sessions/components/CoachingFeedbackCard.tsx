@@ -25,13 +25,13 @@ export function CoachingFeedbackCard({
   backupNote
 }: CoachingFeedbackCardProps) {
   return (
-    <InfoCard className="h-full border-white/10">
+    <InfoCard className="h-full border-white/10 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
             Coaching cue
           </p>
-          <h3 className="mt-3 font-display text-2xl font-bold text-white">
+          <h3 className="mt-2 line-clamp-2 font-display text-2xl font-bold text-white">
             {title}
           </h3>
         </div>
@@ -45,30 +45,35 @@ export function CoachingFeedbackCard({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-            What happened
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/85">{whatHappened}</p>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
+              What happened
+            </p>
+            <p className="mt-2 text-sm leading-6 text-white/85">{whatHappened}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
+              Why it happened
+            </p>
+            <p className="mt-2 text-sm leading-6 text-white/85">{whyItHappened}</p>
+          </div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-            Why it happened
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/85">{whyItHappened}</p>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-            What to fix
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/85">{whatToFix}</p>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-            Next action
-          </p>
-          <p className="mt-3 text-sm leading-6 text-white/85">{nextAction}</p>
+
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-primary">
+              What to fix
+            </p>
+            <p className="mt-2 text-sm leading-6 text-white/90">{whatToFix}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
+              Next action
+            </p>
+            <p className="mt-2 text-sm leading-6 text-white/85">{nextAction}</p>
+          </div>
         </div>
       </div>
 

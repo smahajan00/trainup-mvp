@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -9,12 +11,17 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.engines.cognition_engine.phase2a_evaluator import Phase2AEvaluator
 from app.engines.cognition_engine.phase2a_contract import (
     PHASE2A_EVALUATION_VERSION,
     get_phase2a_contract,
 )
-from app.engines.perception_interface.perception_service import PerceptionService
+from app.engines.perception_interface.perception_service import (
+    POSE_MODEL_NAME,
+    PREPROCESSING_VERSION,
+    PerceptionService,
+)
 from app.models.drill import Drill
 from app.models.enums import CameraView, InputType, SessionStatus, SeverityLevel
 from app.models.metric_type import MetricType
@@ -47,6 +54,7 @@ from app.schemas.session import (
     OntologyReasoningResult,
     PedagogicalDecisionResult,
     PerceptionResult,
+    PoseProcessingCacheKey,
     PoseSequenceResponse,
     PoseSequenceSummaryResponse,
     SessionCreateRequest,
@@ -193,6 +201,7 @@ class SessionService:
         file_size_bytes: int,
         file_bytes: bytes,
     ) -> UploadProcessingResponse:
+        upload_started_at = time.perf_counter()
         session = self._get_owned_session(user_id=user_id, session_id=session_id)
         self._ensure_input_type(session, InputType.UPLOAD)
         self._ensure_session_open(session)
@@ -264,6 +273,45 @@ class SessionService:
                 )
 
             tracked_joints = self._resolve_tracked_joints(session)
+            pose_cache_key = self._build_pose_cache_key(file_bytes=file_bytes)
+            cached_pose_sequence = self._get_cached_pose_sequence(
+                session_id=session.id,
+                cache_key=pose_cache_key,
+            )
+            if cached_pose_sequence is not None:
+                logger.info(
+                    "Upload pose extraction cache hit",
+                    extra={
+                        "session_id": str(session.id),
+                        "file_hash": pose_cache_key.file_hash,
+                        "target_pose_fps": pose_cache_key.target_pose_fps,
+                        "max_inference_width": pose_cache_key.max_inference_width,
+                        "processing_time_ms": round(
+                            (time.perf_counter() - upload_started_at) * 1000,
+                            3,
+                        ),
+                    },
+                )
+                return UploadProcessingResponse(
+                    session_id=session.id,
+                    status=session.status,
+                    upload_received=True,
+                    validation=validation,
+                    capture_validation=capture_validation,
+                    pose_sequence=self._build_pose_sequence_summary_response(
+                        pose_sequence=cached_pose_sequence,
+                    ),
+                    feedback=[],
+                    artifacts_persisted=[POSE_SEQUENCE_ARTIFACT_TYPE],
+                    next_step=self._build_next_step(pose_sequence=cached_pose_sequence),
+                )
+
+            if self.artifacts.get_by_session_and_type(
+                session_id=session.id,
+                artifact_type=POSE_SEQUENCE_ARTIFACT_TYPE,
+            ) is not None:
+                self._clear_upload_attempt_outputs(session_id=session.id)
+
             pose_sequence = self.perception.process_uploaded_file(
                 session_id=session.id,
                 drill_id=session.drill_id,
@@ -272,6 +320,7 @@ class SessionService:
                 file_size_bytes=file_size_bytes,
                 tracked_joints=tracked_joints,
                 file_bytes=file_bytes,
+                cache_key=pose_cache_key,
             )
             pose_sequence_artifact = self.artifacts.upsert(
                 session_id=session.id,
@@ -306,7 +355,22 @@ class SessionService:
             extra={
                 "session_id": str(session.id),
                 "pose_status": pose_sequence.status,
+                "original_frame_count": (
+                    pose_sequence.processing_metadata.original_frame_count
+                    if pose_sequence.processing_metadata is not None
+                    else None
+                ),
+                "processed_frame_count": pose_sequence.frame_count,
                 "valid_frame_count": pose_sequence.valid_frame_count,
+                "cache_hit": (
+                    pose_sequence.processing_metadata.cache_hit
+                    if pose_sequence.processing_metadata is not None
+                    else False
+                ),
+                "processing_time_ms": round(
+                    (time.perf_counter() - upload_started_at) * 1000,
+                    3,
+                ),
             },
         )
 
@@ -1425,6 +1489,58 @@ class SessionService:
             valid_frame_count=pose_sequence.valid_frame_count,
             status=pose_sequence.status,
             diagnostic_flags=pose_sequence.diagnostic_flags,
+            processing_metadata=pose_sequence.processing_metadata,
+        )
+
+    @staticmethod
+    def _build_pose_cache_key(*, file_bytes: bytes) -> PoseProcessingCacheKey:
+        settings = get_settings()
+        return PoseProcessingCacheKey(
+            file_hash=hashlib.sha256(file_bytes).hexdigest(),
+            target_pose_fps=max(float(settings.pose_target_fps), 1.0),
+            max_inference_width=max(int(settings.pose_max_width), 1),
+            preprocessing_version=PREPROCESSING_VERSION,
+            pose_model=POSE_MODEL_NAME,
+        )
+
+    def _get_cached_pose_sequence(
+        self,
+        *,
+        session_id: UUID,
+        cache_key: PoseProcessingCacheKey,
+    ) -> PoseSequenceResponse | None:
+        if not get_settings().pose_cache_enabled:
+            return None
+
+        pose_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=POSE_SEQUENCE_ARTIFACT_TYPE,
+        )
+        if pose_artifact is None:
+            return None
+
+        try:
+            pose_sequence = PoseSequenceResponse(**pose_artifact.payload_json)
+        except Exception:
+            return None
+
+        processing_metadata = pose_sequence.processing_metadata
+        if processing_metadata is None or processing_metadata.cache_key is None:
+            return None
+        if processing_metadata.cache_key.model_dump(mode="json") != cache_key.model_dump(
+            mode="json"
+        ):
+            return None
+
+        return pose_sequence.model_copy(
+            update={
+                "processing_metadata": processing_metadata.model_copy(
+                    update={
+                        "cache_hit": True,
+                        "processing_time_ms": 0.0,
+                    }
+                )
+            }
         )
 
     @staticmethod

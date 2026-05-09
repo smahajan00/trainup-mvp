@@ -1,33 +1,56 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, DragEvent, useEffect, useState } from "react";
-import { ArrowLeft, FileCheck2, UploadCloud } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  CircleAlert,
+  CircleDashed,
+  FileCheck2,
+  LoaderCircle,
+  UploadCloud
+} from "lucide-react";
 
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { CTAButton } from "../../../../components/ui/cta-button";
+import { Label } from "../../../../components/ui/label";
+import { Select } from "../../../../components/ui/select";
 import { SkeletonLoader } from "../../../../components/ui/skeleton-loader";
 import { AppShell } from "../../../../features/app-shell/components/AppShell";
 import { EmptyState } from "../../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../../features/app-shell/components/SectionTitle";
-import { AnalysisProgressCard } from "../../../../features/sessions/components/AnalysisProgressCard";
 import { PoseOverlayPreview } from "../../../../features/sessions/components/PoseOverlayPreview";
 import { SessionResultsPanel } from "../../../../features/sessions/components/SessionResultsPanel";
-import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
-import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
 import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
-import { getErrorMessage } from "../../../../lib/api";
-import { formatDateTime, formatEnumLabel, formatFileSize } from "../../../../lib/formatters";
-import { validateVideoFile } from "../../../../lib/session-validation";
 import {
+  ACTIVE_SIDE_OPTIONS,
+  buildReplacementSessionPayload,
+  getCameraViewOptions,
+  resolveCameraView,
+  resolveDominantSide,
+  validateSessionSetup
+} from "../../../../features/sessions/session-setup-utils";
+import { getErrorMessage } from "../../../../lib/api";
+import { formatEnumLabel, formatFileSize } from "../../../../lib/formatters";
+import { validateVideoFile } from "../../../../lib/session-validation";
+import { getDrillById } from "../../../../services/drills";
+import {
+  createSession,
   getSession,
   getSessionArtifacts,
   submitSessionUpload
 } from "../../../../services/sessions";
+import type { DrillDetail } from "../../../../types/drills";
+import type { ProfileResponse } from "../../../../types/profile";
 import type {
+  AnalysisProgressStep,
+  AnalysisStepStatus,
+  CameraView,
+  DominantSide,
   SessionArtifactsResponse,
   TrainingSession,
   UploadProcessingResponse
@@ -57,8 +80,95 @@ function formatCaptureIssue(issue: string) {
   }
 }
 
-function UploadSessionContent({ sessionId }: { sessionId: string }) {
+function getAnalysisStepTone(status: AnalysisStepStatus) {
+  switch (status) {
+    case "COMPLETED":
+      return "success";
+    case "FAILED":
+      return "danger";
+    case "WARNING":
+      return "warning";
+    case "RUNNING":
+      return "active";
+    default:
+      return "idle";
+  }
+}
+
+function AnalysisStepIcon({ status }: { status: AnalysisStepStatus }) {
+  if (status === "COMPLETED") {
+    return <CheckCircle2 className="h-4 w-4 text-emerald-300" />;
+  }
+
+  if (status === "FAILED") {
+    return <CircleAlert className="h-4 w-4 text-rose-300" />;
+  }
+
+  if (status === "WARNING") {
+    return <CircleAlert className="h-4 w-4 text-amber-300" />;
+  }
+
+  if (status === "RUNNING") {
+    return <LoaderCircle className="h-4 w-4 animate-spin text-primary" />;
+  }
+
+  return <CircleDashed className="h-4 w-4 text-white/35" />;
+}
+
+function AnalysisPipelineSteps({
+  steps
+}: {
+  steps: AnalysisProgressStep[];
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      {steps.map((step) => {
+        const tone = getAnalysisStepTone(step.status);
+
+        return (
+          <div
+            key={step.id}
+            className={`flex min-w-0 items-center gap-2 rounded-[1.1rem] border px-3 py-2.5 transition-all duration-300 ${
+              tone === "success"
+                ? "border-emerald-400/20 bg-emerald-500/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                : tone === "danger"
+                  ? "border-rose-400/25 bg-rose-500/10"
+                  : tone === "warning"
+                    ? "border-amber-400/25 bg-amber-500/10"
+                    : tone === "active"
+                      ? "border-primary/35 bg-primary/10 shadow-[0_12px_34px_rgba(255,122,0,0.12)]"
+                      : "border-white/10 bg-white/[0.035]"
+            }`}
+          >
+            <AnalysisStepIcon status={step.status} />
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-white/90">
+                {step.label}
+              </p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-muted-gray">
+                {step.required ? "Required" : "Advanced"}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function UploadSessionContent({
+  sessionId,
+  profile
+}: {
+  sessionId: string;
+  profile: ProfileResponse | null;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const setupFlowEnabled = searchParams.get("setup") === "1";
+  const wasReplaced = searchParams.get("replaced") === "1";
   const [session, setSession] = useState<TrainingSession | null>(null);
+  const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [artifactSnapshot, setArtifactSnapshot] =
     useState<SessionArtifactsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,6 +182,11 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
     null
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isApplyingSetup, setIsApplyingSetup] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
+  const [selectedDominantSide, setSelectedDominantSide] =
+    useState<DominantSide>("AUTO");
   const [isDragActive, setIsDragActive] = useState(false);
   const {
     analysisError,
@@ -92,14 +207,20 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
       setLoadError(null);
 
       try {
-        const [sessionDetail, artifactsDetail] = await Promise.all([
-          getSession(sessionId),
-          getSessionArtifacts(sessionId)
+        const sessionDetail = await getSession(sessionId);
+        const [artifactsDetail, drillDetail] = await Promise.all([
+          getSessionArtifacts(sessionId),
+          getDrillById(sessionDetail.drill_id)
         ]);
 
         if (!ignore) {
           setSession(sessionDetail);
+          setDrill(drillDetail);
           setArtifactSnapshot(artifactsDetail);
+          setSelectedCameraView(
+            resolveCameraView(drillDetail, sessionDetail.camera_view)
+          );
+          setSelectedDominantSide(resolveDominantSide(sessionDetail.dominant_side));
         }
       } catch (error) {
         if (!ignore) {
@@ -151,7 +272,95 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
   ];
 
   const canUpload = session?.input_type === "UPLOAD";
+  const setupLocked =
+    isSubmitting ||
+    Boolean(uploadResult) ||
+    Boolean(artifactSnapshot?.pose_sequence) ||
+    session?.status !== "ACTIVE";
+  const setupEditable = Boolean(setupFlowEnabled && session && !setupLocked);
+  const setupHasChanges = Boolean(
+    session &&
+      (selectedCameraView !== resolveCameraView(drill, session.camera_view) ||
+        selectedDominantSide !== resolveDominantSide(session.dominant_side))
+  );
   const canAnalyze = hasPoseData;
+  const cameraViewOptions = getCameraViewOptions(drill);
+  const setupControlsDisabled = !setupEditable || setupLocked || isApplyingSetup;
+  const setupStateLabel = setupLocked
+    ? "Locked"
+    : setupEditable
+      ? setupHasChanges
+        ? "Changes pending"
+        : "Ready"
+      : "Read-only";
+  const setupHelperText = setupLocked
+    ? "Setup is locked after capture starts."
+    : setupEditable
+      ? "Changing setup before capture will restart this session with the new settings."
+      : "Existing session setup is read-only.";
+  const activeAnalysisStep =
+    analysisSteps.find((step) => step.id === currentStep) ??
+    analysisSteps.find((step) => step.status === "RUNNING") ??
+    null;
+  const uploadReadinessLabel = poseSequenceSummary
+    ? "Processed"
+    : selectedFile
+      ? displayErrors.length
+        ? "Needs attention"
+        : "Ready for upload"
+      : "Awaiting clip";
+  const previewStatus =
+    currentPoseSequence?.status === "COMPLETED" &&
+    currentPoseSequence.valid_frame_count > 0
+      ? "Pose overlay active"
+      : videoPreviewUrl
+        ? "Preview ready"
+        : "Awaiting clip";
+
+  async function handleApplySetupChanges() {
+    if (!session) {
+      return;
+    }
+
+    const validationError = validateSessionSetup({
+      drill,
+      cameraView: selectedCameraView,
+      dominantSide: selectedDominantSide
+    });
+
+    if (validationError) {
+      setSetupError(validationError);
+      return;
+    }
+
+    if (!selectedCameraView) {
+      return;
+    }
+
+    if (!setupHasChanges) {
+      return;
+    }
+
+    setSetupError(null);
+    setIsApplyingSetup(true);
+
+    try {
+      const replacementSession = await createSession(
+        buildReplacementSessionPayload({
+          session,
+          drill,
+          profile,
+          cameraView: selectedCameraView,
+          dominantSide: selectedDominantSide
+        })
+      );
+
+      router.replace(`/sessions/${replacementSession.id}/upload?setup=1&replaced=1`);
+    } catch (error) {
+      setSetupError(getErrorMessage(error));
+      setIsApplyingSetup(false);
+    }
+  }
 
   function handleSelectedFile(file: File | null) {
     setSelectedFile(file);
@@ -181,6 +390,21 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
   }
 
   async function handleUpload() {
+    if (setupHasChanges) {
+      setSetupError("Apply setup changes before uploading this clip.");
+      return;
+    }
+
+    const setupValidationError = validateSessionSetup({
+      drill,
+      cameraView: selectedCameraView,
+      dominantSide: selectedDominantSide
+    });
+    if (setupValidationError) {
+      setSetupError(setupValidationError);
+      return;
+    }
+
     if (!selectedFile) {
       setSubmitError("Upload a video to begin analysis.");
       return;
@@ -244,71 +468,163 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="space-y-8">
-      <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
+    <div className="space-y-5">
+      <InfoCard className="border-primary/15 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
             <div className="flex flex-wrap gap-2">
               <Badge variant="accent">{session.sport_name}</Badge>
-              <Badge variant="slate">{formatEnumLabel(session.input_type)}</Badge>
-              {session.camera_view ? (
-                <Badge variant="slate">{formatEnumLabel(session.camera_view)}</Badge>
-              ) : null}
-              {session.dominant_side ? (
-                <Badge variant="slate">{formatEnumLabel(session.dominant_side)}</Badge>
-              ) : null}
-              <SessionStatusBadge status={session.status} />
+              <Badge variant="slate">{formatEnumLabel(session.skill_level)}</Badge>
             </div>
-            <h2 className="mt-5 font-display text-4xl font-bold text-white sm:text-5xl">
+            <h2 className="mt-3 line-clamp-2 font-display text-3xl font-bold tracking-tight text-white sm:text-[2.45rem]">
               {session.drill_name}
             </h2>
-            <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Load a clip, confirm the framing, then break down the rep in one guided flow.
+            <p className="mt-2 text-sm leading-6 text-muted-gray sm:text-base">
+              Upload one clean rep and analyze movement quality.
             </p>
           </div>
 
-          <div className="grid gap-3 xl:min-w-[280px]">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                Started
-              </p>
-              <p className="mt-3 text-sm font-semibold text-white">
-                {formatDateTime(session.start_time)}
-              </p>
-            </div>
-            <Button
-              asChild
-              variant="outline"
-              className="justify-between rounded-2xl px-5 py-6 text-white/90"
-            >
-              <Link href={`/drills/${session.drill_id}`}>
-                <span className="flex items-center gap-2">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Drill
-                </span>
-              </Link>
-            </Button>
-          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="w-full justify-center rounded-2xl px-5 py-4 text-white/90 sm:w-auto"
+          >
+            <Link href={`/drills/${session.drill_id}`}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Drill
+            </Link>
+          </Button>
         </div>
       </InfoCard>
 
-      <InfoCard>
-        <SessionInputModeToggle
-          mode="UPLOAD"
-          sessionDrillId={session.drill_id}
-          secondaryActionLabel="Start a new live session"
-          secondaryActionHref={`/sessions/new?drillId=${session.drill_id}&mode=LIVE`}
-          helperText="This session is locked to upload video. Start a new live session if you want camera-based capture for the next rep."
-        />
+      <InfoCard className="p-3.5 sm:p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="min-w-0 xl:w-[24%]">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-gray">
+              Session setup
+            </p>
+            <p className="mt-1.5 line-clamp-1 text-sm font-semibold text-white">
+              {session.drill_name}
+            </p>
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-gray">
+              {setupHelperText}
+            </p>
+          </div>
+
+          <div className="grid flex-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.75fr)_auto]">
+            <div className="min-w-0">
+              <Label htmlFor="upload-camera-view" className="text-xs">
+                Camera view
+              </Label>
+              <Select
+                id="upload-camera-view"
+                value={selectedCameraView}
+                disabled={setupControlsDisabled}
+                className="mt-1.5 h-9 rounded-xl px-3 text-xs"
+                onChange={(event) => {
+                  setSetupError(null);
+                  setSelectedCameraView(event.target.value as CameraView);
+                }}
+              >
+                {cameraViewOptions.map((view) => (
+                  <option key={view} value={view} className="bg-slate text-white">
+                    {formatEnumLabel(view)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="min-w-0">
+              <Label htmlFor="upload-active-side" className="text-xs">
+                Active side
+              </Label>
+              <Select
+                id="upload-active-side"
+                value={selectedDominantSide}
+                disabled={setupControlsDisabled}
+                className="mt-1.5 h-9 rounded-xl px-3 text-xs"
+                onChange={(event) => {
+                  setSetupError(null);
+                  setSelectedDominantSide(event.target.value as DominantSide);
+                }}
+              >
+                {ACTIVE_SIDE_OPTIONS.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    className="bg-slate text-white"
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-muted-gray">
+                Mode
+              </p>
+              <p className="mt-1.5 truncate text-sm font-semibold text-white">
+                Upload Video
+              </p>
+            </div>
+
+            <div className="flex flex-col justify-end gap-2">
+              <Badge
+                variant={
+                  setupLocked
+                    ? "warning"
+                    : setupHasChanges
+                      ? "accent"
+                      : "slate"
+                }
+                className="justify-center"
+              >
+                {setupStateLabel}
+              </Badge>
+              {setupEditable && !setupLocked ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={setupHasChanges ? "default" : "outline"}
+                  onClick={() => {
+                    void handleApplySetupChanges();
+                  }}
+                  disabled={!setupHasChanges || isApplyingSetup}
+                >
+                  {isApplyingSetup ? "Applying" : "Apply setup changes"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {setupError || wasReplaced ? (
+          <div
+            className={`mt-3 rounded-2xl border px-4 py-2.5 text-sm leading-6 ${
+              setupError
+                ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
+                : "border-primary/25 bg-primary/10 text-primary"
+            }`}
+          >
+            {setupError ??
+              "Setup changes were applied. The previous unused session was discarded from this flow."}
+          </div>
+        ) : null}
       </InfoCard>
 
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-        <InfoCard className="relative overflow-hidden">
-          <SectionTitle
-            eyebrow="Input"
-            title="Upload your performance clip"
-            description="Choose one rep, keep the whole movement in frame, and send it through the review flow."
-          />
+      <div className="space-y-5">
+        <InfoCard className="relative overflow-hidden border-primary/10 bg-[radial-gradient(circle_at_top_left,_rgba(255,122,0,0.08),_transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.058),rgba(255,255,255,0.022))]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <SectionTitle
+              eyebrow="Step 1"
+              title="Upload clip"
+              description="One rep. Full body in frame. Stable camera."
+            />
+            <Badge variant={displayErrors.length ? "danger" : "slate"}>
+              {uploadReadinessLabel}
+            </Badge>
+          </div>
 
           {canUpload ? (
             <>
@@ -319,22 +635,22 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                 }}
                 onDragLeave={() => setIsDragActive(false)}
                 onDrop={handleDrop}
-                className={`mt-6 rounded-[1.75rem] border border-dashed px-6 py-10 text-center transition-all duration-300 ${
+                className={`group mt-4 min-h-[260px] rounded-[1.75rem] border border-dashed px-5 py-7 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-300 hover:border-primary/30 hover:bg-white/[0.045] hover:shadow-[0_18px_58px_rgba(0,0,0,0.22)] ${
                   isDragActive
-                    ? "border-primary/45 bg-primary/10"
+                    ? "border-primary/50 bg-primary/10 shadow-[0_20px_70px_rgba(255,122,0,0.14)]"
                     : "border-white/12 bg-white/[0.03]"
                 }`}
               >
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
-                  <UploadCloud className="h-7 w-7" />
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary transition-transform duration-300 group-hover:scale-105">
+                  <UploadCloud className="h-6 w-6" />
                 </div>
-                <h3 className="mt-5 font-display text-2xl font-bold text-white">
-                  Drop your clip here
+                <h3 className="mt-4 font-display text-2xl font-bold text-white">
+                  Drop video here
                 </h3>
-                <p className="mt-3 text-sm text-muted-gray">
-                  MP4, MOV, WEBM, or MKV. One clip per session.
+                <p className="mt-2 text-sm text-muted-gray">
+                  MP4, MOV, WEBM, or MKV. 100 MB max.
                 </p>
-                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <div className="mt-5 flex flex-wrap justify-center gap-3">
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_34px_rgba(255,122,0,0.22)] transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-primary/90 hover:shadow-[0_18px_42px_rgba(255,122,0,0.28)]">
                     Choose Video
                     <input
@@ -348,204 +664,210 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
                     type="button"
                     variant="outline"
                     onClick={() => handleSelectedFile(null)}
+                    disabled={!selectedFile || isSubmitting}
                   >
-                    Clear selection
+                    Clear
                   </Button>
                 </div>
-                {selectedFile ? (
-                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-left">
-                    <p className="text-sm font-semibold text-white">
+              </div>
+
+              {selectedFile ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
                       {selectedFile.name}
                     </p>
-                    <p className="mt-2 text-sm text-muted-gray">
+                    <p className="mt-1 text-sm text-muted-gray">
                       {selectedFile.type || "Unknown type"} ·{" "}
                       {formatFileSize(selectedFile.size)}
                     </p>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  type="button"
-                  onClick={handleUpload}
-                  className="rounded-2xl px-6"
-                  disabled={!selectedFile || isSubmitting}
-                >
-                  {isSubmitting ? "Uploading clip" : "Upload Clip"}
-                </Button>
-                <Badge variant="slate">100 MB max</Badge>
-              </div>
+                  <Button
+                    type="button"
+                    onClick={handleUpload}
+                    className="rounded-2xl px-6"
+                    disabled={!selectedFile || isSubmitting}
+                  >
+                    {isSubmitting ? "Uploading" : "Upload Clip"}
+                  </Button>
+                </div>
+              ) : null}
             </>
           ) : (
-            <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm leading-7 text-amber-100">
-              This session was created for live camera. Upload is not available on
-              this session. Start a new upload session from setup if you want to
-              analyze a recorded clip.
+            <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4 text-sm leading-7 text-amber-100">
+              This session was created for live camera. Return to the drill launcher to create an upload session.
             </div>
           )}
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-background-dark/45 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <FileCheck2 className="h-5 w-5 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white">
+                    {captureValidation?.message ??
+                      uploadResult?.next_step ??
+                      uploadReadinessLabel}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-gray">
+                    {drill?.reference_payload.notes ??
+                      "Use the recommended camera angle for reliable analysis."}
+                  </p>
+                </div>
+              </div>
+              {poseSequenceSummary ? (
+                <div className="flex gap-2">
+                  <Badge variant="slate">
+                    {poseSequenceSummary.frame_count} frames
+                  </Badge>
+                  <Badge variant="success">
+                    {poseSequenceSummary.valid_frame_count} valid
+                  </Badge>
+                </div>
+              ) : null}
+            </div>
+
+            {submitError ? (
+              <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm leading-6 text-rose-100">
+                {submitError}
+              </div>
+            ) : null}
+
+            {displayErrors.length || displayWarnings.length || captureIssues.length ? (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {displayErrors.length ? (
+                  <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-rose-200">
+                      File issues
+                    </p>
+                    <ul className="mt-2 space-y-1 text-sm text-rose-100">
+                      {displayErrors.map((error) => (
+                        <li key={error}>{error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {displayWarnings.length ? (
+                  <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-amber-200">
+                      Warnings
+                    </p>
+                    <ul className="mt-2 space-y-1 text-sm text-amber-100">
+                      {displayWarnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {captureIssues.length ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
+                      Protocol
+                    </p>
+                    <ul className="mt-2 space-y-1 text-sm text-white/85">
+                      {captureIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </InfoCard>
 
-        <InfoCard>
-          <SectionTitle
-            eyebrow="Preview"
-            title="Preview before analysis"
-            description="Your video preview and overlay-ready canvas stay aligned here."
-          />
+        <InfoCard className="border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018))]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <SectionTitle
+              eyebrow="Step 2"
+              title="Preview"
+              description="Review framing and pose overlay before analysis."
+            />
+            <Badge variant={currentPoseSequence ? "success" : "slate"}>
+              {previewStatus}
+            </Badge>
+          </div>
 
-          <div className="mt-6">
+          <div className="mt-5">
             <PoseOverlayPreview
               mode="upload"
               videoSrc={videoPreviewUrl}
               poseSequence={currentPoseSequence}
               isActive={Boolean(videoPreviewUrl)}
               controls
-              emptyTitle="Upload a clip for skeleton overlay"
-              emptyDescription="Choose a clip to preview it here. Skeleton overlay appears after upload processing creates pose data."
+              emptyTitle="Preview clip"
+              emptyDescription="Choose one clean rep. The pose overlay appears after processing."
+              className="border-white/12 bg-black/50 shadow-[0_24px_72px_rgba(0,0,0,0.32)]"
             />
           </div>
-
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-              Preview status
-            </p>
-            <p className="mt-3 text-sm text-white/85">
-              {currentPoseSequence?.status === "COMPLETED" &&
-              currentPoseSequence.valid_frame_count > 0
-                ? "Pose overlay active. Play or seek the clip to inspect the skeleton."
-                : videoPreviewUrl
-                  ? "Preview ready. Upload when the rep looks framed correctly."
-                  : "Upload a video to begin analysis."}
-            </p>
-          </div>
         </InfoCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <InfoCard>
+      <InfoCard className="p-4 sm:p-5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <SectionTitle
-            eyebrow="Validation"
-            title="Clip readiness"
-            description="Frames processed, valid movement data, and capture issues from this upload."
+            eyebrow="Step 3"
+            title="Performance Analysis"
+            description="Run evaluation and coaching feedback."
           />
-
-          {submitError ? (
-            <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4 text-sm leading-7 text-rose-100">
-              {submitError}
-            </div>
-          ) : null}
-
-          {displayErrors.length ? (
-            <div className="mt-6 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-rose-200">
-                File issues
-              </p>
-              <ul className="mt-3 space-y-2 text-sm text-rose-100">
-                {displayErrors.map((error) => (
-                  <li key={error}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {displayWarnings.length ? (
-            <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-amber-200">
-                Warnings
-              </p>
-              <ul className="mt-3 space-y-2 text-sm text-amber-100">
-                {displayWarnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {poseSequenceSummary ? (
-            <>
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Frames processed
-                  </p>
-                  <p className="mt-3 text-2xl font-bold text-white">
-                    {poseSequenceSummary.frame_count}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Valid frames
-                  </p>
-                  <p className="mt-3 text-2xl font-bold text-white">
-                    {poseSequenceSummary.valid_frame_count}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-                <div className="flex items-center gap-3">
-                  <FileCheck2 className="h-5 w-5 text-primary" />
-                  <p className="text-sm font-semibold text-white">
-                    {captureValidation?.message ??
-                      uploadResult?.next_step ??
-                      "Upload complete."}
-                  </p>
-                </div>
-                <div className="mt-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Capture issues
-                  </p>
-                  {captureIssues.length ? (
-                    <ul className="mt-3 space-y-2 text-sm text-white/85">
-                      {captureIssues.map((issue) => (
-                        <li key={issue}>{issue}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-sm text-muted-gray">
-                      No capture issues detected.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </>
-          ) : (
-            <p className="mt-6 text-sm text-muted-gray">
-              Upload a video to begin analysis.
-            </p>
-          )}
-        </InfoCard>
-
-        <AnalysisProgressCard
-          analysisError={analysisError}
-          analysisState={analysisState}
-          analysisSteps={analysisSteps}
-          analysisWarnings={analysisWarnings}
-          currentStep={currentStep}
-        />
-      </div>
-
-      <InfoCard>
-        <SectionTitle
-          eyebrow="Action"
-          title="Analyze performance"
-          description="Run the full evaluation and coaching pipeline with one action."
-        />
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <CTAButton
-            type="button"
-            onClick={handleAnalyzeSession}
-            disabled={!canAnalyze || analysisState === "RUNNING"}
-          >
-            {analysisState === "RUNNING" ? "Analyzing performance" : "Analyze Performance"}
-          </CTAButton>
-          <Badge variant="slate">
-            {canAnalyze
-              ? "Ready to analyze"
-              : "Upload a video to begin analysis"}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <CTAButton
+              type="button"
+              onClick={handleAnalyzeSession}
+              disabled={!canAnalyze || analysisState === "RUNNING"}
+            >
+              {analysisState === "RUNNING"
+                ? "Analyzing performance"
+                : "Analyze Performance"}
+            </CTAButton>
+            <Badge
+              variant={
+                analysisState === "FAILED"
+                  ? "danger"
+                  : analysisState === "COMPLETED_WITH_WARNINGS"
+                    ? "warning"
+                    : analysisState === "COMPLETED"
+                      ? "success"
+                      : analysisState === "RUNNING"
+                        ? "accent"
+                        : "slate"
+              }
+            >
+              {canAnalyze ? analysisState : "Upload required"}
+            </Badge>
+            {activeAnalysisStep ? (
+              <Badge variant="slate">{activeAnalysisStep.label}</Badge>
+            ) : null}
+          </div>
         </div>
+
+        <div className="mt-3">
+          <AnalysisPipelineSteps steps={analysisSteps} />
+        </div>
+
+        {analysisWarnings.length || analysisState === "COMPLETED_WITH_WARNINGS" ? (
+          <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
+            Some advanced insights could not be generated, but your core coaching feedback is ready.
+            {analysisWarnings.length ? (
+              <ul className="mt-2 space-y-1">
+                {analysisWarnings.map((warning) => (
+                  <li key={`${warning.step}-${warning.message}`}>
+                    {warning.message}
+                    {warning.diagnosticFlags.length
+                      ? ` (${warning.diagnosticFlags.join(", ")})`
+                      : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {analysisError ? (
+          <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm leading-6 text-rose-100">
+            {analysisError}
+          </div>
+        ) : null}
       </InfoCard>
 
       <SessionResultsPanel
@@ -554,6 +876,7 @@ function UploadSessionContent({ sessionId }: { sessionId: string }) {
         analysisState={analysisState}
         analysisError={analysisError}
         analysisWarnings={analysisWarnings}
+        showAnalysisWarningBanner={false}
       />
     </div>
   );
@@ -574,7 +897,9 @@ export default function UploadSessionPage() {
         </CTAButton>
       }
     >
-      {() => <UploadSessionContent sessionId={params.sessionId} />}
+      {({ profile }) => (
+        <UploadSessionContent sessionId={params.sessionId} profile={profile} />
+      )}
     </AppShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   ClipboardCheck,
@@ -10,7 +10,8 @@ import {
   Gauge,
   History,
   LineChart,
-  Sparkles
+  Sparkles,
+  Trophy
 } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
@@ -21,16 +22,10 @@ import { AppShell } from "../../features/app-shell/components/AppShell";
 import { InfoCard } from "../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../features/app-shell/components/SectionTitle";
 import { StatCard } from "../../features/app-shell/components/StatCard";
-import { MotivationalHeroLine } from "../../features/dashboard/components/MotivationalHeroLine";
-import { ProfileSummaryCard } from "../../features/dashboard/components/ProfileSummaryCard";
 import { QuickActionCard } from "../../features/dashboard/components/QuickActionCard";
 import { RecentSessionCard } from "../../features/sessions/components/RecentSessionCard";
 import { SportCard } from "../../features/sports/components/SportCard";
-import {
-  calculateProfileCompletion,
-  formatDateTime,
-  formatEnumLabel
-} from "../../lib/formatters";
+import { formatEnumLabel } from "../../lib/formatters";
 import { sortSportsByPresetOrder } from "../../lib/sport-presets";
 import { getDrillsBySport } from "../../services/drills";
 import { getRecentProgress } from "../../services/progress";
@@ -46,6 +41,52 @@ import type { SportOption } from "../../types/sports";
 type SportSummary = SportOption & {
   drillCount: number;
 };
+
+function formatPercent(value: number | null) {
+  return value === null ? "--" : `${value.toFixed(0)}%`;
+}
+
+function getAverageScore(sessions: RecentProgressSession[]) {
+  if (!sessions.length) {
+    return null;
+  }
+
+  return (
+    sessions.reduce((total, session) => total + session.overall_accuracy, 0) /
+    sessions.length
+  );
+}
+
+function getBestScore(sessions: RecentProgressSession[]) {
+  if (!sessions.length) {
+    return null;
+  }
+
+  return Math.max(...sessions.map((session) => session.overall_accuracy));
+}
+
+function getTrendLabel(sessions: RecentProgressSession[]) {
+  if (sessions.length < 2) {
+    return "Need data";
+  }
+
+  const delta = sessions[0].overall_accuracy - sessions[1].overall_accuracy;
+  if (Math.abs(delta) < 1) {
+    return "Stable";
+  }
+
+  return delta > 0 ? "Improving" : "Watch";
+}
+
+function getPrimaryFocus(metrics: RecentMetricProgress[]) {
+  const metric = metrics[0]?.metric_name;
+  return metric ? formatEnumLabel(metric) : "No focus yet";
+}
+
+function getFirstName(fullName: string | null | undefined) {
+  const trimmedName = fullName?.trim();
+  return trimmedName ? trimmedName.split(/\s+/)[0] : null;
+}
 
 function DashboardContent({
   user,
@@ -121,82 +162,63 @@ function DashboardContent({
     (total, sport) => total + sport.drillCount,
     0
   );
-  const profileCompletion = calculateProfileCompletion(profile);
   const startTrainingHref = profile ? `/sports/${profile.sport_id}/drills` : "/profile";
-  const latestMetricsByName = recentMetrics.reduce<Record<string, RecentMetricProgress>>(
-    (accumulator, metric) => {
-      if (!accumulator[metric.metric_name]) {
-        accumulator[metric.metric_name] = metric;
-      }
-      return accumulator;
-    },
-    {}
-  );
-  const performanceSnapshot = Object.values(latestMetricsByName).slice(0, 6);
-  const metricGroups = recentMetrics.reduce<Record<string, RecentMetricProgress[]>>(
-    (accumulator, metric) => {
-      if (!accumulator[metric.metric_name]) {
-        accumulator[metric.metric_name] = [];
-      }
-      accumulator[metric.metric_name].push(metric);
-      return accumulator;
-    },
-    {}
-  );
-  const trendCandidate =
-    Object.values(metricGroups).sort((left, right) => right.length - left.length)[0] ?? [];
-  const trendMetricName = trendCandidate[0]?.metric_name ?? null;
-  const trendSeries = [...trendCandidate].reverse().slice(-5);
-  const processedSessionCount = recentSessions.length;
-  const trackedMetricCount = performanceSnapshot.length;
+  const averageScore = useMemo(() => getAverageScore(recentSessions), [recentSessions]);
+  const bestScore = useMemo(() => getBestScore(recentSessions), [recentSessions]);
+  const trendLabel = useMemo(() => getTrendLabel(recentSessions), [recentSessions]);
+  const primaryFocus = useMemo(() => getPrimaryFocus(recentMetrics), [recentMetrics]);
+  const firstName = getFirstName(user?.full_name);
 
   return (
-    <div className="space-y-8">
-      <InfoCard className="relative overflow-hidden border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))]">
-        <div className="absolute inset-y-0 right-0 hidden w-2/5 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.18),_transparent_55%)] lg:block" />
-        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+    <div className="space-y-12 md:space-y-14">
+      <InfoCard className="border-primary/15 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.16),_transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-7 md:p-8">
+        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-2/5 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.14),_transparent_60%)] lg:block" />
+        <div className="relative z-10 grid gap-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-center">
+          <div className="min-w-0 overflow-hidden">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
               Ready to train smarter?
             </p>
-            <h2 className="mt-4 font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">
-              {user?.full_name
-                ? `${user.full_name}, build your next breakthrough.`
+            <h1 className="mt-4 max-w-4xl break-words font-display text-5xl font-bold leading-[1.04] tracking-tight text-white [text-wrap:balance] md:text-6xl">
+              {firstName
+                ? `${firstName}, build your next breakthrough.`
                 : "Build your next breakthrough."}
-            </h2>
-            <p className="mt-4 text-sm text-muted-gray sm:text-base">
+            </h1>
+            <p className="mt-5 line-clamp-3 max-w-2xl break-words text-sm leading-relaxed text-neutral-300 md:text-base">
               Start a training flow, review recent reps, and jump into the performance dashboard whenever you want the deeper story.
             </p>
-            <MotivationalHeroLine />
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-5 inline-flex max-w-full rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+              <span className="line-clamp-1 break-words">
+                Turn every rep into feedback.
+              </span>
+            </div>
+            <div className="mt-7 flex flex-wrap gap-3">
               <CTAButton asChild>
                 <Link href={startTrainingHref}>Start Training</Link>
               </CTAButton>
-              <Button
-                asChild
-                variant="outline"
-                className="border-white/10 bg-white/[0.04] text-white"
-              >
+              <Button asChild variant="outline">
                 <Link href="/progress">Open Performance Dashboard</Link>
               </Button>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:w-[420px]">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">Focus</p>
-              <p className="mt-3 text-sm font-semibold text-white">Launch your next rep</p>
+
+          <div className="grid min-w-0 gap-3 self-center sm:grid-cols-3 lg:grid-cols-1">
+            <div className="min-h-[92px] min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">Focus</p>
+              <p className="mt-3 line-clamp-2 break-words text-base font-semibold text-white">
+                Launch your next rep
+              </p>
             </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+            <div className="min-h-[92px] min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
                 Dashboard
               </p>
-              <p className="mt-3 text-sm font-semibold text-white">
-                {processedSessionCount} recent sessions logged
+              <p className="mt-3 line-clamp-2 break-words text-base font-semibold text-white">
+                {recentSessions.length} recent sessions logged
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">Sport</p>
-              <p className="mt-3 text-sm font-semibold text-white">
+            <div className="min-h-[92px] min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">Sport</p>
+              <p className="mt-3 line-clamp-2 break-words text-base font-semibold text-white">
                 {profile?.sport_name ?? "Set profile"}
               </p>
             </div>
@@ -204,96 +226,50 @@ function DashboardContent({
         </div>
       </InfoCard>
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <ProfileSummaryCard profile={profile} />
-
-        {profile ? (
-          <InfoCard className="relative overflow-hidden">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,122,0,0.14),_transparent_42%)]" />
-            <div className="relative z-10">
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-gray">Readiness</p>
-              <h3 className="mt-4 font-display text-3xl font-bold text-white">
-                Training mode ready
-              </h3>
-              <p className="mt-4 text-sm text-muted-gray">
-                Your athlete profile is ready for new sessions, smarter feedback, and the full performance dashboard.
-              </p>
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Profile completion
-                  </p>
-                  <p className="mt-3 text-3xl font-bold text-white">{profileCompletion}%</p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
-                    Next module
-                  </p>
-                  <p className="mt-3 text-sm font-semibold text-white">
-                    Performance dashboard
-                  </p>
-                </div>
-              </div>
-            </div>
-          </InfoCard>
-        ) : (
-          <EmptyState
-            icon={ClipboardCheck}
-            title="Finish setup"
-            description="Set your profile to personalize training."
-            action={
-              <CTAButton asChild>
-                <Link href="/profile">Complete Profile</Link>
-              </CTAButton>
-            }
-          />
-        )}
-      </div>
-
-      <div className="space-y-5">
+      <section className="space-y-7">
         <SectionTitle
           eyebrow="Actions"
           title="Pick your next move"
-          description="Jump into training, sport selection, or your dashboard without breaking rhythm."
+          description="Three clear paths: start training, choose a sport, or open analytics."
         />
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="grid gap-7 lg:grid-cols-3">
+          <QuickActionCard
+            title="Start Training"
+            description="Open the recommended drill flow."
+            href={startTrainingHref}
+            icon={Dumbbell}
+            badge={profile ? "Recommended" : "Profile"}
+          />
           <QuickActionCard
             title="Choose Sport"
-            description="Browse your training catalog and line up the right drill."
+            description="Browse drills by training area."
             href="/sports"
             icon={Compass}
             badge="Catalog"
           />
           <QuickActionCard
-            title="Start Training"
-            description="Go straight into your next session flow."
-            href={startTrainingHref}
-            icon={Dumbbell}
-            badge={profile ? "Recommended" : "Set profile"}
-          />
-          <QuickActionCard
-            title="View Dashboard"
-            description="Open the performance dashboard for trends, metrics, and drill breakdowns."
+            title="View Analytics"
+            description="Track trends and focus areas."
             href="/progress"
             icon={LineChart}
-            badge="Analytics"
+            badge="Dashboard"
           />
         </div>
-      </div>
+      </section>
 
-      <div className="space-y-5">
+      <section className="space-y-7">
         <SectionTitle
           eyebrow="Recent"
-          title="Recent sessions"
-          description="Reopen your latest reps and coaching reviews."
+          title="Recent Sessions"
+          description="Your latest training reviews at a glance."
         />
 
         {isLoadingProgress ? (
-          <div className="grid gap-5 xl:grid-cols-4">
-            <SkeletonLoader className="h-[240px]" />
-            <SkeletonLoader className="h-[240px]" />
-            <SkeletonLoader className="h-[240px]" />
-            <SkeletonLoader className="h-[240px]" />
+          <div className="grid gap-7 md:grid-cols-2 xl:grid-cols-4">
+            <SkeletonLoader className="h-72" />
+            <SkeletonLoader className="h-72" />
+            <SkeletonLoader className="h-72" />
+            <SkeletonLoader className="h-72" />
           </div>
         ) : progressError ? (
           <EmptyState
@@ -313,177 +289,88 @@ function DashboardContent({
             }
           />
         ) : (
-          <div className="grid gap-5 xl:grid-cols-4">
+          <div className="grid gap-7 md:grid-cols-2 xl:grid-cols-4">
             {recentSessions.map((session) => (
               <RecentSessionCard key={session.session_id} session={session} />
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="space-y-5">
+      <section className="space-y-7">
         <SectionTitle
-          eyebrow="Snapshot"
-          title="Latest metrics"
-          description="A clean read on the latest numbers feeding your dashboard."
+          eyebrow="Insight"
+          title="Performance Insight"
+          description="One clean read on score, trend, and current focus."
           action={
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/10 bg-white/[0.04] text-white"
-            >
+            <Button asChild variant="outline">
               <Link href="/progress">Open Performance Dashboard</Link>
             </Button>
           }
         />
-        <div className="grid gap-5 xl:grid-cols-4">
-          <StatCard
-            label="Recent Sessions"
-            value={String(processedSessionCount)}
-            description="Latest saved reviews."
-            icon={History}
-          />
-          <StatCard
-            label="Tracked Metrics"
-            value={String(trackedMetricCount)}
-            description="Metrics saved so far."
-            icon={Gauge}
-          />
-          <StatCard
-            label="Profile Completion"
-            value={`${profileCompletion}%`}
-            description="Setup progress."
-            icon={ClipboardCheck}
-            tone={profile ? "success" : "warning"}
-          />
-          <StatCard
-            label="Available Drills"
-            value={String(availableDrills)}
-            description="Drills ready now."
-            icon={Dumbbell}
-          />
-        </div>
 
         {isLoadingProgress ? (
-          <div className="grid gap-5 lg:grid-cols-2">
-            <SkeletonLoader className="h-[260px]" />
-            <SkeletonLoader className="h-[260px]" />
+          <div className="grid gap-7 md:grid-cols-2 xl:grid-cols-4">
+            <SkeletonLoader className="h-48" />
+            <SkeletonLoader className="h-48" />
+            <SkeletonLoader className="h-48" />
+            <SkeletonLoader className="h-48" />
           </div>
         ) : progressError ? (
           <EmptyState
             icon={BarChart3}
-            title="Dashboard snapshot unavailable"
+            title="Performance insight unavailable"
             description={progressError}
           />
         ) : (
-          <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-            <InfoCard>
-              <SectionTitle
-                eyebrow="Metrics"
-                title="Performance snapshot"
-                description="Your latest saved values."
-              />
-              {performanceSnapshot.length ? (
-                <div className="mt-6 grid gap-3">
-                  {performanceSnapshot.map((metric) => (
-                    <div
-                      key={metric.progress_id}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-white">
-                            {formatEnumLabel(metric.metric_name)}
-                          </p>
-                          <p className="mt-2 text-sm text-muted-gray">
-                            {metric.drill_name} · {formatDateTime(metric.created_at)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold text-white">
-                            {metric.metric_value.toFixed(2)}
-                          </p>
-                          <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
-                            {metric.metric_unit}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-4 h-2 rounded-full bg-white/10">
-                        <div
-                          className="h-2 rounded-full bg-primary"
-                          style={{ width: `${Math.max(metric.metric_value * 100, 8)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-6 text-sm text-muted-gray">Upload a video to track scores.</p>
-                
-              )}
-            </InfoCard>
-
-            <InfoCard>
-              <SectionTitle
-                eyebrow="Trend"
-                title={trendMetricName ? formatEnumLabel(trendMetricName) : "No trend yet"}
-                description="Last five saved values."
-              />
-              {trendSeries.length ? (
-                <div className="mt-6 space-y-3">
-                  {trendSeries.map((metric, index) => (
-                    <div
-                      key={metric.progress_id}
-                      className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-white">
-                          Session {index + 1}
-                        </p>
-                        <p className="text-sm text-muted-gray">
-                          {formatDateTime(metric.created_at)}
-                        </p>
-                      </div>
-                      <p className="mt-3 text-2xl font-bold text-white">
-                        {metric.metric_value.toFixed(2)}
-                      </p>
-                      <p className="mt-2 text-sm text-muted-gray">{metric.drill_name}</p>
-                      <div className="mt-4 h-2 rounded-full bg-white/10">
-                        <div
-                          className="h-2 rounded-full bg-primary"
-                          style={{ width: `${Math.max(metric.metric_value * 100, 8)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-6 text-sm text-muted-gray">
-                  Log more sessions to unlock your trendline.
-                </p>
-              )}
-            </InfoCard>
+          <div className="grid gap-7 md:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Average Score"
+              value={formatPercent(averageScore)}
+              description={`Last ${recentSessions.length || 0} sessions`}
+              icon={Gauge}
+            />
+            <StatCard
+              label="Best Score"
+              value={formatPercent(bestScore)}
+              description="Top recent session"
+              icon={Trophy}
+              tone="success"
+            />
+            <StatCard
+              label="Trend"
+              value={trendLabel}
+              description="Compared with prior session"
+              icon={LineChart}
+              tone={trendLabel === "Watch" ? "warning" : "success"}
+            />
+            <StatCard
+              label="Key Focus"
+              value={primaryFocus}
+              description="Latest tracked metric"
+              icon={ClipboardCheck}
+            />
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="space-y-5">
+      <section className="space-y-7">
         <SectionTitle
-          eyebrow="Featured"
-          title="Sports hub"
-          description="Pick a sport, open a drill, and keep your training flow moving."
+          eyebrow="Sports"
+          title="Sports Hub"
+          description={`${availableDrills} drills available across your training catalog.`}
           action={
-            <CTAButton asChild className="rounded-2xl">
+            <CTAButton asChild>
               <Link href="/sports">Open Sports Hub</Link>
             </CTAButton>
           }
         />
 
         {isLoadingSports ? (
-          <div className="grid gap-5 lg:grid-cols-3">
-            <SkeletonLoader className="h-[340px]" />
-            <SkeletonLoader className="h-[340px]" />
-            <SkeletonLoader className="h-[340px]" />
+          <div className="grid gap-7 lg:grid-cols-3">
+            <SkeletonLoader className="h-80" />
+            <SkeletonLoader className="h-80" />
+            <SkeletonLoader className="h-80" />
           </div>
         ) : sportsError ? (
           <EmptyState
@@ -492,7 +379,7 @@ function DashboardContent({
             description={sportsError}
           />
         ) : (
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid gap-7 lg:grid-cols-3">
             {sportSummaries.map((sport) => (
               <SportCard
                 key={sport.id}
@@ -503,7 +390,7 @@ function DashboardContent({
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
