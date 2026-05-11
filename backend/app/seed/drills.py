@@ -33,6 +33,16 @@ def _coaching_rules(
     }
 
 
+DRILL_DEMO_VIDEO_URLS_BY_NAME = {
+    "Bodyweight Squat": "/videos/drills/bodyweight-squat.mp4",
+    "Dumbbell Shoulder Press": "/videos/drills/dumbbell-shoulder-press.mp4",
+    "Set Shot Form": "/videos/drills/set-shot-form.mp4",
+    "Defensive Stance": "/videos/drills/defensive-stance.mp4",
+    "Instep Pass": "/videos/drills/instep-pass.mp4",
+    "Basic Shooting Form": "/videos/drills/basic-shooting-form.mp4",
+}
+
+
 DRILL_SEEDS_BY_SPORT = {
     "Gym": [
         {

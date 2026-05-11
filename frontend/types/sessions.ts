@@ -96,7 +96,8 @@ export type ArtifactType =
   | "pedagogical_decision_result"
   | "ontology_reasoning_result"
   | "choquet_aggregation_result"
-  | "temporal_modeling_result";
+  | "temporal_modeling_result"
+  | "feedback_tts_result";
 
 export type PoseSequenceStatus = "COMPLETED" | "FAILED" | "INSUFFICIENT_DATA";
 
@@ -286,8 +287,35 @@ export type DeterministicFeedbackItem = {
   issue_title: string;
   coaching_cue: string;
   improvement_suggestion: string;
+  what_happened?: string;
+  why_it_matters?: string;
+  what_to_fix?: string;
+  next_rep_cue?: string;
+  simple_coaching_phrase?: string;
   priority_rank: number;
   deviation: number;
+};
+
+export type FeedbackTTSSegments = {
+  segment_1: string;
+  segment_2: string;
+  segment_3: string;
+};
+
+export type FeedbackTTSRequest = {
+  feedback_item_key?: string | null;
+  segments?: FeedbackTTSSegments | null;
+};
+
+export type FeedbackTTSResponse = {
+  session_id: string;
+  model: string;
+  voice: string;
+  cached: boolean;
+  media_type: string;
+  audio_base64: string;
+  segments: FeedbackTTSSegments;
+  text_hash: string;
 };
 
 export type DeterministicFeedbackResult = {

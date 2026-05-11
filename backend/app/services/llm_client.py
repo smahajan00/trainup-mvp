@@ -8,6 +8,29 @@ import httpx
 from app.core.config import Settings
 
 
+LOCAL_LLM_PROVIDERS = frozenset(
+    {
+        "llama_cpp",
+        "llama.cpp",
+        "local_llama_cpp",
+        "local",
+        "qwen_gguf",
+    }
+)
+
+
+def is_local_llm_provider(provider: str | None) -> bool:
+    return (provider or "").strip().lower() in LOCAL_LLM_PROVIDERS
+
+
+def llm_enhancement_enabled(settings: Settings) -> bool:
+    return (
+        settings.llm_enabled
+        if settings.llm_enabled is not None
+        else settings.llm_enable_enhancement
+    )
+
+
 @dataclass(frozen=True)
 class LLMProviderConfig:
     provider: str
@@ -29,7 +52,7 @@ class LLMProviderConfig:
             timeout_seconds=settings.llm_timeout_seconds,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
-            enhancement_enabled=settings.llm_enable_enhancement,
+            enhancement_enabled=llm_enhancement_enabled(settings),
         )
 
 

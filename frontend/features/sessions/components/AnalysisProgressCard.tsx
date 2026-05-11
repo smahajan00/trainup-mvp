@@ -41,7 +41,7 @@ const GROUPS = [
   },
   {
     id: "summary",
-    title: "Preparing coaching summary",
+    title: "Refining coaching feedback",
     stepIds: ["llm"]
   }
 ] as const;
@@ -92,7 +92,9 @@ export function AnalysisProgressCard({
         title="Analyze Performance"
         description={
           analysisState === "RUNNING"
-            ? "Breaking down your movement..."
+            ? activeStep?.id === "llm"
+              ? "Refining coaching feedback..."
+              : "Breaking down your movement..."
             : analysisState === "COMPLETED"
               ? "Performance breakdown complete."
               : analysisState === "COMPLETED_WITH_WARNINGS"

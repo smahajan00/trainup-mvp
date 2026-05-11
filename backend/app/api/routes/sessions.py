@@ -10,6 +10,8 @@ from app.schemas.session import (
     ChoquetAggregationResult,
     DeterministicEvaluationResult,
     DeterministicFeedbackResult,
+    FeedbackTTSRequest,
+    FeedbackTTSResponse,
     FrameBatchRequest,
     FrameBatchResponse,
     FuzzyInterpretationResult,
@@ -100,6 +102,23 @@ def generate_session_feedback(
     return session_service.generate_feedback(
         user_id=current_user.id,
         session_id=session_id,
+    )
+
+
+@router.post(
+    "/{session_id}/feedback/tts",
+    response_model=FeedbackTTSResponse,
+)
+def generate_session_feedback_tts(
+    session_id: UUID,
+    payload: FeedbackTTSRequest,
+    current_user: User = Depends(get_current_user),
+    session_service: SessionService = Depends(get_session_service),
+) -> FeedbackTTSResponse:
+    return session_service.generate_feedback_tts(
+        user_id=current_user.id,
+        session_id=session_id,
+        payload=payload,
     )
 
 

@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from app.repositories.drill_repository import DrillRepository
 from app.repositories.sport_repository import SportRepository
 from app.schemas.drill import DrillDetailResponse, DrillListItemResponse
+from app.seed.drills import DRILL_DEMO_VIDEO_URLS_BY_NAME
 
 
 @dataclass
@@ -49,6 +50,7 @@ class DrillService:
             sport_name=sport_name,
             drill_name=drill.drill_name,
             description=drill.description,
+            demo_video_url=DRILL_DEMO_VIDEO_URLS_BY_NAME.get(drill.drill_name),
             target_metrics=drill.target_metrics,
             reference_payload=drill.reference_payload,
             coaching_rules=drill.coaching_rules,

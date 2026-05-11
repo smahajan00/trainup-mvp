@@ -316,22 +316,27 @@ class PedagogicalDecisionService:
         fuzzy_label: str | None,
         dominant_label_confidence: float | None,
     ) -> str:
+        focus_label = "first" if priority_rank == 1 else f"priority {priority_rank}"
+        intensity_label = {
+            "direct": "clear and direct",
+            "corrective": "specific and corrective",
+            "soft": "steady and supportive",
+            "observe": "light and observational",
+        }[correction_intensity]
         parts = [
             (
-                f"Priority {priority_rank} item selected for "
-                f"{skill_level.value.lower()} coaching emphasis."
+                f"This is the {focus_label} coaching focus for a "
+                f"{skill_level.value.lower()} athlete."
             )
         ]
         if fuzzy_label is not None and dominant_label_confidence is not None:
             parts.append(
-                f"{fuzzy_label.lower().replace('_', ' ')} deviation with "
-                f"{dominant_label_confidence:.2f} confidence supports a "
-                f"{correction_intensity} correction."
+                f"The movement pattern was consistent enough to use a "
+                f"{intensity_label} correction."
             )
         else:
             parts.append(
-                "Fuzzy confidence was unavailable, so severity and deterministic "
-                "priority drive the coaching emphasis."
+                "TrainUp is using the evaluated movement issue to keep the next cue focused."
             )
         return " ".join(parts)
 

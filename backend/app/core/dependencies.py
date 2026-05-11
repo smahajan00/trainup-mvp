@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -28,15 +29,21 @@ from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.dominant_side_detector import DominantSideDetector
 from app.services.drill_service import DrillService
+from app.services.feedback_tts_service import KokoroFeedbackTTSService
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
 from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
 from app.services.choquet_aggregation_service import ChoquetAggregationService
-from app.services.llm_client import LLMProviderConfig, OpenAICompatibleLLMClient
+from app.services.llm_client import (
+    LLMProviderConfig,
+    OpenAICompatibleLLMClient,
+    is_local_llm_provider,
+)
 from app.services.llm_feedback_service import (
     CoachingContextBuilder,
     LLMFeedbackPromptBuilder,
     LLMFeedbackService,
 )
+from app.services.local_llm_service import LocalLlamaCppLLMClient
 from app.services.ontology_reasoning_service import OntologyReasoningService
 from app.services.pedagogical_decision_service import PedagogicalDecisionService
 from app.services.profile_service import ProfileService
@@ -111,6 +118,15 @@ def get_deterministic_feedback_service() -> DeterministicFeedbackService:
     return DeterministicFeedbackService()
 
 
+@lru_cache
+def get_feedback_tts_service() -> KokoroFeedbackTTSService:
+    return KokoroFeedbackTTSService(
+        model_name=settings.tts_model,
+        voice=settings.tts_voice,
+        pause_ms=settings.tts_segment_pause_ms,
+    )
+
+
 def get_dominant_side_detector() -> DominantSideDetector:
     return DominantSideDetector()
 
@@ -139,10 +155,28 @@ def get_temporal_modeling_service() -> TemporalModelingService:
     return TemporalModelingService()
 
 
+@lru_cache
+def get_local_llm_client() -> LocalLlamaCppLLMClient:
+    return LocalLlamaCppLLMClient(
+        model_path=settings.llm_model_path,
+        repo_id=settings.llm_model_repo_id,
+        filename=settings.llm_model_filename,
+        context_size=settings.llm_context_size,
+        gpu_layers=settings.llm_gpu_layers,
+        batch_size=settings.llm_batch_size,
+    )
+
+
 def get_llm_feedback_service() -> LLMFeedbackService:
+    provider_config = LLMProviderConfig.from_settings(settings)
+    llm_client = (
+        get_local_llm_client()
+        if is_local_llm_provider(provider_config.provider)
+        else OpenAICompatibleLLMClient()
+    )
     return LLMFeedbackService(
-        llm_client=OpenAICompatibleLLMClient(),
-        provider_config=LLMProviderConfig.from_settings(settings),
+        llm_client=llm_client,
+        provider_config=provider_config,
         context_builder=CoachingContextBuilder(),
         prompt_builder=LLMFeedbackPromptBuilder(),
     )
@@ -194,6 +228,7 @@ def get_session_service(
     deterministic_feedback: DeterministicFeedbackService = Depends(
         get_deterministic_feedback_service
     ),
+    feedback_tts: KokoroFeedbackTTSService = Depends(get_feedback_tts_service),
     fuzzy_interpretation: FuzzyInterpretationService = Depends(
         get_fuzzy_interpretation_service
     ),
@@ -227,6 +262,7 @@ def get_session_service(
         phase2a_evaluator=phase2a_evaluator,
         dominant_side_detector=dominant_side_detector,
         deterministic_feedback=deterministic_feedback,
+        feedback_tts=feedback_tts,
         fuzzy_interpretation=fuzzy_interpretation,
         it2_fuzzy_interpretation=it2_fuzzy_interpretation,
         llm_feedback=llm_feedback,

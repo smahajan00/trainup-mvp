@@ -20,18 +20,19 @@ export function ImprovementPlanCard({
   skillLevelLabel
 }: ImprovementPlanCardProps) {
   const primaryFocus = focusItems[0] ?? null;
-  const supportingFocusItems = focusItems.slice(1);
+  const coachCue = improvementSuggestions[0] ?? primaryFocus ?? null;
+  const nextReps = improvementSuggestions.slice(0, 3);
 
   return (
     <InfoCard className="p-5 sm:p-6">
       <SectionTitle
         eyebrow="Plan"
         title="Improvement Plan"
-        description="A focused plan for the next few reps."
+        description="Keep the next set simple: one focus, one correction, three cleaner reps."
       />
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-2xl border border-primary/18 bg-primary/10 p-4">
+      <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-2xl border border-primary/18 bg-[linear-gradient(135deg,rgba(255,122,0,0.14),rgba(255,255,255,0.035))] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-[10px] uppercase tracking-[0.2em] text-primary">
               Focus
@@ -40,16 +41,9 @@ export function ImprovementPlanCard({
           </div>
           {primaryFocus ? (
             <>
-              <p className="mt-3 break-words text-base font-semibold leading-7 text-white">
+              <p className="mt-3 break-words font-display text-xl font-bold leading-7 text-white">
                 {primaryFocus}
               </p>
-              {supportingFocusItems.length ? (
-                <ul className="mt-3 space-y-1 text-sm leading-6 text-white/78">
-                  {supportingFocusItems.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              ) : null}
             </>
           ) : (
             <p className="mt-3 text-sm leading-6 text-white/85">
@@ -57,50 +51,58 @@ export function ImprovementPlanCard({
             </p>
           )}
 
-          {learningObjective ? (
-            <div className="mt-4 rounded-2xl border border-white/10 bg-background-dark/35 px-4 py-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-                Learning objective
-              </p>
-              <p className="mt-2 text-sm leading-6 text-white/85">
-                {learningObjective}
-              </p>
-            </div>
-          ) : null}
+          <div className="mt-4 rounded-2xl border border-white/10 bg-background-dark/35 px-4 py-3">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
+              Coach cue
+            </p>
+            <p className="mt-2 text-sm leading-6 text-white/85">
+              {coachCue ?? "Repeat the same clean shape before adding speed."}
+            </p>
+          </div>
         </div>
 
-        <div className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-              Coaching intensity
+              Drill correction
             </p>
-            <div className="mt-3">
-              <Badge variant="accent">{correctionIntensity ?? "Balanced"}</Badge>
-            </div>
+            <p className="mt-2 text-sm leading-6 text-white/85">
+              {learningObjective ?? "Make the correction at a controlled pace before increasing intensity."}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-              Progression advice
+              Progression
             </p>
             <p className="mt-2 text-sm leading-6 text-white/85">
               {progressionAdvice ?? "Log a few more analyzed sessions to unlock progression guidance."}
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 md:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
+                Coaching intensity
+              </p>
+              <Badge variant="accent">{correctionIntensity ?? "Balanced"}</Badge>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-          Next reps
+          Next 3 reps
         </p>
-        {improvementSuggestions.length ? (
+        {nextReps.length ? (
           <ul className="mt-3 grid gap-2 text-sm leading-6 text-white/85 lg:grid-cols-2">
-            {improvementSuggestions.map((suggestion) => (
+            {nextReps.map((suggestion, index) => (
               <li
                 key={suggestion}
                 className="rounded-2xl border border-white/10 bg-background-dark/35 px-4 py-3"
               >
+                <span className="mr-2 font-semibold text-primary">Rep {index + 1}:</span>
                 {suggestion}
               </li>
             ))}

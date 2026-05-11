@@ -62,6 +62,7 @@ class DrillDetailResponse(APIBaseModel):
     sport_name: str
     drill_name: str
     description: str | None
+    demo_video_url: str | None = None
     target_metrics: DrillTargetMetricsResponse
     reference_payload: DrillReferencePayloadResponse
     coaching_rules: DrillCoachingRulesResponse

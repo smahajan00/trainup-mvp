@@ -6,9 +6,9 @@ import { SectionTitle } from "../../app-shell/components/SectionTitle";
 import type { SkillLevel } from "../../../types/profile";
 import type {
   AnalysisState,
-  ChoquetAggregatedGroup,
   DeterministicFeedbackItem,
   DeterministicEvaluationIssue,
+  FeedbackTTSSegments,
   IT2FuzzyMetricInterpretation,
   LLMEnhancedFeedbackItem,
   SessionAnalysisWarning,
@@ -92,27 +92,6 @@ function findMatchingUncertainty(
   );
 }
 
-function pickChoquetGroup(
-  feedbackItem: DeterministicFeedbackItem,
-  groups: Record<string, ChoquetAggregatedGroup> | undefined
-) {
-  if (!groups) {
-    return null;
-  }
-
-  const bodyPartMatch = Object.values(groups).find((group) =>
-    group.concepts.some((concept) =>
-      concept.toLowerCase().includes(feedbackItem.affected_body_part.toLowerCase())
-    )
-  );
-
-  if (bodyPartMatch) {
-    return bodyPartMatch;
-  }
-
-  return Object.values(groups)[0] ?? null;
-}
-
 function buildFocusItems(
   skillLevel: SkillLevel,
   selectedFocusItems: string[],
@@ -126,6 +105,48 @@ function buildFocusItems(
   }
 
   return improvementSuggestions.slice(0, focusLimit);
+}
+
+function buildFeedbackItemKey(feedbackItem: DeterministicFeedbackItem) {
+  return `${feedbackItem.phase_id}:${feedbackItem.metric_name}:${feedbackItem.priority_rank}`;
+}
+
+function buildTTSSegments(
+  feedbackItem: DeterministicFeedbackItem,
+  whatToFix: string,
+  nextAction: string,
+  isEnhanced: boolean
+): FeedbackTTSSegments {
+  const finalCue = whatToFix || feedbackItem.what_to_fix || feedbackItem.coaching_cue;
+  const finalNextCue =
+    nextAction || feedbackItem.next_rep_cue || feedbackItem.improvement_suggestion;
+
+  return {
+    segment_1: isEnhanced
+      ? finalCue
+      : feedbackItem.simple_coaching_phrase ||
+        feedbackItem.issue_title ||
+        finalCue,
+    segment_2: feedbackItem.what_to_fix || finalCue,
+    segment_3: isEnhanced ? finalNextCue : feedbackItem.next_rep_cue || finalNextCue
+  };
+}
+
+function cleanAdvancedDetail(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return value
+    .replace(/\b[A-Z][A-Z0-9_:-]{3,}\b/g, (match) => formatMetricLabel(match.toLowerCase()))
+    .replace(/\bchoquet\b/gi, "linked-issue")
+    .replace(/\bontology\b/gi, "movement concept")
+    .replace(/\bit2 fuzzy\b/gi, "confidence")
+    .replace(/\bfuzzy\b/gi, "movement read")
+    .replace(/\btemporal model(?:ing)?\b/gi, "timing")
+    .replace(/\bdiagnostic flags?\b/gi, "analysis note")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function SessionResultsPanel({
@@ -218,8 +239,8 @@ export function SessionResultsPanel({
       : sessionSummary?.overall_accuracy ?? null;
   const focusItemLabels = buildFocusItems(
     session.skill_level,
-    (pedagogyResult?.selected_focus_items ?? []).map(
-      (item) => `${formatMetricLabel(item.metric_name)}: ${item.teaching_reason}`
+    (feedbackResult?.prioritized_feedback_items ?? []).map(
+      (item) => item.simple_coaching_phrase || item.what_to_fix || item.coaching_cue
     ),
     feedbackResult?.improvement_suggestions ?? []
   );
@@ -227,42 +248,53 @@ export function SessionResultsPanel({
   const feedbackItems = feedbackResult?.prioritized_feedback_items.slice(0, 3) ?? [];
   const coachingCards = feedbackItems.map((feedbackItem) => {
     const llmItem = findMatchingLLMItem(feedbackItem, llmItems);
-    const pedagogyItem =
-      pedagogyResult?.selected_focus_items.find(
-        (item) =>
-          item.metric_name === feedbackItem.metric_name &&
-          item.phase_id === feedbackItem.phase_id
-      ) ?? null;
     const uncertaintyItem = findMatchingUncertainty(
       feedbackItem,
       it2Result?.it2_metric_results ?? []
     );
-    const choquetGroup = pickChoquetGroup(feedbackItem, choquetResult?.concept_aggregation);
     const uncertaintyNote =
       uncertaintyItem?.uncertainty_category === "HIGH_UNCERTAINTY"
         ? "This pattern appeared with lower confidence, so another clean rep can help confirm it."
         : null;
 
+    const whatToFix =
+      llmItem && !llmItem.fallback_used
+        ? llmItem.llm_coaching_cue
+        : feedbackItem.what_to_fix || feedbackItem.coaching_cue;
+    const nextAction =
+      llmItem && !llmItem.fallback_used
+        ? llmItem.llm_improvement_suggestion
+        : feedbackItem.next_rep_cue || feedbackItem.improvement_suggestion;
+
     return {
       key: `${feedbackItem.phase_id}-${feedbackItem.metric_name}-${feedbackItem.priority_rank}`,
       title: feedbackItem.issue_title || formatMetricLabel(feedbackItem.metric_name),
       severity: feedbackItem.severity_level,
-      whatHappened: feedbackItem.issue_title,
-      whyItHappened: buildFallbackWhyText(
-        leadIssue ?? undefined,
-        pedagogyItem?.teaching_reason ?? null,
-        choquetGroup?.explanation ?? null,
-        temporalResult?.temporal_summary ?? null,
-        ontologyResult?.reasoning_summary ?? null,
-        uncertaintyNote
-      ),
-      whatToFix:
-        llmItem?.llm_coaching_cue ??
-        feedbackItem.coaching_cue,
-      nextAction:
-        llmItem?.llm_improvement_suggestion ??
-        feedbackItem.improvement_suggestion,
+      feedbackItemKey: buildFeedbackItemKey(feedbackItem),
+      whatHappened:
+        feedbackItem.what_happened ||
+        feedbackItem.issue_title ||
+        "This rep showed one movement pattern to clean up first.",
+      whyItHappened:
+        feedbackItem.why_it_matters ||
+        buildFallbackWhyText(
+          leadIssue ?? undefined,
+          null,
+          null,
+          null,
+          null,
+          uncertaintyNote
+        ),
+      whatToFix,
+      nextAction,
+      simpleCue: feedbackItem.simple_coaching_phrase || null,
       isEnhanced: Boolean(llmItem && !llmItem.fallback_used),
+      ttsSegments: buildTTSSegments(
+        feedbackItem,
+        whatToFix,
+        nextAction,
+        Boolean(llmItem && !llmItem.fallback_used)
+      ),
       backupNote:
         llmItem && llmItem.llm_coaching_cue !== llmItem.deterministic_coaching_cue
           ? llmItem.deterministic_coaching_cue
@@ -273,10 +305,10 @@ export function SessionResultsPanel({
   const advancedItems = [
     fuzzyResult
       ? {
-          label: "Fuzzy summary",
+          label: "Movement read",
           value: formatMetricLabel(fuzzyResult.fuzzy_summary.dominant_fuzzy_label),
           detail: fuzzyResult.fuzzy_summary.top_concern_areas.length
-            ? `Top concern areas: ${fuzzyResult.fuzzy_summary.top_concern_areas
+            ? `Main movement concerns: ${fuzzyResult.fuzzy_summary.top_concern_areas
                 .map((item) => formatMetricLabel(item))
                 .join(", ")}.`
             : null
@@ -286,12 +318,12 @@ export function SessionResultsPanel({
       ? {
           label: "Confidence",
           value: buildConfidenceLabel(it2Result),
-          detail: it2Result.uncertainty_summary.summary_text
+          detail: cleanAdvancedDetail(it2Result.uncertainty_summary.summary_text)
         }
       : null,
     pedagogyResult
       ? {
-          label: "Teaching focus",
+          label: "Coaching style",
           value: pedagogyResult.learning_objective,
           detail: `${formatTeachingStrategy(
             pedagogyResult.teaching_strategy
@@ -304,28 +336,29 @@ export function SessionResultsPanel({
           value: ontologyResult.primary_concept
             ? formatMetricLabel(ontologyResult.primary_concept)
             : "No dominant concept",
-          detail: ontologyResult.reasoning_summary
+          detail: cleanAdvancedDetail(ontologyResult.reasoning_summary)
         }
       : null,
     choquetResult
       ? {
-          label: "Interaction insight",
+          label: "Linked issues",
           value: choquetResult.dominant_interaction_group
             ? formatMetricLabel(choquetResult.dominant_interaction_group)
-            : "No dominant interaction",
-          detail:
+            : "No linked issue",
+          detail: cleanAdvancedDetail(
             (choquetResult.dominant_interaction_group
               ? choquetResult.concept_aggregation[choquetResult.dominant_interaction_group]
                   ?.explanation
               : null) ??
-            "Interaction-aware scoring did not isolate one dominant limitation."
+            "Linked movement issues did not isolate one dominant limitation."
+          )
         }
       : null,
     temporalResult
       ? {
-          label: "Movement timing",
+          label: "Timing pattern",
           value: formatTemporalStateLabel(temporalResult.overall_temporal_state),
-          detail: temporalResult.temporal_summary
+          detail: cleanAdvancedDetail(temporalResult.temporal_summary)
         }
       : null
   ].filter((item): item is NonNullable<typeof item> => Boolean(item));
@@ -342,9 +375,6 @@ export function SessionResultsPanel({
               {analysisWarnings.map((warning) => (
                 <li key={`${warning.step}-${warning.message}`}>
                   {warning.message}
-                  {warning.diagnosticFlags.length
-                    ? ` (${warning.diagnosticFlags.join(", ")})`
-                    : ""}
                 </li>
               ))}
             </ul>
@@ -376,7 +406,7 @@ export function SessionResultsPanel({
           {llmFeedbackResult?.status === "COMPLETED" &&
           !llmFeedbackResult.fallback_used ? null : (
             <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
-              LLM enhancement is unavailable, showing deterministic coaching.
+              Showing core rule-based coaching. Wording enhancement is unavailable right now.
             </div>
           )}
 
@@ -389,14 +419,18 @@ export function SessionResultsPanel({
               {coachingCards.map((card) => (
                 <CoachingFeedbackCard
                   key={card.key}
+                  sessionId={session.id}
+                  feedbackItemKey={card.feedbackItemKey}
                   title={card.title}
                   severity={card.severity}
                   whatHappened={card.whatHappened}
                   whyItHappened={card.whyItHappened}
                   whatToFix={card.whatToFix}
                   nextAction={card.nextAction}
+                  simpleCue={card.simpleCue}
                   isEnhanced={card.isEnhanced}
                   backupNote={card.backupNote}
+                  ttsSegments={card.ttsSegments}
                 />
               ))}
             </div>
@@ -455,7 +489,7 @@ export function SessionResultsPanel({
           <div className="flex flex-wrap items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
             <span className="font-semibold text-white">
-              Teaching focus
+              Coaching focus
             </span>
             <Badge variant={getSeverityVariant(leadIssue?.severity_level ?? null)}>
               {formatTeachingStrategy(pedagogyResult.teaching_strategy)}

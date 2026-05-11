@@ -56,194 +56,256 @@ FEEDBACK_TEMPLATE_REGISTRY: dict[FeedbackTemplateKey, FeedbackTemplate] = dict(
         _template(
             "posture_accuracy",
             "UNDER_RANGE",
-            "Posture needs more control",
-            "Keep your chest steady and your body stacked.",
-            "Slow the setup and keep your ribs over your hips.",
+            "Your posture changed during the rep",
+            "Keep your ribs stacked over your hips before you move.",
+            "On the next rep, slow the start and hold the same tall body position.",
         ),
         _template(
             "knee_alignment_score",
             "UNDER_RANGE",
-            "Knees are drifting out of line",
-            "Keep your knees tracking over your toes.",
-            "Move slower and press the knees outward through the rep.",
+            "Your knees drifted away from your toe line",
+            "Keep both knees tracking over the middle toes.",
+            "On the next rep, slow the descent and press the knees outward before standing.",
         ),
         _template(
             "torso_alignment",
             "UNDER_RANGE",
-            "Torso position is unstable",
-            "Keep your chest more upright and controlled.",
-            "Brace before moving and avoid leaning past your base.",
+            "Your torso position changed too much",
+            "Brace first, then keep your chest moving with your hips.",
+            "On the next rep, keep the ribs stacked and avoid tipping past your base.",
         ),
         _template(
             "hip_stability",
             "UNDER_RANGE",
-            "Hips are shifting",
+            "Your hips shifted during the movement",
             "Keep your hips centered between both feet.",
-            "Practice the phase slowly and hold even pressure through both legs.",
+            "On the next rep, keep even pressure through both legs from start to finish.",
         ),
         _template(
             "repetition_consistency",
             "UNDER_RANGE",
-            "Reps are inconsistent",
+            "Your reps changed shape between attempts",
             "Use the same depth and tempo each rep.",
-            "Repeat the drill at a slower pace until the motion looks repeatable.",
+            "On the next set, slow down and repeat the same target shape three times.",
         ),
         _template(
             "balance_stability",
             "UNDER_RANGE",
-            "Balance is unstable",
+            "Your balance drifted during the rep",
             "Stay centered and avoid drifting side to side.",
-            "Pause briefly in the key position before continuing the movement.",
+            "On the next rep, pause briefly in the key position before continuing.",
         ),
         _template(
             "elbow_angle_consistency",
             "UNDER_RANGE",
-            "Elbow path is inconsistent",
+            "Your elbow path changed between reps",
             "Keep your elbow in the same slot each rep.",
-            "Rehearse the movement slowly and finish through the same line.",
+            "On the next rep, rehearse the motion slowly and finish through the same line.",
         ),
         _template(
             "shooting_alignment",
             "UNDER_RANGE",
-            "Shot line is drifting",
+            "Your shot line drifted off target",
             "Release straight through the target line.",
-            "Pause at the set point and align the elbow before extending.",
+            "On the next shot, pause at the set point and align the elbow before extending.",
         ),
         _template(
             "shoulder_control",
             "UNDER_RANGE",
-            "Shoulder control needs work",
+            "Your shoulder moved before the rest of the pattern was set",
             "Keep your shoulders quiet through the movement.",
-            "Start from a stable base and avoid opening the shoulder early.",
+            "On the next rep, start from a stable base and avoid opening the shoulder early.",
         ),
         _template(
             "elbow_extension",
             "UNDER_RANGE",
-            "Elbow extension is incomplete",
-            "Extend your arm fully for a cleaner finish.",
-            "Finish each rep with a controlled full extension.",
+            "Your press did not finish cleanly",
+            "Extend your elbows to a controlled lockout without rushing.",
+            "On the next rep, press tall and own the top position before lowering.",
         ),
         _template(
             "wrist_elbow_alignment",
             "UNDER_RANGE",
-            "Wrist and elbow are not stacked",
+            "Your wrist and elbow lost their stack",
             "Keep your wrist over your elbow.",
-            "Use a slower press and keep the hand path vertical.",
+            "On the next rep, use a slower press and keep the hand path vertical.",
         ),
         _template(
             "lockout_control",
             "UNDER_RANGE",
-            "Lockout is unstable",
+            "Your lockout was not controlled",
             "Finish the rep with control at the top.",
-            "Pause at lockout and keep the weight from drifting.",
+            "On the next rep, pause at lockout and keep the weight from drifting.",
         ),
         _template(
             "shoulder_symmetry",
             "UNDER_RANGE",
-            "Shoulders are not moving evenly",
+            "Your shoulders did not move evenly",
             "Keep both shoulders level and controlled.",
-            "Lower the load or speed until both sides move together.",
+            "On the next set, lower the speed until both sides move together.",
         ),
         _template(
             "stance_width_control",
             "UNDER_RANGE",
-            "Stance width is changing",
+            "Your stance width changed during the hold",
             "Keep your feet at a steady athletic width.",
-            "Reset your base before holding or moving in stance.",
+            "On the next rep, reset your base before holding or moving in stance.",
         ),
         _template(
             "knee_flexion",
             "UNDER_RANGE",
-            "Knee bend needs adjustment",
-            "Lower your hips slightly more for stability.",
-            "Hold the loaded position and keep your knees bent over your feet.",
+            "You came out of your defensive stance too high",
+            "Lower your hips slightly more and keep the knees loaded.",
+            "On the next rep, hold the loaded position with knees bent over your feet.",
         ),
         _template(
             "hip_level_stability",
             "UNDER_RANGE",
-            "Hip height is unstable",
+            "Your hip height changed during the stance",
             "Keep your hips low and level.",
-            "Shorten the hold and rebuild the same hip height each rep.",
+            "On the next rep, shorten the hold and rebuild the same hip height.",
         ),
         _template(
             "plant_foot_alignment_ratio",
             "UNDER_RANGE",
-            "Plant foot is inconsistent",
-            "Set your support foot beside the ball.",
-            "Slow the approach and place the plant foot before swinging.",
+            "Your plant foot did not arrive in a consistent spot",
+            "Set your support foot beside the ball before the swing.",
+            "On the next pass, slow the approach and plant before striking.",
         ),
         _template(
             "instep_backswing_knee_angle",
             "UNDER_RANGE",
-            "Backswing shape needs work",
+            "Your backswing shape rushed the pass",
             "Let the kicking knee fold before the strike.",
-            "Use a shorter approach and build a smooth backswing.",
+            "On the next pass, use a shorter approach and build a smooth backswing.",
         ),
         _template(
             "instep_contact_extension",
             "UNDER_RANGE",
-            "Contact leg is not extending",
-            "Strike through the ball with a firm leg.",
-            "Practice clean contact with a slower swing first.",
+            "Your kicking leg did not extend through contact",
+            "Lock the ankle and strike through the center of the ball.",
+            "On the next pass, use a slower swing and finish through the target.",
         ),
         _template(
             "instep_torso_tilt",
             "UNDER_RANGE",
-            "Torso is leaning away",
+            "Your torso leaned away from the pass",
             "Keep your chest over the plant leg.",
-            "Finish toward the target without falling away.",
+            "On the next pass, finish toward the target without falling away.",
         ),
         _template(
             "instep_follow_through_stability",
             "UNDER_RANGE",
-            "Follow-through is unstable",
+            "Your follow-through did not stay on line",
             "Finish with a controlled follow-through.",
-            "Guide the kicking leg through the target line after contact.",
+            "On the next pass, guide the kicking leg through the target line after contact.",
         ),
         _template(
             "support_foot_distance_ratio",
             "UNDER_RANGE",
-            "Support foot distance is inconsistent",
+            "Your plant foot landed at a different distance",
             "Place your support foot beside the ball.",
-            "Rehearse the final step so the plant foot lands at the same distance.",
+            "On the next shot, rehearse the final step so the plant foot lands consistently.",
         ),
         _template(
             "shooting_knee_load",
             "UNDER_RANGE",
-            "Kicking leg load is rushed",
+            "Your kicking leg loaded too quickly",
             "Load the kicking knee before you swing.",
-            "Slow down the approach and create a clear load before contact.",
+            "On the next shot, slow the approach and create a clear load before contact.",
         ),
         _template(
             "shooting_swing_velocity",
             "UNDER_RANGE",
-            "Swing speed is low",
-            "Accelerate the kicking foot through the ball.",
-            "Build speed gradually after the plant foot is stable.",
+            "Your swing did not accelerate through the ball",
+            "Accelerate the kicking foot after the plant foot is stable.",
+            "On the next shot, build speed gradually after your plant is set.",
         ),
         _template(
             "shooting_contact_extension",
             "UNDER_RANGE",
-            "Contact extension is incomplete",
+            "Your shot stopped short at contact",
             "Extend through the ball at contact.",
-            "Practice striking with a controlled follow-through toward the target.",
+            "On the next shot, strike with a controlled follow-through toward the target.",
         ),
         _template(
             "torso_rotation_stability",
             "UNDER_RANGE",
-            "Torso rotation is unstable",
+            "Your trunk rotated before the shot was controlled",
             "Keep your upper body organized through the strike.",
-            "Use a slower swing and keep the chest from twisting early.",
+            "On the next shot, slow the swing and keep the chest from twisting early.",
         ),
         _template(
             "shooting_balance",
             "UNDER_RANGE",
-            "Finish balance needs work",
+            "Your finish balance broke down",
             "Stay balanced after the strike.",
-            "Hold the finish on your support leg before resetting.",
+            "On the next shot, hold the finish on your support leg before resetting.",
         ),
     ]
 )
+
+
+_WHY_IT_MATTERS_BY_METRIC = {
+    "posture_accuracy": "Posture gives the rest of the movement a stable base. When it changes, every rep becomes harder to repeat.",
+    "knee_alignment_score": "Knee tracking protects the lower body and keeps force moving cleanly through the feet.",
+    "torso_alignment": "A steady torso helps your hips and legs do the work instead of losing balance through the upper body.",
+    "hip_stability": "Stable hips keep pressure even through both sides so the movement does not drift or twist.",
+    "repetition_consistency": "Consistent reps make the pattern trainable and help TrainUp read the same movement target each time.",
+    "balance_stability": "Balance lets you finish the skill under control instead of leaking force at the end.",
+    "elbow_angle_consistency": "A repeatable elbow path keeps the shot or press on the same line every rep.",
+    "shooting_alignment": "Shot alignment keeps the ball moving toward the target instead of drifting off line.",
+    "shoulder_control": "Quiet shoulders keep the upper body organized so the release or press stays repeatable.",
+    "elbow_extension": "A clean finish gives the rep a clear endpoint and prevents the movement from stopping short.",
+    "wrist_elbow_alignment": "Stacking the wrist and elbow keeps force moving vertically instead of drifting forward or sideways.",
+    "lockout_control": "A stable lockout shows you own the top position before lowering or resetting.",
+    "shoulder_symmetry": "Even shoulder movement keeps one side from compensating for the other.",
+    "stance_width_control": "A steady stance width gives you a reliable base for reacting and changing direction.",
+    "knee_flexion": "Good knee bend keeps you loaded and ready instead of popping upright.",
+    "hip_level_stability": "Level hips keep your defensive base low and balanced.",
+    "plant_foot_alignment_ratio": "The plant foot sets the line for the pass before the kicking leg swings.",
+    "instep_backswing_knee_angle": "A controlled backswing helps time the strike instead of rushing contact.",
+    "instep_contact_extension": "Extending through contact helps the pass travel cleanly through the target line.",
+    "instep_torso_tilt": "A stable trunk keeps your body over the ball so the pass does not pull off line.",
+    "instep_follow_through_stability": "A controlled follow-through shows the pass finished toward the target.",
+    "support_foot_distance_ratio": "Plant-foot distance sets the shooting angle and gives the swing room to finish.",
+    "shooting_knee_load": "Loading the kicking knee gives the shot rhythm before acceleration.",
+    "shooting_swing_velocity": "Swing speed matters only after the plant foot and body shape are stable.",
+    "shooting_contact_extension": "Extending through the ball creates a cleaner strike and follow-through.",
+    "torso_rotation_stability": "Controlled trunk rotation keeps power moving through the ball instead of pulling the shot off balance.",
+    "shooting_balance": "A balanced finish shows the strike was controlled all the way through.",
+}
+
+
+_SIMPLE_PHRASE_BY_METRIC = {
+    "posture_accuracy": "Stay tall and stacked.",
+    "knee_alignment_score": "Knees over toes.",
+    "torso_alignment": "Brace, then move.",
+    "hip_stability": "Keep the hips centered.",
+    "repetition_consistency": "Same shape every rep.",
+    "balance_stability": "Own the finish.",
+    "elbow_angle_consistency": "Same elbow slot.",
+    "shooting_alignment": "Release on line.",
+    "shoulder_control": "Quiet shoulders.",
+    "elbow_extension": "Finish the reach.",
+    "wrist_elbow_alignment": "Stack wrist over elbow.",
+    "lockout_control": "Control the top.",
+    "shoulder_symmetry": "Move both sides together.",
+    "stance_width_control": "Hold your base.",
+    "knee_flexion": "Stay loaded.",
+    "hip_level_stability": "Hips low and level.",
+    "plant_foot_alignment_ratio": "Plant beside the ball.",
+    "instep_backswing_knee_angle": "Fold, then strike.",
+    "instep_contact_extension": "Strike through the ball.",
+    "instep_torso_tilt": "Chest over the plant leg.",
+    "instep_follow_through_stability": "Finish through target.",
+    "support_foot_distance_ratio": "Plant, then swing.",
+    "shooting_knee_load": "Load before contact.",
+    "shooting_swing_velocity": "Accelerate after the plant.",
+    "shooting_contact_extension": "Drive through contact.",
+    "torso_rotation_stability": "Keep the trunk organized.",
+    "shooting_balance": "Hold the finish.",
+}
 
 
 @dataclass(frozen=True)
@@ -294,6 +356,7 @@ class DeterministicFeedbackService:
             template, fallback_flag = self._resolve_template(issue)
             if fallback_flag is not None:
                 diagnostic_flags.append(fallback_flag)
+            explanation = self._build_item_explanation(issue=issue, template=template)
             feedback_items.append(
                 DeterministicFeedbackItemResponse(
                     phase_id=issue.phase_id,
@@ -305,6 +368,11 @@ class DeterministicFeedbackService:
                     issue_title=template.issue_title,
                     coaching_cue=template.coaching_cue,
                     improvement_suggestion=template.improvement_suggestion,
+                    what_happened=explanation["what_happened"],
+                    why_it_matters=explanation["why_it_matters"],
+                    what_to_fix=explanation["what_to_fix"],
+                    next_rep_cue=explanation["next_rep_cue"],
+                    simple_coaching_phrase=explanation["simple_coaching_phrase"],
                     priority_rank=priority_rank,
                     deviation=issue.deviation,
                 )
@@ -391,6 +459,30 @@ class DeterministicFeedbackService:
         )
 
     @staticmethod
+    def _build_item_explanation(
+        *,
+        issue: DeterministicEvaluationIssueResponse,
+        template: FeedbackTemplate,
+    ) -> dict[str, str]:
+        metric_id = issue.metric_id or issue.metric_name
+        phase_label = _humanize(issue.phase_id)
+        body_part = issue.affected_body_part.replace("_", " ")
+        simple_phrase = _SIMPLE_PHRASE_BY_METRIC.get(metric_id, template.coaching_cue)
+
+        return {
+            "what_happened": (
+                f"{template.issue_title}. It showed up during the {phase_label} phase around your {body_part} control."
+            ),
+            "why_it_matters": _WHY_IT_MATTERS_BY_METRIC.get(
+                metric_id,
+                "This pattern matters because it changes how repeatable and controllable the movement feels from rep to rep.",
+            ),
+            "what_to_fix": template.coaching_cue,
+            "next_rep_cue": template.improvement_suggestion,
+            "simple_coaching_phrase": simple_phrase,
+        }
+
+    @staticmethod
     def _build_summary(
         *,
         evaluation_result: DeterministicEvaluationResult,
@@ -398,9 +490,9 @@ class DeterministicFeedbackService:
     ) -> str:
         if feedback_items:
             top_item = feedback_items[0]
-            top_focus = top_item.improvement_suggestion
+            top_focus = top_item.next_rep_cue or top_item.improvement_suggestion
             issue_sentence = (
-                f"Main issue: {top_item.issue_title.lower()} in the "
+                f"Start with {top_item.issue_title.lower()} during the "
                 f"{_humanize(top_item.phase_id)} phase."
             )
         else:
@@ -410,11 +502,11 @@ class DeterministicFeedbackService:
         if evaluation_result.strongest_metrics:
             strongest = evaluation_result.strongest_metrics[0]
             strongest_sentence = (
-                f"Strongest area: {_humanize(strongest.metric_name)} during "
-                f"{_humanize(strongest.phase_id)}."
+                f"Your best pattern was {_humanize(strongest.metric_name)} during "
+                f"the {_humanize(strongest.phase_id)} phase."
             )
         else:
-            strongest_sentence = "Strongest area: no scored metric stood out."
+            strongest_sentence = "No single scored area stood out as the strongest pattern."
 
         overall_sentence = {
             SeverityLevel.MINOR: "Overall, this session was controlled with minor adjustments needed.",
@@ -422,7 +514,7 @@ class DeterministicFeedbackService:
             SeverityLevel.SEVERE: "Overall, this session needs focused technique work before increasing difficulty.",
         }[evaluation_result.overall_severity]
 
-        return f"{overall_sentence} {strongest_sentence} {issue_sentence} Top focus: {top_focus}"
+        return f"{overall_sentence} {strongest_sentence} {issue_sentence} Next focus: {top_focus}"
 
     @staticmethod
     def _build_improvement_suggestions(

@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Camera,
   ListChecks,
+  Maximize2,
+  Pause,
+  Play,
   PlayCircle,
   Sparkles,
   Target,
@@ -29,6 +32,180 @@ import { useStartSessionFromDrill } from "../../../features/sessions/hooks/useSt
 import { getDrillById } from "../../../services/drills";
 import type { DrillDetail } from "../../../types/drills";
 import type { ProfileResponse } from "../../../types/profile";
+
+function formatDemoTime(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0:00";
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60)
+    .toString()
+    .padStart(2, "0");
+
+  return `${minutes}:${seconds}`;
+}
+
+function DrillDemoVideo({ src }: { src: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const keepVideoMuted = () => {
+      video.muted = true;
+      video.defaultMuted = true;
+      video.volume = 0;
+    };
+
+    const handleMetadata = () => {
+      keepVideoMuted();
+      setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+    };
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+    };
+    const handlePlay = () => {
+      keepVideoMuted();
+      setIsPlaying(true);
+    };
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
+    keepVideoMuted();
+    video.addEventListener("loadedmetadata", handleMetadata);
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    video.addEventListener("play", handlePlay);
+    video.addEventListener("pause", handlePause);
+    video.addEventListener("ended", handlePause);
+    video.addEventListener("volumechange", keepVideoMuted);
+
+    return () => {
+      video.removeEventListener("loadedmetadata", handleMetadata);
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+      video.removeEventListener("play", handlePlay);
+      video.removeEventListener("pause", handlePause);
+      video.removeEventListener("ended", handlePause);
+      video.removeEventListener("volumechange", keepVideoMuted);
+    };
+  }, [src]);
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+
+    if (video.paused) {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((playError: unknown) => {
+          if (
+            playError instanceof DOMException &&
+            playError.name === "AbortError"
+          ) {
+            return;
+          }
+        });
+      }
+      return;
+    }
+
+    video.pause();
+  };
+
+  const handleSeek = (value: string) => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const nextTime = Number(value);
+    if (!Number.isFinite(nextTime)) {
+      return;
+    }
+
+    video.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  };
+
+  const openFullscreen = () => {
+    const container = containerRef.current;
+    if (!container || !container.requestFullscreen) {
+      return;
+    }
+
+    void container.requestFullscreen();
+  };
+
+  return (
+    <div ref={containerRef} className="bg-black">
+      <div className="relative aspect-video overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          preload="metadata"
+          disablePictureInPicture
+          className="absolute inset-0 h-full w-full bg-black object-cover"
+          src={src}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_58%,rgba(0,0,0,0.22)_100%),linear-gradient(180deg,rgba(0,0,0,0.10),transparent_28%,transparent_72%,rgba(0,0,0,0.18))]" />
+      </div>
+
+      <div className="border-t border-white/10 bg-[linear-gradient(180deg,rgba(12,12,12,0.96),rgba(20,20,20,0.98))] px-3 py-2">
+        <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.035] px-2.5 py-1.5 shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
+          <button
+            type="button"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/15 text-primary transition hover:border-primary/45 hover:bg-primary/20"
+            aria-label={isPlaying ? "Pause reference demo" : "Play reference demo"}
+            onClick={togglePlayback}
+          >
+            {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+          </button>
+
+          <input
+            type="range"
+            min={0}
+            max={duration || 0}
+            step="0.1"
+            value={Math.min(currentTime, duration || currentTime)}
+            aria-label="Seek reference demo"
+            className="h-1 min-w-0 flex-1 cursor-pointer accent-primary"
+            onChange={(event) => {
+              handleSeek(event.target.value);
+            }}
+          />
+
+          <span className="flex h-7 shrink-0 items-center text-[0.62rem] font-semibold tabular-nums uppercase tracking-[0.12em] text-white/50">
+            {formatDemoTime(currentTime)} / {formatDemoTime(duration)}
+          </span>
+
+          <button
+            type="button"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-white/70 transition hover:border-white/20 hover:bg-white/[0.10] hover:text-white"
+            aria-label="View reference demo fullscreen"
+            onClick={openFullscreen}
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function DrillDetailContent({
   drillId,
@@ -126,7 +303,6 @@ function DrillDetailContent({
       ? "Auto-detect by default. You can override to Left or Right in session setup."
       : "Not required for this drill.";
   const demoVideoUrl = drill.demo_video_url ?? null;
-  const expectedDemoVideoPath = `/videos/drills/${drill.id}.mp4`;
   const outputPreview = [
     "Capture validation",
     "Performance score",
@@ -149,13 +325,36 @@ function DrillDetailContent({
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
               {truncateText(drill.description, 110)}
             </p>
+
+            <div className="mt-4 overflow-hidden rounded-[1.5rem] border border-white/10 bg-background-dark/70 shadow-soft transition duration-300 hover:border-primary/25 hover:shadow-[0_18px_45px_rgba(255,122,0,0.10)]">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-primary/75">
+                  Reference demo
+                </p>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-white/55">
+                  Model rep
+                </span>
+              </div>
+              {demoVideoUrl ? (
+                <DrillDemoVideo src={demoVideoUrl} />
+              ) : (
+                <div className="flex aspect-video flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.10),_transparent_45%),linear-gradient(180deg,rgba(17,17,17,0.72),rgba(31,31,31,0.88))] px-6 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+                    <PlayCircle className="h-5 w-5" />
+                  </div>
+                  <p className="mt-4 font-display text-xl font-bold text-white">
+                    Demo video coming soon
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="grid w-full gap-3 xl:max-w-sm">
+          <div className="grid w-full gap-3 xl:max-w-sm xl:-mt-1">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <CTAButton
                 type="button"
-                className="justify-between rounded-2xl px-5 py-6"
+                className="justify-between rounded-2xl px-5 py-5"
                 disabled={startingMode !== null}
                 onClick={() => {
                   void startSession("UPLOAD");
@@ -171,7 +370,7 @@ function DrillDetailContent({
               <CTAButton
                 type="button"
                 variant="outline"
-                className="justify-between rounded-2xl border-white/15 bg-white/[0.03] px-5 py-6 text-white"
+                className="justify-between rounded-2xl border-white/15 bg-white/[0.03] px-5 py-5 text-white"
                 disabled={startingMode !== null}
                 onClick={() => {
                   void startSession("LIVE");
@@ -193,17 +392,17 @@ function DrillDetailContent({
             <p className="text-sm text-muted-gray">
               Pick a capture mode to open the training flow. Setup controls are available before capture starts.
             </p>
-            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4">
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-3.5">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
                 You’ll get
               </p>
-              <div className="mt-4 space-y-3">
+              <div className="mt-3 space-y-2">
                 {outputPreview.map((item) => (
                   <div
                     key={item}
-                    className="flex items-start gap-3 rounded-2xl border border-white/10 bg-background-dark/50 px-4 py-3"
+                    className="flex items-start gap-2.5 rounded-2xl border border-white/10 bg-background-dark/50 px-3.5 py-2.5"
                   >
-                    <Sparkles className="mt-0.5 h-4 w-4 text-primary" />
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 text-primary" />
                     <p className="text-sm text-white/85">{item}</p>
                   </div>
                 ))}
@@ -365,40 +564,6 @@ function DrillDetailContent({
           <Badge variant="accent">Live Camera</Badge>
           <Badge variant="slate">Upload Video</Badge>
         </div>
-      </InfoCard>
-
-      <InfoCard>
-        <SectionTitle
-          eyebrow="Drill Demo"
-          title="Reference demo"
-          description="This slot is ready for a model rep once drill demo videos are added."
-        />
-
-        {demoVideoUrl ? (
-          <div className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate/40">
-            <video
-              controls
-              playsInline
-              className="aspect-video w-full bg-black object-cover"
-              src={demoVideoUrl}
-            />
-          </div>
-        ) : (
-          <div className="mt-6 flex aspect-video flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-white/15 bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.12),_transparent_45%),linear-gradient(180deg,rgba(17,17,17,0.86),rgba(31,31,31,0.92))] px-8 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary">
-              <PlayCircle className="h-7 w-7" />
-            </div>
-            <h3 className="mt-5 font-display text-3xl font-bold text-white">
-              Demo video coming soon
-            </h3>
-            <p className="mt-4 max-w-xl text-sm text-muted-gray">
-              Future drill demos can be connected here without changing the rest of the preview flow.
-            </p>
-            <p className="mt-4 text-xs uppercase tracking-[0.24em] text-white/45">
-              Expected path: {expectedDemoVideoPath}
-            </p>
-          </div>
-        )}
       </InfoCard>
 
       <div className="grid gap-5 xl:grid-cols-3">

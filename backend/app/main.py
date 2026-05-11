@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -7,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.services.llm_client import is_local_llm_provider, llm_enhancement_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,36 @@ def create_application() -> FastAPI:
     )
 
     application.include_router(api_router, prefix=settings.api_prefix)
+
+    @application.on_event("startup")
+    async def warmup_optional_ai_services() -> None:
+        if (
+            settings.llm_warmup_on_startup
+            and llm_enhancement_enabled(settings)
+            and is_local_llm_provider(settings.llm_provider)
+        ):
+            def _warmup_llm() -> None:
+                try:
+                    from app.core.dependencies import get_local_llm_client
+
+                    get_local_llm_client().warmup()
+                except Exception as exc:
+                    logger.warning("Local LLM warmup failed", extra={"error": str(exc)})
+
+            threading.Thread(target=_warmup_llm, daemon=True).start()
+
+        if not settings.tts_warmup_on_startup or not settings.tts_enabled:
+            return
+
+        def _warmup_tts() -> None:
+            try:
+                from app.core.dependencies import get_feedback_tts_service
+
+                get_feedback_tts_service().ensure_loaded()
+            except Exception as exc:
+                logger.warning("Kokoro TTS warmup failed", extra={"error": str(exc)})
+
+        threading.Thread(target=_warmup_tts, daemon=True).start()
 
     @application.exception_handler(RequestValidationError)
     async def validation_exception_handler(

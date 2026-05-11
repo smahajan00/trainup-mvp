@@ -49,6 +49,7 @@ def _build_service(pose_sequence: PoseSequenceResponse | None) -> SessionService
         fuzzy_interpretation=None,
         it2_fuzzy_interpretation=None,
         llm_feedback=None,
+        feedback_tts=None,
         pedagogical_decision=None,
         ontology_reasoning=None,
         choquet_aggregation=None,

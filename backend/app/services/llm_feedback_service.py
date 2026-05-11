@@ -23,10 +23,25 @@ from app.schemas.session import (
     PedagogicalDecisionResult,
     TemporalModelingResult,
 )
-from app.services.llm_client import LLMClient, LLMClientError, LLMMessage, LLMProviderConfig
+from app.services.llm_client import (
+    LLMClient,
+    LLMClientError,
+    LLMMessage,
+    LLMProviderConfig,
+    is_local_llm_provider,
+)
 
 
 _UNSAFE_TERMS = ("pain", "injury", "diagnose", "diagnosis", "doctor", "medical")
+_INTERNAL_ANALYSIS_TERMS = (
+    "fuzzy",
+    "choquet",
+    "ontology",
+    "it2",
+    "it2 fuzzy",
+    "temporal model",
+    "diagnostic flag",
+)
 
 
 @dataclass(frozen=True)
@@ -690,13 +705,15 @@ class LLMFeedbackPromptBuilder:
                     "coaching_cue, improvement_suggestion, grounding_fields_used.\n"
                     "Each text field must be one short sentence.\n"
                     "Use deterministic evaluation as the source of truth. "
-                    "Use advanced reasoning only to explain and prioritize. "
-                    "If uncertainty is high, use softer wording. "
-                    "If temporal state is RUSHED or JERKY, mention movement control. "
-                    "If related issues appeared together, explain that connection simply. "
-                    "If pedagogy indicates BEGINNER, keep one clear correction. "
-                    "If ADVANCED, you may use more technical wording. "
-                    "Do not mention internal terms like ontology, Choquet, or IT2 fuzzy.\n"
+                    "Do not add issues, body regions, metrics, causes, or priorities that are not present in context. "
+                    "Use advanced reasoning only to refine wording, explanation, prioritization, and coaching clarity. "
+                    "Fuzzy context: use linguistic movement severity to explain what the issue feels like. "
+                    "Uncertainty context: if confidence guidance is low_certainty, soften wording with appears to, may be, or try checking; if high_certainty, speak more directly. "
+                    "Pedagogy context: match cue complexity to skill level; beginner means one simple correction, advanced can be more precise. "
+                    "Movement concept context: explain related body concepts naturally, such as lower-body control, without method names. "
+                    "Linked-issue context: if related issues appeared together, explain the connection simply. "
+                    "Timing context: if state is RUSHED, JERKY, CONTROLLED, or STABLE, add a pacing or control cue. "
+                    "Do not mention internal terms like ontology, Choquet, IT2 fuzzy, temporal model, or diagnostic flags.\n"
                     f"Context:\n{json.dumps(asdict(context), sort_keys=True)}"
                 ),
             ),
@@ -714,11 +731,15 @@ class LLMFeedbackPromptBuilder:
                     "Return JSON only with keys: summary, grounding_fields_used.\n"
                     "The summary must be no more than three short sentences.\n"
                     "Use deterministic evaluation as the source of truth. "
-                    "Use advanced reasoning only to explain and prioritize. "
-                    "If uncertainty is high, soften certainty claims. "
-                    "If temporal state is RUSHED or JERKY, mention movement control. "
-                    "If related issues appeared together, explain that they showed up together. "
-                    "Do not mention internal terms like ontology, Choquet, or IT2 fuzzy.\n"
+                    "Do not add issues, body regions, metrics, causes, or priorities that are not present in context. "
+                    "Use advanced reasoning only to refine wording, explanation, prioritization, and coaching clarity. "
+                    "Fuzzy context: use linguistic movement severity to explain what the issue feels like. "
+                    "Uncertainty context: if confidence guidance is low_certainty, soften wording with appears to, may be, or try checking; if high_certainty, speak more directly. "
+                    "Pedagogy context: match cue complexity to skill level; beginner means one simple correction, advanced can be more precise. "
+                    "Movement concept context: explain related body concepts naturally, such as lower-body control, without method names. "
+                    "Linked-issue context: if related issues appeared together, explain the connection simply. "
+                    "Timing context: if state is RUSHED, JERKY, CONTROLLED, or STABLE, add a pacing or control cue. "
+                    "Do not mention internal terms like ontology, Choquet, IT2 fuzzy, temporal model, or diagnostic flags.\n"
                     f"Context:\n{json.dumps(asdict(context), sort_keys=True)}"
                 ),
             ),
@@ -732,12 +753,15 @@ class LLMFeedbackPromptBuilder:
             "Only explain the supplied findings. Do not invent new faults, metrics, "
             "diagnoses, pain, injury claims, or unsupported body mechanics. "
             "Do not contradict severity or priority ordering. "
-            "Use advanced reasoning only to explain emphasis and delivery, never to invent diagnosis. "
+            "Use advanced reasoning only to explain emphasis, delivery, prioritization, and clarity, never to invent diagnosis. "
             "Adapt wording to the drill, phase, and skill level. "
-            "If uncertainty is high, use softer wording. "
-            "If temporal movement looks rushed or jerky, mention control and pacing. "
+            "Use movement severity labels to describe how the issue feels. "
+            "If uncertainty is high, use softer wording; if uncertainty is low, speak more directly. "
+            "Match wording complexity to the teaching strategy and athlete skill level. "
+            "Use movement concepts and body regions in natural coaching language. "
             "If related issues appeared together, explain that they showed up together. "
-            "Do not mention internal analysis terms such as ontology, Choquet, or IT2 fuzzy. "
+            "If timing is rushed, jerky, controlled, or stable, include a pacing cue. "
+            "Do not mention internal analysis terms such as ontology, Choquet, IT2 fuzzy, temporal model, or diagnostic flags. "
             "Keep language short, safe, and coaching-oriented."
         )
 
@@ -920,7 +944,10 @@ class LLMFeedbackService:
             return "LLM_PROVIDER_NOT_CONFIGURED"
         if not self.provider_config.model:
             return "LLM_MODEL_NOT_CONFIGURED"
-        if not self.provider_config.api_key:
+        if (
+            not is_local_llm_provider(self.provider_config.provider)
+            and not self.provider_config.api_key
+        ):
             return "LLM_API_KEY_MISSING"
         return None
 
@@ -970,6 +997,8 @@ class LLMFeedbackService:
         lowered = text.lower()
         if any(term in lowered for term in _UNSAFE_TERMS):
             raise LLMClientError("LLM response contained unsupported safety content.")
+        if any(term in lowered for term in _INTERNAL_ANALYSIS_TERMS):
+            raise LLMClientError("LLM response exposed internal analysis terminology.")
         return text
 
     @staticmethod

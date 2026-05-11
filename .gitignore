@@ -21,3 +21,7 @@ build/
 coverage/
 htmlcov/
 postgres_data/
+backend/models/*.gguf
+backend/models/*.bin
+backend/models/*.gguf
+backend/models/**/*.gguf

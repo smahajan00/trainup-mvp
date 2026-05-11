@@ -216,8 +216,16 @@ def test_phase3a_generates_deterministic_feedback_for_all_drills(
     assert payload["prioritized_feedback_items"][0]["metric_id"] == metric_id
     assert payload["prioritized_feedback_items"][0]["priority_rank"] == 1
     assert payload["prioritized_feedback_items"][0]["coaching_cue"]
+    assert payload["prioritized_feedback_items"][0]["what_happened"]
+    assert payload["prioritized_feedback_items"][0]["why_it_matters"]
+    assert payload["prioritized_feedback_items"][0]["what_to_fix"]
+    assert payload["prioritized_feedback_items"][0]["next_rep_cue"]
+    assert payload["prioritized_feedback_items"][0]["simple_coaching_phrase"]
     assert payload["improvement_suggestions"]
-    assert "Top focus:" in payload["overall_feedback_summary"]
+    assert "Next focus:" in payload["overall_feedback_summary"]
+    assert "Top focus:" not in payload["overall_feedback_summary"]
+    assert "Main issue:" not in payload["overall_feedback_summary"]
+    assert "Strongest area:" not in payload["overall_feedback_summary"]
 
     stored_artifact = db_session.scalar(
         select(SessionArtifact).where(

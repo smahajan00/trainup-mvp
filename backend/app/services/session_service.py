@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import base64
 import hashlib
 import time
 from dataclasses import dataclass
@@ -41,6 +42,9 @@ from app.schemas.session import (
     DeterministicEvaluationResult,
     DeterministicFeedbackItemResponse,
     DeterministicFeedbackResult,
+    FeedbackTTSRequest,
+    FeedbackTTSResponse,
+    FeedbackTTSSegments,
     FeedbackResponse,
     FrameBatchRequest,
     FrameBatchResponse,
@@ -67,6 +71,10 @@ from app.schemas.session import (
 from app.services.capture_protocol_validator import CaptureProtocolValidator
 from app.services.deterministic_feedback_service import DeterministicFeedbackService
 from app.services.dominant_side_detector import DominantSideDetector
+from app.services.feedback_tts_service import (
+    FeedbackTTSUnavailableError,
+    KokoroFeedbackTTSService,
+)
 from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
 from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
 from app.services.llm_feedback_service import LLMFeedbackService
@@ -80,6 +88,7 @@ PERCEPTION_ARTIFACT_TYPE = "perception_payload"
 COGNITION_ARTIFACT_TYPE = "cognition_result"
 EVALUATION_ARTIFACT_TYPE = "evaluation_result"
 FEEDBACK_ARTIFACT_TYPE = "feedback_result"
+FEEDBACK_TTS_ARTIFACT_TYPE = "feedback_tts_result"
 LLM_FEEDBACK_ARTIFACT_TYPE = "llm_feedback_result"
 FUZZY_INTERPRETATION_ARTIFACT_TYPE = "fuzzy_interpretation_result"
 IT2_FUZZY_INTERPRETATION_ARTIFACT_TYPE = "it2_fuzzy_interpretation_result"
@@ -146,6 +155,7 @@ class SessionService:
     phase2a_evaluator: Phase2AEvaluator
     dominant_side_detector: DominantSideDetector
     deterministic_feedback: DeterministicFeedbackService
+    feedback_tts: KokoroFeedbackTTSService
     fuzzy_interpretation: FuzzyInterpretationService
     it2_fuzzy_interpretation: IT2FuzzyInterpretationService
     llm_feedback: LLMFeedbackService
@@ -783,6 +793,74 @@ class SessionService:
         self._replace_feedback_outputs(session_id=session.id, result=result)
         self.db.commit()
         return result
+
+    def generate_feedback_tts(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        payload: FeedbackTTSRequest,
+    ) -> FeedbackTTSResponse:
+        session = self._get_owned_session(user_id=user_id, session_id=session_id)
+        if not get_settings().tts_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Audio coaching is unavailable right now.",
+            )
+
+        segments = (
+            payload.segments
+            if payload.segments is not None
+            else self._build_tts_segments_from_feedback(
+                session_id=session.id,
+                feedback_item_key=payload.feedback_item_key,
+            )
+        )
+        segments = FeedbackTTSSegments(
+            segment_1=self._compact_tts_segment(segments.segment_1),
+            segment_2=self._compact_tts_segment(segments.segment_2),
+            segment_3=self._compact_tts_segment(segments.segment_3),
+        )
+        segment_values = [
+            segments.segment_1.strip(),
+            segments.segment_2.strip(),
+            segments.segment_3.strip(),
+        ]
+        text_hash = self._build_tts_text_hash(segments=segment_values)
+
+        cached_response = self._load_cached_tts_response(
+            session_id=session.id,
+            text_hash=text_hash,
+            segments=segments,
+        )
+        if cached_response is not None:
+            return cached_response
+
+        try:
+            audio_bytes = self.feedback_tts.synthesize(segments=segment_values)
+        except FeedbackTTSUnavailableError as exc:
+            logger.warning(
+                "Feedback TTS generation unavailable",
+                extra={"session_id": str(session.id), "reason": str(exc)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Audio coaching is unavailable right now.",
+            ) from exc
+
+        response = FeedbackTTSResponse(
+            session_id=session.id,
+            model=get_settings().tts_model,
+            voice=get_settings().tts_voice,
+            cached=False,
+            media_type="audio/wav",
+            audio_base64=base64.b64encode(audio_bytes).decode("ascii"),
+            segments=segments,
+            text_hash=text_hash,
+        )
+        self._store_cached_tts_response(response)
+        self.db.commit()
+        return response
 
     def generate_pedagogical_decision(
         self,
@@ -1727,6 +1805,7 @@ class SessionService:
             session_id=session_id,
             artifact_types=[
                 FEEDBACK_ARTIFACT_TYPE,
+                FEEDBACK_TTS_ARTIFACT_TYPE,
                 LLM_FEEDBACK_ARTIFACT_TYPE,
                 PEDAGOGICAL_ARTIFACT_TYPE,
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
@@ -1770,6 +1849,190 @@ class SessionService:
                 "priority_rank": item.priority_rank,
                 "deviation": item.deviation,
                 "improvement_suggestion": item.improvement_suggestion,
+            },
+        )
+
+    def _build_tts_segments_from_feedback(
+        self,
+        *,
+        session_id: UUID,
+        feedback_item_key: str | None,
+    ) -> FeedbackTTSSegments:
+        feedback_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=FEEDBACK_ARTIFACT_TYPE,
+        )
+        if feedback_artifact is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Audio coaching needs completed deterministic feedback first.",
+            )
+
+        try:
+            feedback_result = DeterministicFeedbackResult(**feedback_artifact.payload_json)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Audio coaching could not read the current feedback result.",
+            ) from exc
+
+        if not feedback_result.prioritized_feedback_items:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Audio coaching needs an actionable feedback item.",
+            )
+
+        selected_item = feedback_result.prioritized_feedback_items[0]
+        if feedback_item_key:
+            selected_item = next(
+                (
+                    item
+                    for item in feedback_result.prioritized_feedback_items
+                    if self._build_feedback_item_key(item) == feedback_item_key
+                ),
+                selected_item,
+            )
+
+        llm_item = self._find_llm_item_for_tts(
+            session_id=session_id,
+            feedback_item=selected_item,
+        )
+        if llm_item is not None:
+            return FeedbackTTSSegments(
+                segment_1=self._compact_tts_segment(llm_item.llm_coaching_cue),
+                segment_2=self._compact_tts_segment(
+                    selected_item.what_to_fix or selected_item.coaching_cue
+                ),
+                segment_3=self._compact_tts_segment(
+                    llm_item.llm_improvement_suggestion
+                ),
+            )
+
+        return FeedbackTTSSegments(
+            segment_1=self._compact_tts_segment(
+                selected_item.simple_coaching_phrase
+                or selected_item.issue_title
+                or selected_item.coaching_cue
+            ),
+            segment_2=self._compact_tts_segment(
+                selected_item.what_to_fix or selected_item.coaching_cue
+            ),
+            segment_3=self._compact_tts_segment(
+                selected_item.next_rep_cue or selected_item.improvement_suggestion
+            ),
+        )
+
+    @staticmethod
+    def _build_feedback_item_key(item: DeterministicFeedbackItemResponse) -> str:
+        return f"{item.phase_id}:{item.metric_name}:{item.priority_rank}"
+
+    def _find_llm_item_for_tts(
+        self,
+        *,
+        session_id: UUID,
+        feedback_item: DeterministicFeedbackItemResponse,
+    ):
+        llm_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=LLM_FEEDBACK_ARTIFACT_TYPE,
+        )
+        if llm_artifact is None:
+            return None
+        try:
+            llm_result = LLMFeedbackResult(**llm_artifact.payload_json)
+        except Exception:
+            return None
+        for item in llm_result.enhanced_feedback_items:
+            if (
+                not item.fallback_used
+                and item.phase_id == feedback_item.phase_id
+                and item.metric_name == feedback_item.metric_name
+                and item.priority_rank == feedback_item.priority_rank
+            ):
+                return item
+        return None
+
+    @staticmethod
+    def _compact_tts_segment(value: str, *, max_length: int = 190) -> str:
+        cleaned = KokoroFeedbackTTSService.normalize_text_segment(value)
+        if len(cleaned) <= max_length:
+            return cleaned
+        return f"{cleaned[: max_length - 1].rstrip()}."
+
+    @staticmethod
+    def _build_tts_text_hash(*, segments: list[str]) -> str:
+        settings = get_settings()
+        hash_input = "|".join(
+            [
+                settings.tts_model,
+                settings.tts_voice,
+                str(settings.tts_segment_pause_ms),
+                *segments,
+            ]
+        )
+        return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    def _load_cached_tts_response(
+        self,
+        *,
+        session_id: UUID,
+        text_hash: str,
+        segments: FeedbackTTSSegments,
+    ) -> FeedbackTTSResponse | None:
+        artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=FEEDBACK_TTS_ARTIFACT_TYPE,
+        )
+        if artifact is None:
+            return None
+
+        entries = artifact.payload_json.get("entries")
+        if not isinstance(entries, dict):
+            return None
+
+        cached_payload = entries.get(text_hash)
+        if not isinstance(cached_payload, dict):
+            return None
+
+        try:
+            cached_response = FeedbackTTSResponse(**cached_payload)
+        except Exception:
+            return None
+
+        settings = get_settings()
+        if (
+            cached_response.model != settings.tts_model
+            or cached_response.voice != settings.tts_voice
+        ):
+            return None
+
+        return cached_response.model_copy(
+            update={
+                "cached": True,
+                "segments": segments,
+            }
+        )
+
+    def _store_cached_tts_response(self, response: FeedbackTTSResponse) -> None:
+        artifact = self.artifacts.get_by_session_and_type(
+            session_id=response.session_id,
+            artifact_type=FEEDBACK_TTS_ARTIFACT_TYPE,
+        )
+        entries: dict[str, object] = {}
+        if artifact is not None:
+            stored_entries = artifact.payload_json.get("entries")
+            if isinstance(stored_entries, dict):
+                entries.update(stored_entries)
+
+        entries[response.text_hash] = response.model_dump(mode="json")
+        self.artifacts.upsert(
+            session_id=response.session_id,
+            artifact_type=FEEDBACK_TTS_ARTIFACT_TYPE,
+            payload_json={
+                "model": response.model,
+                "voice": response.voice,
+                "media_type": response.media_type,
+                "entries": entries,
             },
         )
 

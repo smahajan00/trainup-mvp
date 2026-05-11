@@ -322,6 +322,11 @@ class DeterministicFeedbackItemResponse(APIBaseModel):
     issue_title: str
     coaching_cue: str
     improvement_suggestion: str
+    what_happened: str = ""
+    why_it_matters: str = ""
+    what_to_fix: str = ""
+    next_rep_cue: str = ""
+    simple_coaching_phrase: str = ""
     priority_rank: int = Field(ge=1)
     deviation: float = Field(ge=0)
 
@@ -755,7 +760,30 @@ ArtifactType = Literal[
     "ontology_reasoning_result",
     "choquet_aggregation_result",
     "temporal_modeling_result",
+    "feedback_tts_result",
 ]
+
+
+class FeedbackTTSSegments(APIBaseModel):
+    segment_1: str = Field(min_length=1, max_length=220)
+    segment_2: str = Field(min_length=1, max_length=220)
+    segment_3: str = Field(min_length=1, max_length=220)
+
+
+class FeedbackTTSRequest(APIBaseModel):
+    feedback_item_key: str | None = Field(default=None, max_length=240)
+    segments: FeedbackTTSSegments | None = None
+
+
+class FeedbackTTSResponse(APIBaseModel):
+    session_id: UUID
+    model: str
+    voice: str
+    cached: bool
+    media_type: str
+    audio_base64: str
+    segments: FeedbackTTSSegments
+    text_hash: str
 
 
 class SessionArtifactResponse(APIBaseModel):

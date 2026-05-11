@@ -3,6 +3,8 @@ import type {
   AnalysisStepStatus,
   ChoquetAggregationResult,
   DeterministicFeedbackResult,
+  FeedbackTTSRequest,
+  FeedbackTTSResponse,
   FrameBatchRequest,
   FrameBatchResponse,
   DeterministicEvaluationResult,
@@ -108,6 +110,16 @@ export function runSessionEvaluation(sessionId: string) {
 export function generateDeterministicSessionFeedback(sessionId: string) {
   return apiRequest<DeterministicFeedbackResult>(`/sessions/${sessionId}/feedback`, {
     method: "POST"
+  });
+}
+
+export function generateSessionFeedbackTTS(
+  sessionId: string,
+  payload: FeedbackTTSRequest
+) {
+  return apiRequest<FeedbackTTSResponse>(`/sessions/${sessionId}/feedback/tts`, {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 
@@ -458,7 +470,7 @@ export const SESSION_ANALYSIS_PIPELINE: ReadonlyArray<SessionAnalysisPipelineSte
   },
   {
     id: "llm",
-    label: "Preparing coaching summary",
+    label: "Refining coaching feedback",
     service: generateLLMSessionFeedback,
     resultKey: "llm",
     required: false,

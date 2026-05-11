@@ -19,18 +19,18 @@ export function AdvancedInsightsPanel({
   hasAnyAdvancedData
 }: AdvancedInsightsPanelProps) {
   return (
-    <InfoCard>
+    <InfoCard className="p-4 sm:p-5">
       <details className="group [&_summary::-webkit-details-marker]:hidden">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/80">
               Advanced
             </p>
-            <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            <h2 className="mt-1 font-display text-xl font-bold tracking-tight text-white sm:text-2xl">
               Advanced Analysis
             </h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-gray">
-              Open this section for the deeper performance readout without crowding the main coaching view.
+            <p className="mt-1 max-w-xl text-xs leading-5 text-muted-gray">
+              Optional reasoning details. Core coaching above remains the main guidance.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -41,22 +41,22 @@ export function AdvancedInsightsPanel({
           </div>
         </summary>
 
-        <div className="mt-6">
+        <div className="mt-4">
           {items.length ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {items.map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+                  className="rounded-2xl border border-white/10 bg-white/[0.035] p-3.5"
                 >
-                  <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
                     {item.label}
                   </p>
-                  <p className="mt-3 text-sm font-semibold leading-6 text-white">
+                  <p className="mt-2 text-sm font-semibold leading-5 text-white">
                     {item.value}
                   </p>
                   {item.detail ? (
-                    <p className="mt-3 text-sm leading-6 text-white/72">
+                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-white/62">
                       {item.detail}
                     </p>
                   ) : null}
