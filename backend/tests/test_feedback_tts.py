@@ -161,6 +161,41 @@ def _llm_result(session_id: UUID) -> LLMFeedbackResult:
     )
 
 
+def _summary_only_llm_result(session_id: UUID) -> LLMFeedbackResult:
+    return LLMFeedbackResult(
+        session_id=session_id,
+        provider="gemini",
+        model="gemini-2.5-flash",
+        fallback_used=False,
+        advanced_context_used=True,
+        advanced_context_sources=["fuzzy_interpretation_result"],
+        enhanced_feedback_items=[
+            LLMEnhancedFeedbackItemResponse(
+                phase_id="release",
+                metric_id="knee_load_id",
+                metric_name="knee_load",
+                severity_level="MODERATE",
+                priority_rank=2,
+                affected_body_part="lower_body",
+                issue_direction="UNDER_RANGE",
+                deterministic_coaching_cue="Control knee_load.",
+                llm_coaching_cue="Control knee_load.",
+                deterministic_improvement_suggestion="Repeat knee_load with control.",
+                llm_improvement_suggestion="Repeat knee_load with control.",
+                grounding_fields_used=["metric_name"],
+                fallback_used=True,
+            )
+        ],
+        enhanced_summary=LLMEnhancedSessionSummaryResponse(
+            deterministic_summary="Keep one clean correction for the next rep.",
+            llm_summary="Keep the overall rep steadier next set.",
+            grounding_fields_used=["top_issue"],
+            fallback_used=False,
+        ),
+        diagnostic_flags=[],
+    )
+
+
 def test_feedback_tts_segments_use_selected_feedback_item() -> None:
     session_id = uuid4()
     service = _build_service(_feedback_result(session_id))
@@ -170,7 +205,7 @@ def test_feedback_tts_segments_use_selected_feedback_item() -> None:
         feedback_item_key="release:knee_load:2",
     )
 
-    assert segments.segment_1 == "Control the knee load."
+    assert segments.segment_1 == "Improve knee load"
     assert segments.segment_2 == "Keep knee load steady."
     assert segments.segment_3 == "Next rep, set knee load early."
 
@@ -185,7 +220,7 @@ def test_feedback_tts_segments_prefer_final_llm_text_when_available() -> None:
     )
 
     assert segments.segment_1 == "Keep the knee load smooth through the release."
-    assert segments.segment_2 == "Keep knee load steady."
+    assert segments.segment_2 == "Keep the knee load smooth through the release."
     assert segments.segment_3 == (
         "Next session, slow the setup and repeat the same knee line."
     )
@@ -200,9 +235,23 @@ def test_feedback_tts_segments_default_to_top_priority_item() -> None:
         feedback_item_key=None,
     )
 
-    assert segments.segment_1 == "Hold balance first."
+    assert segments.segment_1 == "Improve balance"
     assert segments.segment_2 == "Keep balance steady."
     assert segments.segment_3 == "Next rep, set balance early."
+
+
+def test_feedback_tts_ignores_summary_only_llm_and_reads_visible_item_text() -> None:
+    session_id = uuid4()
+    service = _build_service(_feedback_result(session_id), _summary_only_llm_result(session_id))
+
+    segments = service._build_tts_segments_from_feedback(
+        session_id=session_id,
+        feedback_item_key="release:knee_load:2",
+    )
+
+    assert segments.segment_1 == "Improve knee load"
+    assert segments.segment_2 == "Keep knee load steady."
+    assert segments.segment_3 == "Next rep, set knee load early."
 
 
 def test_feedback_tts_text_normalization_removes_diagnostics() -> None:

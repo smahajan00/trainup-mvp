@@ -383,6 +383,8 @@ class LLMFeedbackResult(APIBaseModel):
     provider: str
     model: str
     fallback_used: bool
+    feedback_hash: str | None = None
+    cache_hit: bool = False
     advanced_context_used: bool = False
     advanced_context_sources: list[str] = Field(default_factory=list)
     context_diagnostic_flags: list[str] = Field(default_factory=list)

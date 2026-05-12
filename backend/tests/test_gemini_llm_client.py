@@ -275,7 +275,80 @@ def test_gemini_client_falls_back_to_25_flash_without_logging_key(
     assert GEMINI_FALLBACK_MODEL in str(calls[1]["url"])
     assert "http_status=404" in caplog.text
     assert "configured_model=gemini-3-flash-preview" in caplog.text
-    assert "fallback_model=gemini-2.5-flash" in caplog.text
+    assert "fallback_model=gemini-2.5-flash-lite" in caplog.text
     assert "Model gemini-3-flash-preview is not found" in caplog.text
     assert "test-gemini-key" not in caplog.text
     assert "Compact context only" not in caplog.text
+
+
+def test_gemini_client_retries_http_503_with_backoff(monkeypatch, caplog) -> None:
+    calls: list[str] = []
+    sleep_delays: list[int] = []
+
+    class FakeResponse:
+        def __init__(self, *, url: str, status_code: int, payload: dict[str, object]) -> None:
+            self._response = httpx.Response(
+                status_code=status_code,
+                json=payload,
+                request=httpx.Request("POST", url),
+            )
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            self._response.raise_for_status()
+
+        def json(self) -> dict[str, object]:
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *, timeout: float) -> None:
+            self.timeout = timeout
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def post(self, url: str, json: dict[str, object]) -> FakeResponse:
+            calls.append(url)
+            if len(calls) < 3:
+                return FakeResponse(
+                    url=url,
+                    status_code=503,
+                    payload={"error": {"message": "The model is overloaded."}},
+                )
+            return FakeResponse(
+                url=url,
+                status_code=200,
+                payload={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": "Main cue: Stay steady.\nFix: Slow the rep.\nNext session cue: Repeat the same tempo."
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(llm_client_module.httpx, "Client", FakeClient)
+    monkeypatch.setattr(llm_client_module.time, "sleep", sleep_delays.append)
+    caplog.set_level(logging.WARNING)
+
+    result = GeminiLLMClient().generate_text(
+        messages=[
+            LLMMessage(role="system", content="System instruction."),
+            LLMMessage(role="user", content="Compact context only."),
+        ],
+        config=_config(),
+    )
+
+    assert "Stay steady" in result
+    assert len(calls) == 3
+    assert sleep_delays == [2, 4]
+    assert "Gemini provider request returned HTTP 503; retrying" in caplog.text

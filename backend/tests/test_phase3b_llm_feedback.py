@@ -925,6 +925,8 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
         "provider",
         "model",
         "fallback_used",
+        "feedback_hash",
+        "cache_hit",
         "advanced_context_used",
         "advanced_context_sources",
         "context_diagnostic_flags",
@@ -937,6 +939,8 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
     assert payload["provider"] == "gemini"
     assert payload["model"] == "gemini-2.5-flash"
     assert payload["fallback_used"] is False
+    assert payload["feedback_hash"]
+    assert payload["cache_hit"] is False
     assert payload["advanced_context_used"] is False
     assert payload["advanced_context_sources"] == []
     assert payload["context_diagnostic_flags"] == [
@@ -965,7 +969,57 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
     )
     assert artifact is not None
     assert artifact.payload_json["provider"] == "gemini"
+    assert artifact.payload_json["feedback_hash"] == payload["feedback_hash"]
     assert len(fake_client.calls) == 2
+
+
+def test_phase3b_successful_llm_feedback_is_reused_from_cache(client, db_session) -> None:
+    token = _register_user(client, email="phase3b-cache-hit@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    session = _create_session(client, token, drill)
+    _store_feedback_inputs(db_session, session_id=session["id"], drill=drill)
+
+    first_client = FakeLLMClient(
+        responses=[
+            (
+                "Main cue: Keep the knees steady during the squat descent.\n"
+                "Fix: Slow the descent and hold the knee line.\n"
+                "Next session cue: On the next set, repeat the same tempo."
+            ),
+            "Keep the next squat rep steady and repeat the same knee line.",
+        ]
+    )
+    app.dependency_overrides[get_llm_feedback_service] = lambda: _llm_service(first_client)
+    first_response = client.post(
+        f"/api/sessions/{session['id']}/feedback/llm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    app.dependency_overrides.pop(get_llm_feedback_service, None)
+
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert first_payload["cache_hit"] is False
+    assert len(first_client.calls) == 2
+
+    second_client = FakeLLMClient(fail=True)
+    app.dependency_overrides[get_llm_feedback_service] = lambda: _llm_service(second_client)
+    second_response = client.post(
+        f"/api/sessions/{session['id']}/feedback/llm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    app.dependency_overrides.pop(get_llm_feedback_service, None)
+
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+    assert second_payload["cache_hit"] is True
+    assert second_payload["fallback_used"] is False
+    assert second_payload["feedback_hash"] == first_payload["feedback_hash"]
+    assert (
+        second_payload["enhanced_feedback_items"][0]["llm_main_coaching_cue"]
+        == first_payload["enhanced_feedback_items"][0]["llm_main_coaching_cue"]
+    )
+    assert second_payload["enhanced_summary"]["llm_summary"] == first_payload["enhanced_summary"]["llm_summary"]
+    assert second_client.calls == []
 
 
 def test_phase3b_fenced_gemini_success_does_not_fall_back(client, db_session) -> None:

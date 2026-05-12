@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import base64
 import hashlib
@@ -821,6 +822,13 @@ class SessionService:
             segment_2=self._compact_tts_segment(segments.segment_2),
             segment_3=self._compact_tts_segment(segments.segment_3),
         )
+        logger.info(
+            "TTS script prepared session_id=%s segment_1_length=%s segment_2_length=%s segment_3_length=%s",
+            str(session.id),
+            len(segments.segment_1),
+            len(segments.segment_2),
+            len(segments.segment_3),
+        )
         segment_values = [
             segments.segment_1.strip(),
             segments.segment_2.strip(),
@@ -1365,6 +1373,20 @@ class SessionService:
             session=session,
             evaluation_result=evaluation_result,
         )
+        feedback_hash = self._build_llm_feedback_hash(feedback_result=feedback_result)
+        cached_result = self._load_cached_llm_feedback_result(
+            session_id=session.id,
+            feedback_hash=feedback_hash,
+        )
+        if cached_result is not None:
+            logger.info(
+                "LLM feedback cache hit session_id=%s feedback_hash=%s provider=%s model=%s",
+                str(session.id),
+                feedback_hash,
+                cached_result.provider,
+                cached_result.model,
+            )
+            return cached_result
         advanced_context_flags: list[str] = []
         fuzzy_result = self._load_optional_artifact_result(
             session_id=session.id,
@@ -1413,6 +1435,12 @@ class SessionService:
             choquet_result=choquet_result,
             temporal_result=temporal_result,
             context_diagnostic_flags=advanced_context_flags,
+        )
+        result = result.model_copy(
+            update={
+                "feedback_hash": feedback_hash,
+                "cache_hit": False,
+            }
         )
         self._persist_llm_feedback_result(session_id=session.id, result=result)
         self.db.commit()
@@ -1881,23 +1909,28 @@ class SessionService:
         if llm_item is not None:
             return FeedbackTTSSegments(
                 segment_1=self._compact_tts_segment(
-                    llm_item.llm_main_coaching_cue or llm_item.llm_coaching_cue
+                    llm_item.llm_main_coaching_cue
+                    or llm_item.llm_coaching_cue
+                    or selected_item.issue_title
                 ),
                 segment_2=self._compact_tts_segment(
                     llm_item.llm_what_to_fix
+                    or llm_item.llm_coaching_cue
                     or selected_item.what_to_fix
                     or selected_item.coaching_cue
                 ),
                 segment_3=self._compact_tts_segment(
                     llm_item.llm_next_session_cue
                     or llm_item.llm_improvement_suggestion
+                    or selected_item.next_rep_cue
+                    or selected_item.improvement_suggestion
                 ),
             )
 
         return FeedbackTTSSegments(
             segment_1=self._compact_tts_segment(
-                selected_item.simple_coaching_phrase
-                or selected_item.issue_title
+                selected_item.issue_title
+                or selected_item.simple_coaching_phrase
                 or selected_item.coaching_cue
             ),
             segment_2=self._compact_tts_segment(
@@ -1957,6 +1990,50 @@ class SessionService:
             ]
         )
         return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _build_llm_feedback_hash(
+        *,
+        feedback_result: DeterministicFeedbackResult,
+    ) -> str:
+        payload = feedback_result.model_dump(
+            mode="json",
+            exclude={"created_at"},
+        )
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+    def _load_cached_llm_feedback_result(
+        self,
+        *,
+        session_id: UUID,
+        feedback_hash: str,
+    ) -> LLMFeedbackResult | None:
+        artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=LLM_FEEDBACK_ARTIFACT_TYPE,
+        )
+        if artifact is None:
+            return None
+
+        try:
+            result = LLMFeedbackResult(**artifact.payload_json)
+        except Exception:
+            return None
+
+        if result.feedback_hash != feedback_hash:
+            return None
+        if not self._llm_feedback_has_successful_refinement(result):
+            return None
+
+        return result.model_copy(update={"cache_hit": True})
+
+    @staticmethod
+    def _llm_feedback_has_successful_refinement(result: LLMFeedbackResult) -> bool:
+        if not result.enhanced_summary.fallback_used:
+            return True
+        return any(not item.fallback_used for item in result.enhanced_feedback_items)
 
     def _load_cached_tts_response(
         self,

@@ -13,7 +13,8 @@ from app.core.config import Settings
 
 
 GEMINI_PROVIDERS = frozenset({"gemini", "google_gemini"})
-GEMINI_FALLBACK_MODEL = "gemini-2.5-flash"
+GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite"
+GEMINI_503_RETRY_DELAYS_SECONDS = (2, 4)
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -131,14 +132,27 @@ class GeminiLLMClient:
         if system_instruction:
             payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
-        try:
-            with httpx.Client(timeout=config.timeout_seconds) as client:
-                response = client.post(endpoint, json=payload)
-                response.raise_for_status()
-                data = response.json()
-        except Exception as exc:
-            self._log_provider_error(exc=exc, model=config.model)
-            raise
+        for attempt_index in range(len(GEMINI_503_RETRY_DELAYS_SECONDS) + 1):
+            try:
+                with httpx.Client(timeout=config.timeout_seconds) as client:
+                    response = client.post(endpoint, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                break
+            except Exception as exc:
+                if self._should_retry_503(exc=exc, attempt_index=attempt_index):
+                    delay_seconds = GEMINI_503_RETRY_DELAYS_SECONDS[attempt_index]
+                    logger.warning(
+                        "Gemini provider request returned HTTP 503; retrying "
+                        "model=%s attempt=%s delay_seconds=%s",
+                        config.model,
+                        attempt_index + 1,
+                        delay_seconds,
+                    )
+                    time.sleep(delay_seconds)
+                    continue
+                self._log_provider_error(exc=exc, model=config.model)
+                raise
 
         try:
             content = self.extract_gemini_text(data, debug=config.debug_response_shape)
@@ -159,6 +173,12 @@ class GeminiLLMClient:
             config.model,
         )
         return content
+
+    @staticmethod
+    def _should_retry_503(*, exc: Exception, attempt_index: int) -> bool:
+        if attempt_index >= len(GEMINI_503_RETRY_DELAYS_SECONDS):
+            return False
+        return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 503
 
     @classmethod
     def extract_gemini_text(cls, response: Any, *, debug: bool = False) -> str:

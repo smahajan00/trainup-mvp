@@ -389,6 +389,8 @@ export type LLMFeedbackResult = {
   provider: string;
   model: string;
   fallback_used: boolean;
+  feedback_hash?: string | null;
+  cache_hit?: boolean;
   advanced_context_used: boolean;
   advanced_context_sources: string[];
   context_diagnostic_flags: string[];
