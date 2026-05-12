@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { NormalizedLandmark, PoseLandmarker } from "@mediapipe/tasks-vision";
-import { AlertTriangle, Camera, CheckCircle2, Loader2, PlayCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
+  Loader2,
+  Maximize2,
+  Pause,
+  PlayCircle
+} from "lucide-react";
 
 import { cn } from "../../../lib/utils";
 import type { PoseSequence } from "../../../types/sessions";
@@ -46,6 +54,18 @@ const MEDIAPIPE_WASM_PATH = "/mediapipe/tasks-vision/wasm";
 const POSE_MODEL_PATH = "/mediapipe/models/pose_landmarker_lite.task";
 const POSE_WASM_CHECK_PATH = `${MEDIAPIPE_WASM_PATH}/vision_wasm_internal.wasm`;
 const LIVE_DETECTION_INTERVAL_MS = 90;
+
+function formatVideoTime(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0:00";
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
 
 function getStatusTone(status: string): OverlayTone {
   if (/failed|unavailable|denied|error/i.test(status)) {
@@ -216,8 +236,13 @@ export function PoseOverlayPreview({
         ? "Camera active - pose overlay running"
         : "Upload and process a video to view the pose overlay.")
   );
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
 
   const hasVideo = mode === "live" ? Boolean(stream && isActive) : Boolean(videoSrc);
+  const forceMutedPreview = mode === "upload";
+  const effectiveMuted = forceMutedPreview || muted;
   const validUploadFrames = useMemo(
     () => getValidPoseFrames(poseSequence),
     [poseSequence]
@@ -247,6 +272,78 @@ export function PoseOverlayPreview({
           : getUploadStatus({ hasVideo, poseSequence }))
     );
   }, [hasVideo, isPaused, mode, poseSequence, statusText]);
+
+  useEffect(() => {
+    if (mode !== "upload") {
+      return;
+    }
+
+    const video = internalVideoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const videoElement = video;
+
+    function keepPreviewMuted() {
+      if (!forceMutedPreview) {
+        return;
+      }
+      if (!videoElement.muted) {
+        videoElement.muted = true;
+      }
+      if (videoElement.volume !== 0) {
+        videoElement.volume = 0;
+      }
+    }
+
+    function handleLoadedMetadata() {
+      setVideoDuration(
+        Number.isFinite(videoElement.duration) ? videoElement.duration : 0
+      );
+      setVideoCurrentTime(videoElement.currentTime);
+      keepPreviewMuted();
+    }
+
+    function handleTimeUpdate() {
+      setVideoCurrentTime(videoElement.currentTime);
+    }
+
+    function handlePlay() {
+      setIsVideoPlaying(true);
+      keepPreviewMuted();
+    }
+
+    function handlePause() {
+      setIsVideoPlaying(false);
+    }
+
+    videoElement.defaultMuted = forceMutedPreview;
+    keepPreviewMuted();
+    setIsVideoPlaying(!videoElement.paused);
+    setVideoDuration(
+      Number.isFinite(videoElement.duration) ? videoElement.duration : 0
+    );
+    setVideoCurrentTime(videoElement.currentTime);
+
+    videoElement.addEventListener("loadedmetadata", handleLoadedMetadata);
+    videoElement.addEventListener("durationchange", handleLoadedMetadata);
+    videoElement.addEventListener("timeupdate", handleTimeUpdate);
+    videoElement.addEventListener("play", handlePlay);
+    videoElement.addEventListener("pause", handlePause);
+    videoElement.addEventListener("ended", handlePause);
+    videoElement.addEventListener("volumechange", keepPreviewMuted);
+
+    return () => {
+      videoElement.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      videoElement.removeEventListener("durationchange", handleLoadedMetadata);
+      videoElement.removeEventListener("timeupdate", handleTimeUpdate);
+      videoElement.removeEventListener("play", handlePlay);
+      videoElement.removeEventListener("pause", handlePause);
+      videoElement.removeEventListener("ended", handlePause);
+      videoElement.removeEventListener("volumechange", keepPreviewMuted);
+    };
+  }, [forceMutedPreview, mode, videoSrc]);
 
   useEffect(() => {
     const video = internalVideoRef.current;
@@ -585,6 +682,55 @@ export function PoseOverlayPreview({
     };
   }, []);
 
+  async function handleToggleUploadPlayback() {
+    const video = internalVideoRef.current;
+    if (!video || mode !== "upload") {
+      return;
+    }
+
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+
+    if (video.paused) {
+      try {
+        await video.play();
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+      return;
+    }
+
+    video.pause();
+  }
+
+  function handleUploadSeek(value: string) {
+    const video = internalVideoRef.current;
+    const nextTime = Number(value);
+    if (!video || !Number.isFinite(nextTime)) {
+      return;
+    }
+
+    video.currentTime = nextTime;
+    setVideoCurrentTime(nextTime);
+  }
+
+  async function handleFullscreen() {
+    const video = internalVideoRef.current;
+    const container = video?.parentElement;
+    if (!container?.requestFullscreen) {
+      return;
+    }
+
+    try {
+      await container.requestFullscreen();
+    } catch {
+      // Fullscreen is optional and may be blocked by the browser.
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -606,8 +752,8 @@ export function PoseOverlayPreview({
             }
           }}
           autoPlay={mode === "upload" && hasVideo ? autoPlay : false}
-          controls={hasVideo && mode === "upload" ? controls : false}
-          muted={muted}
+          controls={false}
+          muted={effectiveMuted}
           playsInline
           src={mode === "upload" && hasVideo ? videoSrc ?? undefined : undefined}
           className={cn(
@@ -622,14 +768,7 @@ export function PoseOverlayPreview({
         <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-white/12 bg-background-dark/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/80 backdrop-blur">
           {mode === "live" ? "Live pose overlay" : "Uploaded pose overlay"}
         </div>
-        {hasVideo ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background-dark/90 to-transparent px-5 py-4">
-            <div className="flex items-center gap-2 text-sm text-white/85">
-              <StatusIcon tone={statusTone} />
-              <span>{overlayStatus}</span>
-            </div>
-          </div>
-        ) : (
+        {!hasVideo ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,122,0,0.09),_transparent_46%),linear-gradient(180deg,rgba(17,17,17,0.72),rgba(24,24,24,0.9))] px-7 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-primary/18 bg-primary/10 text-primary shadow-[0_16px_44px_rgba(255,122,0,0.08)]">
               <Camera className="h-6 w-6" />
@@ -644,8 +783,82 @@ export function PoseOverlayPreview({
               {overlayStatus}
             </p>
           </div>
-        )}
+        ) : null}
       </div>
+      {hasVideo ? (
+        <div className="border-t border-white/10 bg-background-dark/72 px-4 py-3 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 text-sm text-white/85">
+              <StatusIcon tone={statusTone} />
+              <span className="min-w-0 break-words">{overlayStatus}</span>
+            </div>
+            {mode === "upload" ? (
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                Muted visual preview
+              </span>
+            ) : null}
+          </div>
+
+          {mode === "upload" && controls ? (
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/24 px-3 py-2">
+              <button
+                type="button"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary text-background-dark transition hover:bg-primary/90"
+                onClick={() => {
+                  void handleToggleUploadPlayback();
+                }}
+                aria-label={isVideoPlaying ? "Pause preview" : "Play preview"}
+              >
+                {isVideoPlaying ? (
+                  <Pause className="h-4 w-4" />
+                ) : (
+                  <PlayCircle className="h-4 w-4" />
+                )}
+              </button>
+              <span className="w-10 text-right text-[11px] tabular-nums text-white/55">
+                {formatVideoTime(videoCurrentTime)}
+              </span>
+              <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-150"
+                  style={{
+                    width:
+                      videoDuration > 0
+                        ? `${Math.min(100, (videoCurrentTime / videoDuration) * 100)}%`
+                        : "0%"
+                  }}
+                />
+                <input
+                  aria-label="Preview progress"
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
+                  disabled={videoDuration <= 0}
+                  max={videoDuration || 0}
+                  min={0}
+                  step={0.1}
+                  type="range"
+                  value={Math.min(videoCurrentTime, videoDuration || 0)}
+                  onChange={(event) => {
+                    handleUploadSeek(event.target.value);
+                  }}
+                />
+              </div>
+              <span className="w-10 text-[11px] tabular-nums text-white/55">
+                {formatVideoTime(videoDuration)}
+              </span>
+              <button
+                type="button"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 transition hover:border-primary/25 hover:text-white"
+                onClick={() => {
+                  void handleFullscreen();
+                }}
+                aria-label="Open preview fullscreen"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

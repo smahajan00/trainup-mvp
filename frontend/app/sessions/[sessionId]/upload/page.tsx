@@ -51,10 +51,69 @@ import type {
   AnalysisStepStatus,
   CameraView,
   DominantSide,
+  PoseSequenceSummary,
   SessionArtifactsResponse,
   TrainingSession,
   UploadProcessingResponse
 } from "../../../../types/sessions";
+
+type UploadStage =
+  | "IDLE"
+  | "PREPARING"
+  | "UPLOADING"
+  | "PROCESSING"
+  | "BUILDING_OVERLAY"
+  | "READY"
+  | "ERROR";
+
+const UPLOAD_STAGE_COPY: Record<
+  UploadStage,
+  { label: string; message: string; buttonLabel: string }
+> = {
+  IDLE: {
+    label: "Awaiting clip",
+    message: "Choose a clip to start processing.",
+    buttonLabel: "Upload Clip"
+  },
+  PREPARING: {
+    label: "Preparing upload...",
+    message: "Checking file and setup before sending the clip.",
+    buttonLabel: "Preparing..."
+  },
+  UPLOADING: {
+    label: "Uploading video...",
+    message: "Sending the selected clip to TrainUp.",
+    buttonLabel: "Uploading..."
+  },
+  PROCESSING: {
+    label: "Processing pose data...",
+    message: "Extracting pose frames and building the movement timeline.",
+    buttonLabel: "Processing..."
+  },
+  BUILDING_OVERLAY: {
+    label: "Building preview overlay...",
+    message: "Loading the processed pose frames into the preview.",
+    buttonLabel: "Building overlay..."
+  },
+  READY: {
+    label: "Ready for analysis",
+    message: "Pose data is ready. You can analyze performance now.",
+    buttonLabel: "Upload Clip"
+  },
+  ERROR: {
+    label: "Needs attention",
+    message: "Upload or processing failed. Review the message and try again.",
+    buttonLabel: "Retry Upload"
+  }
+};
+
+function getFileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function poseCacheWasReused(poseSequence?: PoseSequenceSummary | null) {
+  return Boolean(poseSequence?.processing_metadata?.cache_hit);
+}
 
 function formatCaptureIssue(issue: string) {
   switch (issue) {
@@ -182,6 +241,9 @@ function UploadSessionContent({
     null
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadStage, setUploadStage] = useState<UploadStage>("IDLE");
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [processedFileKey, setProcessedFileKey] = useState<string | null>(null);
   const [isApplyingSetup, setIsApplyingSetup] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
@@ -302,9 +364,13 @@ function UploadSessionContent({
     analysisSteps.find((step) => step.id === currentStep) ??
     analysisSteps.find((step) => step.status === "RUNNING") ??
     null;
+  const uploadStageCopy = UPLOAD_STAGE_COPY[uploadStage];
+  const poseCacheHit = poseCacheWasReused(poseSequenceSummary);
   const uploadReadinessLabel = poseSequenceSummary
     ? "Processed"
-    : selectedFile
+    : isSubmitting
+      ? uploadStageCopy.label
+      : selectedFile
       ? displayErrors.length
         ? "Needs attention"
         : "Ready for upload"
@@ -363,20 +429,28 @@ function UploadSessionContent({
   }
 
   function handleSelectedFile(file: File | null) {
+    if (isSubmitting) {
+      return;
+    }
+
     setSelectedFile(file);
     setUploadResult(null);
     setSubmitError(null);
+    setUploadNotice(null);
     resetAnalysis();
 
     if (!file) {
       setLocalErrors([]);
       setLocalWarnings([]);
+      setUploadStage("IDLE");
+      setProcessedFileKey(null);
       return;
     }
 
     const validation = validateVideoFile(file);
     setLocalErrors(validation.errors);
     setLocalWarnings(validation.warnings);
+    setUploadStage("IDLE");
   }
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -386,6 +460,9 @@ function UploadSessionContent({
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setIsDragActive(false);
+    if (isSubmitting) {
+      return;
+    }
     handleSelectedFile(event.dataTransfer.files?.[0] ?? null);
   }
 
@@ -410,22 +487,57 @@ function UploadSessionContent({
       return;
     }
 
+    const nextFileKey = getFileKey(selectedFile);
+    if (uploadResult && processedFileKey === nextFileKey && poseSequenceSummary) {
+      setUploadStage("READY");
+      setUploadNotice("This clip is already processed. You can analyze it now.");
+      return;
+    }
+
     const validation = validateVideoFile(selectedFile);
     setLocalErrors(validation.errors);
     setLocalWarnings(validation.warnings);
     setSubmitError(null);
+    setUploadNotice(null);
     resetAnalysis();
 
     if (!validation.isValid) {
+      setUploadStage("ERROR");
       return;
     }
 
+    let processingTimer: number | null = null;
+
     try {
       setIsSubmitting(true);
+      setUploadStage("PREPARING");
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 120);
+      });
+      setUploadStage("UPLOADING");
+      processingTimer = window.setTimeout(() => {
+        setUploadStage("PROCESSING");
+      }, 850);
       const result = await submitSessionUpload(sessionId, selectedFile);
+      if (processingTimer !== null) {
+        window.clearTimeout(processingTimer);
+        processingTimer = null;
+      }
+      setUploadStage("BUILDING_OVERLAY");
       setUploadResult(result);
       setArtifactSnapshot(await getSessionArtifacts(sessionId));
+      setProcessedFileKey(nextFileKey);
+      setUploadNotice(
+        poseCacheWasReused(result.pose_sequence)
+          ? "Pose data was reused from the cached processing result."
+          : "Pose data processed. Preview overlay is ready."
+      );
+      setUploadStage("READY");
     } catch (error) {
+      if (processingTimer !== null) {
+        window.clearTimeout(processingTimer);
+      }
+      setUploadStage("ERROR");
       setSubmitError(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
@@ -631,6 +743,9 @@ function UploadSessionContent({
               <div
                 onDragOver={(event) => {
                   event.preventDefault();
+                  if (isSubmitting) {
+                    return;
+                  }
                   setIsDragActive(true);
                 }}
                 onDragLeave={() => setIsDragActive(false)}
@@ -638,6 +753,8 @@ function UploadSessionContent({
                 className={`group mt-4 min-h-[260px] rounded-[1.75rem] border border-dashed px-5 py-7 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-300 hover:border-primary/30 hover:bg-white/[0.045] hover:shadow-[0_18px_58px_rgba(0,0,0,0.22)] ${
                   isDragActive
                     ? "border-primary/50 bg-primary/10 shadow-[0_20px_70px_rgba(255,122,0,0.14)]"
+                    : isSubmitting
+                      ? "border-white/10 bg-white/[0.025] opacity-75"
                     : "border-white/12 bg-white/[0.03]"
                 }`}
               >
@@ -651,12 +768,19 @@ function UploadSessionContent({
                   MP4, MOV, WEBM, or MKV. 100 MB max.
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
-                  <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_34px_rgba(255,122,0,0.22)] transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-primary/90 hover:shadow-[0_18px_42px_rgba(255,122,0,0.28)]">
+                  <label
+                    className={`inline-flex items-center justify-center rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_34px_rgba(255,122,0,0.22)] transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-primary/90 hover:shadow-[0_18px_42px_rgba(255,122,0,0.28)] ${
+                      isSubmitting
+                        ? "pointer-events-none cursor-not-allowed opacity-65"
+                        : "cursor-pointer"
+                    }`}
+                  >
                     Choose Video
                     <input
                       type="file"
                       accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
                       className="hidden"
+                      disabled={isSubmitting}
                       onChange={handleInputChange}
                     />
                   </label>
@@ -688,8 +812,49 @@ function UploadSessionContent({
                     className="rounded-2xl px-6"
                     disabled={!selectedFile || isSubmitting}
                   >
-                    {isSubmitting ? "Uploading" : "Upload Clip"}
+                    {isSubmitting ? uploadStageCopy.buttonLabel : "Upload Clip"}
                   </Button>
+                </div>
+              ) : null}
+
+              {uploadStage !== "IDLE" || uploadNotice ? (
+                <div
+                  className={`mt-4 rounded-2xl border px-4 py-4 ${
+                    uploadStage === "ERROR"
+                      ? "border-rose-400/30 bg-rose-500/10"
+                      : uploadStage === "READY"
+                        ? "border-emerald-400/25 bg-emerald-500/10"
+                        : "border-primary/25 bg-primary/10"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    {isSubmitting ? (
+                      <LoaderCircle className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-primary" />
+                    ) : uploadStage === "READY" ? (
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+                    ) : uploadStage === "ERROR" ? (
+                      <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-rose-300" />
+                    ) : (
+                      <CircleDashed className="mt-0.5 h-5 w-5 shrink-0 text-white/45" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white">
+                        {uploadStageCopy.label}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-white/65">
+                        {uploadNotice ?? uploadStageCopy.message}
+                      </p>
+                      {poseCacheHit ? (
+                        <p className="mt-2 text-xs font-semibold text-emerald-200">
+                          Cached pose extraction reused.
+                        </p>
+                      ) : isSubmitting && uploadStage === "PROCESSING" ? (
+                        <p className="mt-2 text-xs text-white/45">
+                          Longer clips can take a moment while pose frames are extracted.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </>

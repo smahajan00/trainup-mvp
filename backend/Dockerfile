@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     ffmpeg \
+    git \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -21,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
+COPY constraints.txt ./
 # MediaPipe pulls the GUI OpenCV wheel by default. Replace it with the
 # headless contrib build so the backend image does not depend on desktop X11 libs.
 # Install Torch before the rest of the requirements so Docker/macOS demo builds
@@ -31,10 +33,13 @@ RUN pip install --no-cache-dir --upgrade pip \
     else \
         pip install --no-cache-dir "torch==${TORCH_VERSION}"; \
     fi \
-    && pip install --no-cache-dir -r requirements.txt \
-    && python -c "import importlib.metadata as md, torch; bad=sorted(d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith('nvidia-')); assert not bad, f'CUDA packages installed: {bad}'; assert torch.version.cuda is None, f'CUDA torch installed: {torch.version.cuda}'; print(f'CPU-only torch verified: {torch.__version__}')" \
+    && python -c "import importlib.metadata as md, torch; bad=sorted(d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith('nvidia-')); assert not bad, f'CUDA packages installed after torch install: {bad}'; assert torch.version.cuda is None, f'CUDA torch installed after torch install: {torch.version.cuda}'; print(f'Torch after explicit CPU install: {torch.__version__}, cuda={torch.version.cuda}')" \
+    && pip install --no-cache-dir -r requirements.txt -c constraints.txt \
+    && python -c "import importlib.metadata as md, torch; bad=sorted(d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith('nvidia-')); print(f'Torch after requirements install: {torch.__version__}, cuda={torch.version.cuda}'); assert not bad, f'CUDA packages installed after requirements install: {bad}'; assert torch.version.cuda is None, f'CUDA torch installed after requirements install: {torch.version.cuda}'" \
+    && python -m spacy download en_core_web_sm \
     && pip uninstall -y opencv-contrib-python opencv-python opencv-python-headless \
-    && pip install --no-cache-dir opencv-contrib-python-headless==4.13.0.92
+    && pip install --no-cache-dir opencv-contrib-python-headless==4.13.0.92 \
+    && python -c "import importlib.metadata as md, cv2, httpx, kokoro, mediapipe, torch; bad=sorted(d.metadata['Name'] for d in md.distributions() if d.metadata['Name'].lower().startswith('nvidia-')); assert not bad, f'CUDA packages installed after OpenCV fix: {bad}'; assert torch.version.cuda is None, f'CUDA torch installed after OpenCV fix: {torch.version.cuda}'; print(f'Runtime imports verified: torch={torch.__version__}, cuda={torch.version.cuda}, cv2={cv2.__version__}, mediapipe={mediapipe.__version__}, kokoro={md.version(\"kokoro\")}, httpx={httpx.__version__}')"
 
 COPY . .
 RUN chmod +x /app/docker-entrypoint.sh

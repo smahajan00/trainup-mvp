@@ -101,6 +101,30 @@ export type ArtifactType =
 
 export type PoseSequenceStatus = "COMPLETED" | "FAILED" | "INSUFFICIENT_DATA";
 
+export type PoseProcessingCacheKey = {
+  file_hash: string;
+  target_pose_fps: number;
+  max_inference_width: number;
+  preprocessing_version: string;
+  pose_model: string;
+};
+
+export type PoseProcessingMetadata = {
+  original_fps?: number | null;
+  target_pose_fps: number;
+  sampling_stride: number;
+  original_frame_count: number;
+  processed_frame_count: number;
+  valid_frame_count: number;
+  original_width?: number | null;
+  original_height?: number | null;
+  inference_width?: number | null;
+  inference_height?: number | null;
+  cache_key?: PoseProcessingCacheKey | null;
+  cache_hit?: boolean;
+  processing_time_ms?: number | null;
+};
+
 export type PoseLandmarkCoordinate = {
   x: number;
   y: number;
@@ -124,6 +148,7 @@ export type PoseSequenceSummary = {
   valid_frame_count: number;
   status: PoseSequenceStatus;
   diagnostic_flags: string[];
+  processing_metadata?: PoseProcessingMetadata | null;
 };
 
 export type PoseSequence = PoseSequenceSummary & {
@@ -339,6 +364,11 @@ export type LLMEnhancedFeedbackItem = {
   issue_direction: IssueDirection;
   deterministic_coaching_cue: string;
   llm_coaching_cue: string;
+  llm_main_coaching_cue?: string;
+  llm_what_happened?: string;
+  llm_why_it_matters?: string;
+  llm_what_to_fix?: string;
+  llm_next_session_cue?: string;
   deterministic_improvement_suggestion: string;
   llm_improvement_suggestion: string;
   grounding_fields_used: string[];

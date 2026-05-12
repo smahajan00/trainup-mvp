@@ -129,8 +129,8 @@ def _feedback_result(session_id: UUID) -> DeterministicFeedbackResult:
 def _llm_result(session_id: UUID) -> LLMFeedbackResult:
     return LLMFeedbackResult(
         session_id=session_id,
-        provider="llama_cpp",
-        model="Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        provider="gemini",
+        model="gemini-2.5-flash",
         fallback_used=False,
         advanced_context_used=True,
         advanced_context_sources=["fuzzy_interpretation_result"],

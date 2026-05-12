@@ -8,3 +8,9 @@ venv
 .ruff_cache
 .coverage
 .DS_Store
+models/*
+!models/.gitkeep
+.cache
+cache
+generated_audio
+media

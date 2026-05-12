@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from uuid import UUID
 
 import pytest
@@ -75,8 +76,8 @@ def _provider_config(
     *,
     enabled: bool = True,
     api_key: str | None = "test-key",
-    provider: str = "fake-provider",
-    model: str = "fake-model",
+    provider: str = "gemini",
+    model: str = "gemini-2.5-flash",
 ) -> LLMProviderConfig:
     return LLMProviderConfig(
         provider=provider,
@@ -503,8 +504,9 @@ def _store_advanced_context_artifacts(
 
 def test_phase3b_provider_config_reads_settings() -> None:
     settings = Settings(
-        llm_provider="local-compatible",
-        llm_model="coach-small",
+        llm_provider="gemini",
+        llm_model="gemini-2.5-flash",
+        gemini_api_key="gemini-key",
         llm_api_key="abc",
         llm_base_url="http://localhost:11434/v1",
         llm_timeout_seconds=3.5,
@@ -515,9 +517,9 @@ def test_phase3b_provider_config_reads_settings() -> None:
 
     config = LLMProviderConfig.from_settings(settings)
 
-    assert config.provider == "local-compatible"
-    assert config.model == "coach-small"
-    assert config.api_key == "abc"
+    assert config.provider == "gemini"
+    assert config.model == "gemini-2.5-flash"
+    assert config.api_key == "gemini-key"
     assert config.base_url == "http://localhost:11434/v1"
     assert config.timeout_seconds == 3.5
     assert config.temperature == 0.0
@@ -525,18 +527,150 @@ def test_phase3b_provider_config_reads_settings() -> None:
     assert config.enhancement_enabled is True
 
 
-def test_phase3b_local_llm_provider_does_not_require_api_key() -> None:
+def test_phase3b_gemini_provider_requires_api_key() -> None:
     service = _llm_service(
         FakeLLMClient(),
         config=_provider_config(
-            provider="llama_cpp",
-            model="Qwen2.5-7B-Instruct-Q4_K_M.gguf",
             api_key=None,
             enabled=True,
         ),
     )
 
-    assert service._configuration_fallback_flag() is None
+    assert service._configuration_fallback_flag() == "LLM_API_KEY_MISSING"
+
+
+def test_phase3b_raw_json_response_is_supported() -> None:
+    service = _llm_service(
+        FakeLLMClient(
+            responses=[
+                '{"summary":"Keep the next rep steady.","grounding_fields_used":["deterministic_feedback"]}'
+            ]
+        )
+    )
+
+    parsed = service._call_json(messages=[LLMMessage(role="user", content="compact context")])
+
+    assert parsed == {
+        "summary": "Keep the next rep steady.",
+        "grounding_fields_used": ["deterministic_feedback"],
+    }
+
+
+def test_phase3b_fenced_json_response_is_supported() -> None:
+    service = _llm_service(
+        FakeLLMClient(
+            responses=[
+                """```json
+{"summary":"Keep the next rep controlled.","grounding_fields_used":["deterministic_feedback"]}
+```"""
+            ]
+        )
+    )
+
+    parsed = service._call_json(messages=[LLMMessage(role="user", content="compact context")])
+
+    assert parsed == {
+        "summary": "Keep the next rep controlled.",
+        "grounding_fields_used": ["deterministic_feedback"],
+    }
+
+
+def test_phase3b_plain_fenced_json_response_is_supported() -> None:
+    service = _llm_service(
+        FakeLLMClient(
+            responses=[
+                """```
+{"summary":"Keep the next rep smooth.","grounding_fields_used":["deterministic_feedback"]}
+```"""
+            ]
+        )
+    )
+
+    parsed = service._call_json(messages=[LLMMessage(role="user", content="compact context")])
+
+    assert parsed == {
+        "summary": "Keep the next rep smooth.",
+        "grounding_fields_used": ["deterministic_feedback"],
+    }
+
+
+def test_phase3b_extra_text_around_json_response_is_supported() -> None:
+    service = _llm_service(
+        FakeLLMClient(
+            responses=[
+                """Here is the JSON:
+{"summary":"Keep one steady knee cue.","grounding_fields_used":["deterministic_feedback"]}
+Use this for the athlete."""
+            ]
+        )
+    )
+
+    parsed = service._call_json(
+        messages=[LLMMessage(role="user", content="compact context")],
+        required_keys=frozenset({"summary", "grounding_fields_used"}),
+    )
+
+    assert parsed == {
+        "summary": "Keep one steady knee cue.",
+        "grounding_fields_used": ["deterministic_feedback"],
+    }
+
+
+def test_phase3b_prefix_plus_fenced_json_response_is_supported() -> None:
+    service = _llm_service(
+        FakeLLMClient(
+            responses=[
+                """Here is the JSON requested:
+```json
+{"summary":"Keep one clean correction.","grounding_fields_used":["top_issue"]}
+```"""
+            ]
+        )
+    )
+
+    parsed = service._call_json(
+        messages=[LLMMessage(role="user", content="compact context")],
+        required_keys=frozenset({"summary", "grounding_fields_used"}),
+    )
+
+    assert parsed == {
+        "summary": "Keep one clean correction.",
+        "grounding_fields_used": ["top_issue"],
+    }
+
+
+def test_phase3b_balanced_json_extraction_ignores_braces_inside_strings() -> None:
+    service = _llm_service(
+        FakeLLMClient(
+            responses=[
+                'Here is the JSON: {"summary":"Keep the cue {inside the same sentence} and move steadily.","grounding_fields_used":["deterministic_feedback"]}'
+            ]
+        )
+    )
+
+    parsed = service._call_json(
+        messages=[LLMMessage(role="user", content="compact context")],
+        required_keys=frozenset({"summary", "grounding_fields_used"}),
+    )
+
+    assert parsed == {
+        "summary": "Keep the cue {inside the same sentence} and move steadily.",
+        "grounding_fields_used": ["deterministic_feedback"],
+    }
+
+
+def test_phase3b_json_parse_failure_logs_safe_reason(caplog) -> None:
+    service = _llm_service(FakeLLMClient(responses=["not-json"]))
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(LLMClientError, match="not valid JSON"):
+        service._call_json(messages=[LLMMessage(role="user", content="compact context")])
+
+    assert "LLM JSON parse failed" in caplog.text
+    assert "parse_error=No JSON object found in LLM response" in caplog.text
+    assert "position=0" in caplog.text
+    assert "response_preview=not-json" in caplog.text
+    assert "compact context" not in caplog.text
 
 
 def test_phase3b_llm_enabled_alias_overrides_legacy_flag() -> None:
@@ -695,7 +829,13 @@ def test_phase3b_prompts_include_deterministic_facts(client, db_session) -> None
     assert "BEGINNER" in prompt_text
     assert "knee_alignment_score" in prompt_text
     assert "Keep both knees tracking over the middle toes." in prompt_text
-    assert "raw_value" in prompt_text
+    assert "Return three short lines in plain text" in prompt_text
+    assert "Main cue:" in prompt_text
+    assert "Fix:" in prompt_text
+    assert "Next session cue:" in prompt_text
+    assert "Do not return JSON" in prompt_text
+    assert "raw_value" not in prompt_text
+    assert "pose_sequence" not in prompt_text
     assert "If uncertainty is high, use softer wording" in prompt_text
     assert "Fuzzy context: use linguistic movement severity" in prompt_text
     assert "Movement concept context: explain related body concepts naturally" in prompt_text
@@ -736,6 +876,8 @@ def test_phase3b_summary_prompt_includes_advanced_reasoning_guidance(client, db_
     prompt_text = "\n".join(message.content for message in messages)
 
     assert "Use deterministic evaluation as the source of truth." in prompt_text
+    assert "Return plain text only" in prompt_text
+    assert "Do not return JSON" in prompt_text
     assert "Do not add issues, body regions, metrics, causes, or priorities that are not present in context." in prompt_text
     assert "Use advanced reasoning only to refine wording, explanation, prioritization, and coaching clarity." in prompt_text
     assert "Fuzzy context: use linguistic movement severity" in prompt_text
@@ -745,7 +887,7 @@ def test_phase3b_summary_prompt_includes_advanced_reasoning_guidance(client, db_
     assert "Linked-issue context: if related issues appeared together" in prompt_text
     assert "Timing context: if state is RUSHED, JERKY, CONTROLLED, or STABLE" in prompt_text
     assert "Do not mention internal terms like ontology, Choquet, IT2 fuzzy, temporal model, or diagnostic flags." in prompt_text
-    assert "advanced_reasoning_context" in prompt_text
+    assert "advanced_reasoning_summaries" in prompt_text
 
 
 def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
@@ -758,32 +900,12 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
     _store_feedback_inputs(db_session, session_id=session["id"], drill=drill)
     fake_client = FakeLLMClient(
         responses=[
-            json.dumps(
-                {
-                    "coaching_cue": "During the squat descent, keep both knees tracking over your toes.",
-                    "improvement_suggestion": "Slow the descent and press the knees outward before standing up.",
-                    "grounding_fields_used": [
-                        "drill_name",
-                        "phase_id",
-                        "metric_id",
-                        "severity_level",
-                        "deterministic_coaching_cue",
-                    ],
-                }
+            (
+                "Main cue: During the squat descent, keep both knees tracking over your toes.\n"
+                "Fix: Slow the descent and press the knees outward before standing up.\n"
+                "Next session cue: On the next set, move slowly and repeat the same knee line."
             ),
-            json.dumps(
-                {
-                    "summary": (
-                        "Your squat setup was steady, but the descent needs attention first. "
-                        "Keep the knees tracking over the toes and slow the next rep."
-                    ),
-                    "grounding_fields_used": [
-                        "top_issue",
-                        "strongest_area",
-                        "skill_level",
-                    ],
-                }
-            ),
+            "Your squat setup was steady, but the descent needs attention first. Keep the knees tracking over the toes and slow the next rep.",
         ]
     )
     app.dependency_overrides[get_llm_feedback_service] = lambda: _llm_service(fake_client)
@@ -812,8 +934,8 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
         "created_at",
     }
     assert payload["llm_feedback_version"] == "phase3b_v0_1_0"
-    assert payload["provider"] == "fake-provider"
-    assert payload["model"] == "fake-model"
+    assert payload["provider"] == "gemini"
+    assert payload["model"] == "gemini-2.5-flash"
     assert payload["fallback_used"] is False
     assert payload["advanced_context_used"] is False
     assert payload["advanced_context_sources"] == []
@@ -829,6 +951,10 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
     assert item["metric_id"] == "knee_alignment_score"
     assert item["deterministic_coaching_cue"] == "Keep both knees tracking over the middle toes."
     assert "squat descent" in item["llm_coaching_cue"]
+    assert item["llm_what_happened"]
+    assert item["llm_why_it_matters"]
+    assert "Slow the descent" in item["llm_what_to_fix"]
+    assert "next set" in item["llm_next_session_cue"]
     assert item["fallback_used"] is False
 
     artifact = db_session.scalar(
@@ -838,8 +964,39 @@ def test_phase3b_successful_fake_provider_preserves_deterministic_fields(
         )
     )
     assert artifact is not None
-    assert artifact.payload_json["provider"] == "fake-provider"
+    assert artifact.payload_json["provider"] == "gemini"
     assert len(fake_client.calls) == 2
+
+
+def test_phase3b_fenced_gemini_success_does_not_fall_back(client, db_session) -> None:
+    token = _register_user(client, email="phase3b-fenced-success@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    session = _create_session(client, token, drill)
+    _store_feedback_inputs(db_session, session_id=session["id"], drill=drill)
+    fake_client = FakeLLMClient(
+        responses=[
+            """```
+Main cue: Keep your knees steady as you lower into the squat.
+Fix: Slow the descent and keep the knees over the middle toes.
+Next session cue: On the next set, repeat the same knee line for each rep.
+```""",
+            "Your main focus is steady knee tracking during the squat descent.",
+        ]
+    )
+    app.dependency_overrides[get_llm_feedback_service] = lambda: _llm_service(fake_client)
+
+    response = client.post(
+        f"/api/sessions/{session['id']}/feedback/llm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    app.dependency_overrides.pop(get_llm_feedback_service, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["fallback_used"] is False
+    assert payload["enhanced_feedback_items"][0]["fallback_used"] is False
+    assert "knees steady" in payload["enhanced_feedback_items"][0]["llm_coaching_cue"]
+    assert "steady knee tracking" in payload["enhanced_summary"]["llm_summary"]
 
 
 def test_phase3b_missing_key_falls_back_cleanly(client, db_session) -> None:
@@ -886,7 +1043,7 @@ def test_phase3b_provider_failure_and_malformed_output_fall_back(client, db_sess
         feedback_result=feedback_result,
     )
     malformed_result = _llm_service(
-        FakeLLMClient(responses=["not-json", json.dumps({"summary": ""})])
+        FakeLLMClient(responses=["   ", "   "])
     ).enhance(
         session=session_model,
         evaluation_result=evaluation_result,
@@ -915,19 +1072,12 @@ def test_phase3b_internal_analysis_terms_fall_back(client, db_session) -> None:
     result = _llm_service(
         FakeLLMClient(
             responses=[
-                json.dumps(
-                    {
-                        "coaching_cue": "Choquet says your knee control is linked.",
-                        "improvement_suggestion": "Use the ontology result to adjust the rep.",
-                        "grounding_fields_used": ["metric_id"],
-                    }
+                (
+                    "Main cue: Choquet says your knee control is linked.\n"
+                    "Fix: Keep the knees steady.\n"
+                    "Next session cue: Repeat one slower rep."
                 ),
-                json.dumps(
-                    {
-                        "summary": "Keep the next rep slower and hold the knee line steady.",
-                        "grounding_fields_used": ["top_issue"],
-                    }
-                ),
+                "Keep the next rep slower and hold the knee line steady.",
             ]
         )
     ).enhance(
@@ -936,10 +1086,14 @@ def test_phase3b_internal_analysis_terms_fall_back(client, db_session) -> None:
         feedback_result=feedback_result,
     )
 
-    assert result.fallback_used is True
+    assert result.fallback_used is False
     assert result.enhanced_feedback_items[0].fallback_used is True
     assert result.enhanced_feedback_items[0].llm_coaching_cue == (
         "Keep both knees tracking over the middle toes."
+    )
+    assert result.enhanced_summary.fallback_used is False
+    assert result.enhanced_summary.llm_summary == (
+        "Keep the next rep slower and hold the knee line steady."
     )
     assert "LLM_ITEM_FALLBACK:knee_alignment_score" in result.diagnostic_flags
 
@@ -978,19 +1132,12 @@ def test_phase3b_missing_advanced_artifacts_do_not_break_llm_feedback(client, db
     _store_feedback_inputs(db_session, session_id=session["id"], drill=drill)
     fake_client = FakeLLMClient(
         responses=[
-            json.dumps(
-                {
-                    "coaching_cue": "Keep your knees tracking over your toes on the way down.",
-                    "improvement_suggestion": "Slow the descent and focus on knee alignment.",
-                    "grounding_fields_used": ["metric_id", "phase_id", "deterministic_coaching_cue"],
-                }
+            (
+                "Main cue: Keep your knees tracking over your toes on the way down.\n"
+                "Fix: Slow the descent and focus on knee alignment.\n"
+                "Next session cue: On the next set, repeat one controlled descent."
             ),
-            json.dumps(
-                {
-                    "summary": "Your main focus is knee alignment during the descent.",
-                    "grounding_fields_used": ["top_issue", "skill_level"],
-                }
-            ),
+            "Your main focus is knee alignment during the descent.",
         ]
     )
     app.dependency_overrides[get_llm_feedback_service] = lambda: _llm_service(fake_client)
@@ -1017,27 +1164,12 @@ def test_phase3b_advanced_artifacts_are_used_in_endpoint_context(client, db_sess
     _store_advanced_context_artifacts(db_session, session_id=session["id"], drill=drill)
     fake_client = FakeLLMClient(
         responses=[
-            json.dumps(
-                {
-                    "coaching_cue": "During the descent, keep the knees tracking and slow the rushed movement.",
-                    "improvement_suggestion": "Repeat the drill with one clear focus on knee tracking.",
-                    "grounding_fields_used": [
-                        "advanced_reasoning_context",
-                        "deterministic_coaching_cue",
-                        "phase_id",
-                    ],
-                }
+            (
+                "Main cue: During the descent, keep the knees tracking and slow the rushed movement.\n"
+                "Fix: Repeat the drill with one clear focus on knee tracking.\n"
+                "Next session cue: On the next set, slow the first half of the descent."
             ),
-            json.dumps(
-                {
-                    "summary": "Your main issue is lower-body alignment, and the rushed descent makes it harder to stay controlled.",
-                    "grounding_fields_used": [
-                        "advanced_reasoning_context",
-                        "top_issue",
-                        "improvement_suggestions",
-                    ],
-                }
-            ),
+            "Your main issue is lower-body alignment, and the rushed descent makes it harder to stay controlled.",
         ]
     )
     app.dependency_overrides[get_llm_feedback_service] = lambda: _llm_service(fake_client)

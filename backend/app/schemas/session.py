@@ -358,6 +358,11 @@ class LLMEnhancedFeedbackItemResponse(APIBaseModel):
     issue_direction: IssueDirection
     deterministic_coaching_cue: str
     llm_coaching_cue: str
+    llm_main_coaching_cue: str = ""
+    llm_what_happened: str = ""
+    llm_why_it_matters: str = ""
+    llm_what_to_fix: str = ""
+    llm_next_session_cue: str = ""
     deterministic_improvement_suggestion: str
     llm_improvement_suggestion: str
     grounding_fields_used: list[str] = Field(default_factory=list)

@@ -113,6 +113,7 @@ function buildFeedbackItemKey(feedbackItem: DeterministicFeedbackItem) {
 
 function buildTTSSegments(
   feedbackItem: DeterministicFeedbackItem,
+  mainCue: string,
   whatToFix: string,
   nextAction: string,
   isEnhanced: boolean
@@ -123,7 +124,7 @@ function buildTTSSegments(
 
   return {
     segment_1: isEnhanced
-      ? finalCue
+      ? mainCue || finalCue
       : feedbackItem.simple_coaching_phrase ||
         feedbackItem.issue_title ||
         finalCue,
@@ -257,25 +258,32 @@ export function SessionResultsPanel({
         ? "This pattern appeared with lower confidence, so another clean rep can help confirm it."
         : null;
 
+    const isEnhanced = Boolean(llmItem && !llmItem.fallback_used);
+    const mainCue =
+      isEnhanced
+        ? llmItem?.llm_main_coaching_cue || llmItem?.llm_coaching_cue || feedbackItem.issue_title
+        : feedbackItem.issue_title || formatMetricLabel(feedbackItem.metric_name);
     const whatToFix =
       llmItem && !llmItem.fallback_used
-        ? llmItem.llm_coaching_cue
+        ? llmItem.llm_what_to_fix || llmItem.llm_coaching_cue
         : feedbackItem.what_to_fix || feedbackItem.coaching_cue;
     const nextAction =
       llmItem && !llmItem.fallback_used
-        ? llmItem.llm_improvement_suggestion
+        ? llmItem.llm_next_session_cue || llmItem.llm_improvement_suggestion
         : feedbackItem.next_rep_cue || feedbackItem.improvement_suggestion;
 
     return {
       key: `${feedbackItem.phase_id}-${feedbackItem.metric_name}-${feedbackItem.priority_rank}`,
-      title: feedbackItem.issue_title || formatMetricLabel(feedbackItem.metric_name),
+      title: mainCue,
       severity: feedbackItem.severity_level,
       feedbackItemKey: buildFeedbackItemKey(feedbackItem),
       whatHappened:
+        (llmItem && !llmItem.fallback_used ? llmItem.llm_what_happened : null) ||
         feedbackItem.what_happened ||
         feedbackItem.issue_title ||
         "This rep showed one movement pattern to clean up first.",
       whyItHappened:
+        (llmItem && !llmItem.fallback_used ? llmItem.llm_why_it_matters : null) ||
         feedbackItem.why_it_matters ||
         buildFallbackWhyText(
           leadIssue ?? undefined,
@@ -288,12 +296,13 @@ export function SessionResultsPanel({
       whatToFix,
       nextAction,
       simpleCue: feedbackItem.simple_coaching_phrase || null,
-      isEnhanced: Boolean(llmItem && !llmItem.fallback_used),
+      isEnhanced,
       ttsSegments: buildTTSSegments(
         feedbackItem,
+        mainCue,
         whatToFix,
         nextAction,
-        Boolean(llmItem && !llmItem.fallback_used)
+        isEnhanced
       ),
       backupNote:
         llmItem && llmItem.llm_coaching_cue !== llmItem.deterministic_coaching_cue

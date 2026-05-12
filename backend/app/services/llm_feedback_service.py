@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
+import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -28,7 +31,7 @@ from app.services.llm_client import (
     LLMClientError,
     LLMMessage,
     LLMProviderConfig,
-    is_local_llm_provider,
+    is_gemini_provider,
 )
 
 
@@ -42,6 +45,34 @@ _INTERNAL_ANALYSIS_TERMS = (
     "temporal model",
     "diagnostic flag",
 )
+logger = logging.getLogger("uvicorn.error")
+_JSON_FENCE_RE = re.compile(
+    r"```(?:json)?\s*(?P<body>.*?)\s*```",
+    re.IGNORECASE | re.DOTALL,
+)
+_MAIN_CUE_KEY = "main_coaching_cue"
+_FIX_KEY = "what_to_fix"
+_NEXT_SESSION_KEY = "next_session_cue"
+_LABEL_TO_KEY = {
+    "main cue": _MAIN_CUE_KEY,
+    "fix": _FIX_KEY,
+    "next session cue": _NEXT_SESSION_KEY,
+}
+_LABELED_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(main cue|fix|next session cue)\s*:\s*(.*)$",
+    re.IGNORECASE,
+)
+_ISSUE_RESPONSE_REQUIRED_KEYS = frozenset(
+    {
+        "main_coaching_cue",
+        "what_happened",
+        "why_it_matters",
+        "what_to_fix",
+        "next_session_cue",
+        "grounding_fields_used",
+    }
+)
+_SUMMARY_RESPONSE_REQUIRED_KEYS = frozenset({"summary", "grounding_fields_used"})
 
 
 @dataclass(frozen=True)
@@ -695,15 +726,19 @@ _ADVANCED_TEMPORAL_STATE_PRIORITY = {
 @dataclass(frozen=True)
 class LLMFeedbackPromptBuilder:
     def build_issue_prompt(self, context: CoachingIssueContext) -> list[LLMMessage]:
+        context_payload = self._compact_issue_context(context)
         return [
             LLMMessage(role="system", content=self._system_instruction()),
             LLMMessage(
                 role="user",
                 content=(
                     "Rewrite this deterministic coaching item for the athlete.\n"
-                    "Use only the JSON context. Return JSON only with keys: "
-                    "coaching_cue, improvement_suggestion, grounding_fields_used.\n"
-                    "Each text field must be one short sentence.\n"
+                    "Use only the JSON context. Return three short lines in plain text using this exact format:\n"
+                    "Main cue: <one short sentence>\n"
+                    "Fix: <one short sentence>\n"
+                    "Next session cue: <one short sentence>\n"
+                    "Do not return JSON. Do not include markdown, code fences, or explanation. "
+                    "Do not prefix the response with phrases like Here is the JSON requested.\n"
                     "Use deterministic evaluation as the source of truth. "
                     "Do not add issues, body regions, metrics, causes, or priorities that are not present in context. "
                     "Use advanced reasoning only to refine wording, explanation, prioritization, and coaching clarity. "
@@ -714,12 +749,13 @@ class LLMFeedbackPromptBuilder:
                     "Linked-issue context: if related issues appeared together, explain the connection simply. "
                     "Timing context: if state is RUSHED, JERKY, CONTROLLED, or STABLE, add a pacing or control cue. "
                     "Do not mention internal terms like ontology, Choquet, IT2 fuzzy, temporal model, or diagnostic flags.\n"
-                    f"Context:\n{json.dumps(asdict(context), sort_keys=True)}"
+                    f"Context:\n{json.dumps(context_payload, sort_keys=True)}"
                 ),
             ),
         ]
 
     def build_summary_prompt(self, context: CoachingSummaryContext) -> list[LLMMessage]:
+        context_payload = self._compact_summary_context(context)
         return [
             LLMMessage(role="system", content=self._system_instruction()),
             LLMMessage(
@@ -728,8 +764,9 @@ class LLMFeedbackPromptBuilder:
                     "Create a concise session summary for the athlete.\n"
                     "Use only the JSON context. Mention the highest-priority issue first, "
                     "optionally mention one strength, and give one next-step action.\n"
-                    "Return JSON only with keys: summary, grounding_fields_used.\n"
-                    "The summary must be no more than three short sentences.\n"
+                    "Return plain text only, no more than three short sentences. "
+                    "Do not return JSON. Do not include markdown, code fences, or explanation. "
+                    "Do not prefix the response with phrases like Here is the JSON requested.\n"
                     "Use deterministic evaluation as the source of truth. "
                     "Do not add issues, body regions, metrics, causes, or priorities that are not present in context. "
                     "Use advanced reasoning only to refine wording, explanation, prioritization, and coaching clarity. "
@@ -740,10 +777,80 @@ class LLMFeedbackPromptBuilder:
                     "Linked-issue context: if related issues appeared together, explain the connection simply. "
                     "Timing context: if state is RUSHED, JERKY, CONTROLLED, or STABLE, add a pacing or control cue. "
                     "Do not mention internal terms like ontology, Choquet, IT2 fuzzy, temporal model, or diagnostic flags.\n"
-                    f"Context:\n{json.dumps(asdict(context), sort_keys=True)}"
+                    f"Context:\n{json.dumps(context_payload, sort_keys=True)}"
                 ),
             ),
         ]
+
+    @staticmethod
+    def _compact_issue_context(context: CoachingIssueContext) -> dict[str, Any]:
+        return {
+            "drill": {
+                "sport": context.sport_name,
+                "name": context.drill_name,
+                "skill_level": context.skill_level,
+            },
+            "evaluation": {
+                "overall_score": context.overall_score,
+                "overall_severity": context.overall_severity,
+                "strongest_area": context.strongest_area,
+                "weakest_area": context.weakest_area,
+            },
+            "deterministic_feedback": {
+                "priority_rank": context.priority_rank,
+                "phase": context.phase_id,
+                "metric": context.metric_name,
+                "severity": context.severity_level,
+                "affected_body_part": context.affected_body_part,
+                "issue_direction": context.issue_direction,
+                "coaching_cue": context.deterministic_coaching_cue,
+                "improvement_suggestion": context.deterministic_improvement_suggestion,
+            },
+            "advanced_reasoning_summaries": context.advanced_reasoning_context,
+        }
+
+    @classmethod
+    def _compact_summary_context(cls, context: CoachingSummaryContext) -> dict[str, Any]:
+        return {
+            "drill": {
+                "sport": context.sport_name,
+                "name": context.drill_name,
+                "skill_level": context.skill_level,
+            },
+            "evaluation": {
+                "overall_score": context.overall_score,
+                "overall_severity": context.overall_severity,
+                "strongest_area": context.strongest_area,
+                "weakest_area": context.weakest_area,
+            },
+            "deterministic_feedback": {
+                "summary": context.deterministic_summary,
+                "improvement_suggestions": context.improvement_suggestions[:3],
+            },
+            "top_issue": cls._compact_issue_dict(context.top_issue),
+            "secondary_issues": [
+                cls._compact_issue_dict(issue)
+                for issue in context.secondary_issues[:2]
+                if issue is not None
+            ],
+            "advanced_reasoning_summaries": context.advanced_reasoning_context,
+        }
+
+    @staticmethod
+    def _compact_issue_dict(issue: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not issue:
+            return None
+        return {
+            "priority_rank": issue.get("priority_rank"),
+            "phase": issue.get("phase_id"),
+            "metric": issue.get("metric_name"),
+            "severity": issue.get("severity_level"),
+            "affected_body_part": issue.get("affected_body_part"),
+            "issue_direction": issue.get("issue_direction"),
+            "coaching_cue": issue.get("deterministic_coaching_cue"),
+            "improvement_suggestion": issue.get("deterministic_improvement_suggestion"),
+            "advanced_reasoning_summaries": issue.get("advanced_reasoning_context", {}),
+        }
 
     @staticmethod
     def _system_instruction() -> str:
@@ -809,6 +916,15 @@ class LLMFeedbackService:
             strict=True,
         ):
             if configuration_flag is not None:
+                logger.info(
+                    "LLM feedback using deterministic item fallback "
+                    "session_id=%s provider=%s configured_model=%s reason=%s "
+                    "deterministic_fallback_used=true",
+                    str(evaluation_result.session_id),
+                    self.provider_config.provider,
+                    self.provider_config.model,
+                    configuration_flag,
+                )
                 diagnostic_flags.append(configuration_flag)
                 enhanced_items.append(self._fallback_item(feedback_item))
                 continue
@@ -828,10 +944,9 @@ class LLMFeedbackService:
             diagnostic_flags=diagnostic_flags,
         )
 
-        fallback_used = (
+        fallback_used = configuration_flag is not None or (
             enhanced_summary.fallback_used
-            or any(item.fallback_used for item in enhanced_items)
-            or configuration_flag is not None
+            and all(item.fallback_used for item in enhanced_items)
         )
         return LLMFeedbackResult(
             llm_feedback_version=LLM_FEEDBACK_VERSION,
@@ -857,26 +972,38 @@ class LLMFeedbackService:
         diagnostic_flags: list[str],
     ) -> LLMEnhancedFeedbackItemResponse:
         try:
-            parsed = self._call_json(
-                messages=self.prompt_builder.build_issue_prompt(issue_context),
+            raw_text = self._call_text(
+                messages=self.prompt_builder.build_issue_prompt(issue_context)
             )
-            coaching_cue = self._validated_text(
-                parsed.get("coaching_cue"),
-                max_length=240,
+            main_coaching_cue, what_to_fix, next_session_cue = self._parse_issue_refinement_text(
+                raw_text=raw_text,
+                feedback_item=feedback_item,
             )
-            improvement_suggestion = self._validated_text(
-                parsed.get("improvement_suggestion"),
-                max_length=240,
+        except Exception as exc:
+            logger.warning(
+                "LLM item refinement failed; using deterministic fallback "
+                "session_id=%s provider=%s configured_model=%s metric=%s "
+                "exception_class=%s reason=%s deterministic_fallback_used=true",
+                issue_context.session_id,
+                self.provider_config.provider,
+                self.provider_config.model,
+                feedback_item.metric_id or feedback_item.metric_name,
+                exc.__class__.__name__,
+                str(exc),
             )
-            grounding_fields_used = self._validated_grounding_fields(
-                parsed.get("grounding_fields_used")
-            )
-        except Exception:
             diagnostic_flags.append(
                 f"LLM_ITEM_FALLBACK:{feedback_item.metric_id or feedback_item.metric_name}"
             )
             return self._fallback_item(feedback_item)
 
+        logger.info(
+            "LLM item refinement succeeded session_id=%s provider=%s "
+            "configured_model=%s metric=%s",
+            issue_context.session_id,
+            self.provider_config.provider,
+            self.provider_config.model,
+            feedback_item.metric_id or feedback_item.metric_name,
+        )
         return LLMEnhancedFeedbackItemResponse(
             phase_id=feedback_item.phase_id,
             metric_id=feedback_item.metric_id,
@@ -886,10 +1013,19 @@ class LLMFeedbackService:
             affected_body_part=feedback_item.affected_body_part,
             issue_direction=feedback_item.issue_direction,
             deterministic_coaching_cue=feedback_item.coaching_cue,
-            llm_coaching_cue=coaching_cue,
+            llm_coaching_cue=main_coaching_cue,
+            llm_main_coaching_cue=main_coaching_cue,
+            llm_what_happened=feedback_item.what_happened,
+            llm_why_it_matters=feedback_item.why_it_matters,
+            llm_what_to_fix=what_to_fix,
+            llm_next_session_cue=next_session_cue,
             deterministic_improvement_suggestion=feedback_item.improvement_suggestion,
-            llm_improvement_suggestion=improvement_suggestion,
-            grounding_fields_used=grounding_fields_used,
+            llm_improvement_suggestion=next_session_cue,
+            grounding_fields_used=[
+                "deterministic_coaching_cue",
+                "deterministic_improvement_suggestion",
+                "advanced_reasoning_summaries",
+            ],
             fallback_used=False,
         )
 
@@ -902,52 +1038,306 @@ class LLMFeedbackService:
         diagnostic_flags: list[str],
     ) -> LLMEnhancedSessionSummaryResponse:
         if configuration_flag is not None:
+            logger.info(
+                "LLM feedback using deterministic summary fallback "
+                "session_id=%s provider=%s configured_model=%s reason=%s "
+                "deterministic_fallback_used=true",
+                summary_context.session_id,
+                self.provider_config.provider,
+                self.provider_config.model,
+                configuration_flag,
+            )
             diagnostic_flags.append(configuration_flag)
             return self._fallback_summary(feedback_result)
 
         try:
-            parsed = self._call_json(
-                messages=self.prompt_builder.build_summary_prompt(summary_context),
+            raw_text = self._call_text(
+                messages=self.prompt_builder.build_summary_prompt(summary_context)
             )
-            summary = self._validated_text(parsed.get("summary"), max_length=700)
-            grounding_fields_used = self._validated_grounding_fields(
-                parsed.get("grounding_fields_used")
+            summary = self._parse_summary_refinement_text(raw_text)
+        except Exception as exc:
+            logger.warning(
+                "LLM summary refinement failed; using deterministic fallback "
+                "session_id=%s provider=%s configured_model=%s exception_class=%s "
+                "reason=%s deterministic_fallback_used=true",
+                summary_context.session_id,
+                self.provider_config.provider,
+                self.provider_config.model,
+                exc.__class__.__name__,
+                str(exc),
             )
-        except Exception:
             diagnostic_flags.append("LLM_SUMMARY_FALLBACK")
             return self._fallback_summary(feedback_result)
 
+        logger.info(
+            "LLM summary refinement succeeded session_id=%s provider=%s "
+            "configured_model=%s",
+            summary_context.session_id,
+            self.provider_config.provider,
+            self.provider_config.model,
+        )
         return LLMEnhancedSessionSummaryResponse(
             deterministic_summary=feedback_result.overall_feedback_summary,
             llm_summary=summary,
-            grounding_fields_used=grounding_fields_used,
+            grounding_fields_used=[
+                "deterministic_summary",
+                "top_issue",
+                "advanced_reasoning_summaries",
+            ],
             fallback_used=False,
         )
 
-    def _call_json(self, *, messages: list[LLMMessage]) -> dict[str, Any]:
+    def _call_text(self, *, messages: list[LLMMessage]) -> str:
+        raw_response = self.llm_client.generate_text(
+            messages=messages,
+            config=self.provider_config,
+        )
+        if not isinstance(raw_response, str):
+            raise LLMClientError("LLM response must be text.")
+        normalized = self._normalize_llm_response_text(raw_response)
+        if not normalized:
+            raise LLMClientError("LLM response text was empty.")
+        return normalized
+
+    def _parse_issue_refinement_text(
+        self,
+        *,
+        raw_text: str,
+        feedback_item: DeterministicFeedbackItemResponse,
+    ) -> tuple[str, str, str]:
+        labels = self._extract_labeled_lines(raw_text)
+        if labels:
+            main_coaching_cue = self._validated_text(
+                labels.get(_MAIN_CUE_KEY) or feedback_item.coaching_cue,
+                max_length=240,
+            )
+            what_to_fix = self._validated_text(
+                labels.get(_FIX_KEY)
+                or feedback_item.what_to_fix
+                or feedback_item.coaching_cue,
+                max_length=240,
+            )
+            next_session_cue = self._validated_text(
+                labels.get(_NEXT_SESSION_KEY)
+                or feedback_item.next_rep_cue
+                or feedback_item.improvement_suggestion,
+                max_length=240,
+            )
+            return main_coaching_cue, what_to_fix, next_session_cue
+
+        main_coaching_cue = self._validated_text(raw_text, max_length=240)
+        what_to_fix = self._validated_text(
+            feedback_item.what_to_fix or feedback_item.coaching_cue,
+            max_length=240,
+        )
+        next_session_cue = self._validated_text(
+            feedback_item.next_rep_cue or feedback_item.improvement_suggestion,
+            max_length=240,
+        )
+        return main_coaching_cue, what_to_fix, next_session_cue
+
+    def _parse_summary_refinement_text(self, raw_text: str) -> str:
+        labels = self._extract_labeled_lines(raw_text)
+        if labels:
+            ordered = [
+                labels[key]
+                for key in (_MAIN_CUE_KEY, _FIX_KEY, _NEXT_SESSION_KEY)
+                if labels.get(key)
+            ]
+            if ordered:
+                return self._validated_text(" ".join(ordered), max_length=700)
+        return self._validated_text(raw_text, max_length=700)
+
+    def _call_json(
+        self,
+        *,
+        messages: list[LLMMessage],
+        required_keys: frozenset[str] | None = None,
+    ) -> dict[str, Any]:
+        started_at = time.perf_counter()
         raw_response = self.llm_client.generate_text(
             messages=messages,
             config=self.provider_config,
         )
         try:
-            parsed = json.loads(raw_response)
+            parsed = self.extract_json_object(raw_response)
         except json.JSONDecodeError as exc:
-            raise LLMClientError("LLM response was not valid JSON.") from exc
+            logger.warning(
+                "LLM JSON parse failed provider=%s configured_model=%s "
+                "exception_class=%s parse_error=%s position=%s "
+                "response_preview=%s "
+                "deterministic_fallback_pending=true",
+                self.provider_config.provider,
+                self.provider_config.model,
+                exc.__class__.__name__,
+                exc.msg,
+                exc.pos,
+                self._safe_response_preview(raw_response),
+            )
+            raise LLMClientError(
+                f"LLM response was not valid JSON ({exc.msg} at position {exc.pos})."
+            ) from exc
         if not isinstance(parsed, dict):
             raise LLMClientError("LLM response JSON must be an object.")
+        if required_keys is not None:
+            missing_keys = sorted(required_keys - set(parsed))
+            if missing_keys:
+                logger.warning(
+                    "LLM JSON validation failed provider=%s configured_model=%s "
+                    "missing_keys=%s response_keys=%s response_preview=%s "
+                    "deterministic_fallback_pending=true",
+                    self.provider_config.provider,
+                    self.provider_config.model,
+                    missing_keys,
+                    sorted(str(key) for key in parsed.keys())[:20],
+                    self._safe_response_preview(raw_response),
+                )
+                raise LLMClientError(
+                    f"LLM response missing required keys: {', '.join(missing_keys)}."
+                )
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.info(
+            "Gemini refinement succeeded provider=%s configured_model=%s "
+            "duration_ms=%s output_parse_success=true",
+            self.provider_config.provider,
+            self.provider_config.model,
+            duration_ms,
+        )
+        logger.info(
+            "LLM JSON extraction succeeded provider=%s configured_model=%s",
+            self.provider_config.provider,
+            self.provider_config.model,
+        )
         return parsed
+
+    @classmethod
+    def extract_json_object(cls, raw_response: str) -> dict[str, Any]:
+        text = raw_response.strip()
+        if not text:
+            raise json.JSONDecodeError("Empty LLM response", raw_response, 0)
+
+        candidates = [text]
+        candidates.extend(match.group("body").strip() for match in _JSON_FENCE_RE.finditer(text))
+
+        last_error: json.JSONDecodeError | None = None
+        for candidate in candidates:
+            parsed, parse_error = cls._extract_first_balanced_json_object(candidate)
+            if parsed is not None:
+                return parsed
+            if parse_error is not None:
+                last_error = parse_error
+
+        if last_error is not None:
+            raise last_error
+        position = max(text.find("{"), 0)
+        raise json.JSONDecodeError("No JSON object found in LLM response", text, position)
+
+    @staticmethod
+    def _extract_first_balanced_json_object(
+        text: str,
+    ) -> tuple[dict[str, Any] | None, json.JSONDecodeError | None]:
+        search_index = 0
+        last_error: json.JSONDecodeError | None = None
+
+        while True:
+            start = text.find("{", search_index)
+            if start < 0:
+                return None, last_error
+
+            depth = 0
+            in_string = False
+            escaped = False
+            for index in range(start, len(text)):
+                char = text[index]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                    continue
+
+                if char == '"':
+                    in_string = True
+                    continue
+                if char == "{":
+                    depth += 1
+                    continue
+                if char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start : index + 1]
+                        try:
+                            parsed = json.loads(candidate)
+                        except json.JSONDecodeError as exc:
+                            last_error = exc
+                            break
+                        if not isinstance(parsed, dict):
+                            last_error = json.JSONDecodeError(
+                                "LLM response JSON must be an object",
+                                candidate,
+                                0,
+                            )
+                            break
+                        return parsed, None
+
+            search_index = start + 1
+
+    @staticmethod
+    def _safe_response_preview(raw_response: str, *, limit: int = 300) -> str:
+        preview = re.sub(
+            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+            "[uuid]",
+            raw_response,
+        )
+        preview = re.sub(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[email]", preview)
+        preview = " ".join(preview.split())
+        return preview[:limit]
+
+    @staticmethod
+    def _normalize_llm_response_text(raw_response: str) -> str:
+        text = raw_response.strip()
+        fenced = _JSON_FENCE_RE.search(text)
+        if fenced is not None:
+            text = fenced.group("body").strip()
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        lines = [line.rstrip() for line in text.split("\n")]
+        return "\n".join(line for line in lines if line.strip())
+
+    @classmethod
+    def _extract_labeled_lines(cls, raw_text: str) -> dict[str, str]:
+        extracted: dict[str, list[str]] = {}
+        current_key: str | None = None
+        for raw_line in raw_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            match = _LABELED_LINE_RE.match(line)
+            if match is not None:
+                current_key = _LABEL_TO_KEY[match.group(1).lower()]
+                value = match.group(2).strip()
+                if value:
+                    extracted.setdefault(current_key, []).append(value)
+                continue
+            if current_key is not None:
+                extracted.setdefault(current_key, []).append(line.lstrip("-* ").strip())
+        return {
+            key: " ".join(part for part in parts if part).strip()
+            for key, parts in extracted.items()
+            if any(part.strip() for part in parts)
+        }
 
     def _configuration_fallback_flag(self) -> str | None:
         if not self.provider_config.enhancement_enabled:
             return "LLM_ENHANCEMENT_DISABLED"
         if not self.provider_config.provider:
             return "LLM_PROVIDER_NOT_CONFIGURED"
+        if not is_gemini_provider(self.provider_config.provider):
+            return "LLM_PROVIDER_UNSUPPORTED"
         if not self.provider_config.model:
             return "LLM_MODEL_NOT_CONFIGURED"
-        if (
-            not is_local_llm_provider(self.provider_config.provider)
-            and not self.provider_config.api_key
-        ):
+        if not self.provider_config.api_key:
             return "LLM_API_KEY_MISSING"
         return None
 
@@ -965,6 +1355,11 @@ class LLMFeedbackService:
             issue_direction=feedback_item.issue_direction,
             deterministic_coaching_cue=feedback_item.coaching_cue,
             llm_coaching_cue=feedback_item.coaching_cue,
+            llm_main_coaching_cue=feedback_item.coaching_cue,
+            llm_what_happened=feedback_item.what_happened,
+            llm_why_it_matters=feedback_item.why_it_matters,
+            llm_what_to_fix=feedback_item.what_to_fix,
+            llm_next_session_cue=feedback_item.next_rep_cue,
             deterministic_improvement_suggestion=feedback_item.improvement_suggestion,
             llm_improvement_suggestion=feedback_item.improvement_suggestion,
             grounding_fields_used=[
@@ -989,7 +1384,10 @@ class LLMFeedbackService:
     def _validated_text(value: object, *, max_length: int) -> str:
         if not isinstance(value, str):
             raise LLMClientError("LLM response field must be text.")
-        text = " ".join(value.strip().split())
+        text = re.sub(r"^\s*```(?:json)?\s*", "", value.strip(), flags=re.IGNORECASE)
+        text = re.sub(r"\s*```\s*$", "", text)
+        text = text.replace("**", "").replace("__", "").replace("`", "")
+        text = " ".join(text.strip().split())
         if not text:
             raise LLMClientError("LLM response text was empty.")
         if len(text) > max_length:

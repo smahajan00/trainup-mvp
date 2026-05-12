@@ -97,7 +97,7 @@ ONTOLOGY_REASONING_ARTIFACT_TYPE = "ontology_reasoning_result"
 CHOQUET_AGGREGATION_ARTIFACT_TYPE = "choquet_aggregation_result"
 TEMPORAL_MODELING_ARTIFACT_TYPE = "temporal_modeling_result"
 POSE_SEQUENCE_ARTIFACT_TYPE = "pose_sequence"
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 SAGITTAL_LANDMARK_SWAP_PAIRS = (
     ("left_shoulder", "right_shoulder"),
@@ -531,7 +531,7 @@ class SessionService:
             self.db.commit()
             return result
 
-        self._log_evaluation_pose_trace(
+        self._log_evaluation_pose_summary(
             session=session,
             pose_sequence=pose_sequence,
         )
@@ -628,7 +628,7 @@ class SessionService:
             dominant_side_confidence=dominant_side_confidence,
             dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
         )
-        self._log_evaluation_result_trace(
+        self._log_evaluation_result_summary(
             session=session,
             computation=computation,
         )
@@ -834,9 +834,28 @@ class SessionService:
             segments=segments,
         )
         if cached_response is not None:
+            logger.info(
+                "Feedback TTS cache hit",
+                extra={
+                    "session_id": str(session.id),
+                    "text_hash": text_hash,
+                    "model": get_settings().tts_model,
+                    "voice": get_settings().tts_voice,
+                },
+            )
             return cached_response
 
         try:
+            generation_started_at = time.perf_counter()
+            logger.info(
+                "Feedback TTS cache miss; generating audio",
+                extra={
+                    "session_id": str(session.id),
+                    "text_hash": text_hash,
+                    "model": get_settings().tts_model,
+                    "voice": get_settings().tts_voice,
+                },
+            )
             audio_bytes = self.feedback_tts.synthesize(segments=segment_values)
         except FeedbackTTSUnavailableError as exc:
             logger.warning(
@@ -860,6 +879,18 @@ class SessionService:
         )
         self._store_cached_tts_response(response)
         self.db.commit()
+        logger.info(
+            "Feedback TTS audio cached",
+            extra={
+                "session_id": str(session.id),
+                "text_hash": text_hash,
+                "byte_count": len(audio_bytes),
+                "generation_time_ms": round(
+                    (time.perf_counter() - generation_started_at) * 1000,
+                    3,
+                ),
+            },
+        )
         return response
 
     def generate_pedagogical_decision(
@@ -1622,93 +1653,43 @@ class SessionService:
         )
 
     @staticmethod
-    def _log_evaluation_pose_trace(
+    def _log_evaluation_pose_summary(
         *,
         session: TrainingSession,
         pose_sequence: PoseSequenceResponse,
     ) -> None:
-        first_frame = (
-            pose_sequence.sequence_data[0]
-            if pose_sequence.sequence_data
-            else None
-        )
-        first_frame_keypoints = (
-            {
-                name: {
-                    "x": landmark.x,
-                    "y": landmark.y,
-                    "visibility": landmark.visibility,
-                }
-                for name, landmark in sorted(first_frame.landmarks.items())
-            }
-            if first_frame is not None
-            else {}
-        )
-
-        logger.warning(
-            "TEMP_EVALUATION_TRACE pose_loaded %s",
-            {
-                "session_id": str(session.id),
-                "pose_session_id": str(pose_sequence.session_id),
-                "drill_id": str(session.drill_id),
-                "drill_name": session.drill.drill_name,
-                "frame_count": pose_sequence.frame_count,
-                "valid_frame_count": pose_sequence.valid_frame_count,
-                "status": pose_sequence.status,
-                "diagnostic_flags": pose_sequence.diagnostic_flags,
-                "first_frame_index": (
-                    first_frame.frame_index if first_frame is not None else None
-                ),
-                "first_frame_keypoints": first_frame_keypoints,
-            },
+        logger.info(
+            "Evaluation pose summary session_id=%s pose_session_id=%s drill_id=%s "
+            "frame_count=%s valid_frame_count=%s status=%s diagnostic_flag_count=%s",
+            str(session.id),
+            str(pose_sequence.session_id),
+            str(session.drill_id),
+            pose_sequence.frame_count,
+            pose_sequence.valid_frame_count,
+            pose_sequence.status,
+            len(pose_sequence.diagnostic_flags),
         )
 
     @staticmethod
-    def _log_evaluation_result_trace(
+    def _log_evaluation_result_summary(
         *,
         session: TrainingSession,
         computation,
     ) -> None:
         result = computation.result
-        computed_metrics = [
-            {
-                "phase_id": metric.phase_id,
-                "metric_name": metric.metric_name,
-                "raw_value": metric.raw_value,
-                "normalized_score": metric.normalized_score,
-                "severity_level": metric.severity_level.value,
-                "valid_frame_count": metric.valid_frame_count,
-                "diagnostic_flags": metric.diagnostic_flags,
-            }
-            for metric in computation.metric_results
-        ]
-        phase_results = [
-            {
-                "phase_id": phase.phase_id,
-                "phase_score": phase.phase_score,
-                "phase_severity": phase.phase_severity.value,
-                "frame_range": {
-                    "start_frame_index": phase.frame_range.start_frame_index,
-                    "end_frame_index": phase.frame_range.end_frame_index,
-                },
-                "metric_count": len(phase.metric_results),
-                "issue_count": len(phase.detected_issues),
-            }
-            for phase in result.phase_results
-        ]
-
-        logger.warning(
-            "TEMP_EVALUATION_TRACE result_computed %s",
-            {
-                "session_id": str(session.id),
-                "result_session_id": str(result.session_id),
-                "status": result.status,
-                "overall_score": result.overall_score,
-                "overall_severity": result.overall_severity.value,
-                "computed_metrics": computed_metrics,
-                "phase_results": phase_results,
-                "diagnostic_flags": result.diagnostic_flags,
-            },
+        issue_count = sum(len(phase.detected_issues) for phase in result.phase_results)
+        logger.info(
+            "Evaluation result summary session_id=%s result_session_id=%s "
+            "status=%s overall_score=%s phase_count=%s metric_count=%s "
+            "issue_count=%s diagnostic_flag_count=%s",
+            str(session.id),
+            str(result.session_id),
+            result.status,
+            result.overall_score,
+            len(result.phase_results),
+            len(computation.metric_results),
+            issue_count,
+            len(result.diagnostic_flags),
         )
 
     def _clear_upload_attempt_outputs(self, *, session_id: UUID) -> None:
@@ -1899,12 +1880,17 @@ class SessionService:
         )
         if llm_item is not None:
             return FeedbackTTSSegments(
-                segment_1=self._compact_tts_segment(llm_item.llm_coaching_cue),
+                segment_1=self._compact_tts_segment(
+                    llm_item.llm_main_coaching_cue or llm_item.llm_coaching_cue
+                ),
                 segment_2=self._compact_tts_segment(
-                    selected_item.what_to_fix or selected_item.coaching_cue
+                    llm_item.llm_what_to_fix
+                    or selected_item.what_to_fix
+                    or selected_item.coaching_cue
                 ),
                 segment_3=self._compact_tts_segment(
-                    llm_item.llm_improvement_suggestion
+                    llm_item.llm_next_session_cue
+                    or llm_item.llm_improvement_suggestion
                 ),
             )
 

@@ -1,0 +1,3 @@
+# Docker installs torch explicitly before requirements so Linux builds can use
+# CPU-only wheels and avoid NVIDIA CUDA dependency packages.
+torch==2.5.1

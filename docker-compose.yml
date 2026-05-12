@@ -17,8 +17,19 @@ services:
       context: ./backend
     env_file:
       - ./backend/.env
+    environment:
+      LLM_ENABLE_ENHANCEMENT: "true"
+      LLM_PROVIDER: gemini
+      LLM_MODEL: gemini-2.5-flash
+      LLM_TIMEOUT_SECONDS: "20"
+      LLM_MAX_TOKENS: "220"
+      TTS_ENABLED: "true"
+      TTS_WARMUP_ON_STARTUP: "true"
+      TTS_SEGMENT_PAUSE_MS: "400"
     ports:
       - "8000:8000"
+    volumes:
+      - backend_hf_cache:/root/.cache/huggingface
     depends_on:
       db:
         condition: service_healthy
@@ -43,3 +54,4 @@ services:
 
 volumes:
   postgres_data:
+  backend_hf_cache:

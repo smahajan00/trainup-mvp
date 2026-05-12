@@ -1,27 +1,66 @@
+# OS/editor junk
 .DS_Store
-node_modules/
-.next/
+Thumbs.db
+
+# Environment files
 .env
 .env.local
 .env.*.local
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
-.venv*/
-venv/
+backend/.env
+frontend/.env.local
+
+# Node/Next.js
+node_modules/
+.next/
+out/
 dist/
 build/
 *.tsbuildinfo
-*.pyc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
 *.pyo
 *.pyd
-*.sqlite3
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
 coverage/
 htmlcov/
+.venv/
+.venv*/
+venv/
+
+# Database/runtime volumes
 postgres_data/
-backend/models/*.gguf
-backend/models/*.bin
+*.sqlite3
+
+# Docker/local runtime artifacts
+.docker/
+docker-compose.override.yml
+
+# Local AI model files. Keep backend/models/.gitkeep tracked.
 backend/models/*.gguf
 backend/models/**/*.gguf
+backend/models/*.bin
+backend/models/**/*.bin
+backend/models/*.safetensors
+backend/models/**/*.safetensors
+backend/models/*.pt
+backend/models/**/*.pt
+backend/models/*.pth
+backend/models/**/*.pth
+backend/models/*.onnx
+backend/models/**/*.onnx
+
+# Generated media/cache artifacts. Public drill demo videos are intentionally tracked.
+backend/generated_audio/
+backend/media/
+backend/cache/
+backend/.cache/
+frontend/.cache/

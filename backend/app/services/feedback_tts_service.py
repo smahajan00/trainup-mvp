@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
+import time
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
@@ -11,6 +13,7 @@ KOKORO_MODEL_NAME = "hexgrad/Kokoro-82M"
 KOKORO_DEFAULT_VOICE = "am_michael"
 KOKORO_SAMPLE_RATE = 24000
 KOKORO_DEFAULT_SEGMENT_PAUSE_MS = 400
+logger = logging.getLogger("uvicorn.error")
 
 _RAW_DIAGNOSTIC_RE = re.compile(
     r"\b(?:"
@@ -61,6 +64,7 @@ class KokoroFeedbackTTSService:
                     "Kokoro TTS runtime is not installed or could not be imported."
                 ) from exc
 
+            load_started_at = time.perf_counter()
             try:
                 pipeline = KPipeline(lang_code="a", repo_id=self.model_name)
             except TypeError:
@@ -71,9 +75,21 @@ class KokoroFeedbackTTSService:
                 ) from exc
 
             object.__setattr__(self, "_pipeline", pipeline)
+            logger.info(
+                "Kokoro TTS model loaded",
+                extra={
+                    "model": self.model_name,
+                    "voice": self.voice,
+                    "load_time_ms": round(
+                        (time.perf_counter() - load_started_at) * 1000,
+                        3,
+                    ),
+                },
+            )
             return pipeline
 
     def synthesize(self, *, segments: list[str]) -> bytes:
+        synthesis_started_at = time.perf_counter()
         normalized_segments = [
             normalized
             for normalized in (
@@ -118,6 +134,16 @@ class KokoroFeedbackTTSService:
         )
         output = io.BytesIO()
         sf.write(output, audio, KOKORO_SAMPLE_RATE, format="WAV")
+        logger.info(
+            "Kokoro TTS audio generated",
+            extra={
+                "model": self.model_name,
+                "voice": self.voice,
+                "segments": len(normalized_segments),
+                "pause_ms": self.pause_ms,
+                "duration_ms": round((time.perf_counter() - synthesis_started_at) * 1000, 3),
+            },
+        )
         return output.getvalue()
 
     @staticmethod

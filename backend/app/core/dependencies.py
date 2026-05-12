@@ -34,16 +34,14 @@ from app.services.fuzzy_interpretation_service import FuzzyInterpretationService
 from app.services.it2_fuzzy_interpretation_service import IT2FuzzyInterpretationService
 from app.services.choquet_aggregation_service import ChoquetAggregationService
 from app.services.llm_client import (
+    GeminiLLMClient,
     LLMProviderConfig,
-    OpenAICompatibleLLMClient,
-    is_local_llm_provider,
 )
 from app.services.llm_feedback_service import (
     CoachingContextBuilder,
     LLMFeedbackPromptBuilder,
     LLMFeedbackService,
 )
-from app.services.local_llm_service import LocalLlamaCppLLMClient
 from app.services.ontology_reasoning_service import OntologyReasoningService
 from app.services.pedagogical_decision_service import PedagogicalDecisionService
 from app.services.profile_service import ProfileService
@@ -156,26 +154,10 @@ def get_temporal_modeling_service() -> TemporalModelingService:
 
 
 @lru_cache
-def get_local_llm_client() -> LocalLlamaCppLLMClient:
-    return LocalLlamaCppLLMClient(
-        model_path=settings.llm_model_path,
-        repo_id=settings.llm_model_repo_id,
-        filename=settings.llm_model_filename,
-        context_size=settings.llm_context_size,
-        gpu_layers=settings.llm_gpu_layers,
-        batch_size=settings.llm_batch_size,
-    )
-
-
 def get_llm_feedback_service() -> LLMFeedbackService:
     provider_config = LLMProviderConfig.from_settings(settings)
-    llm_client = (
-        get_local_llm_client()
-        if is_local_llm_provider(provider_config.provider)
-        else OpenAICompatibleLLMClient()
-    )
     return LLMFeedbackService(
-        llm_client=llm_client,
+        llm_client=GeminiLLMClient(),
         provider_config=provider_config,
         context_builder=CoachingContextBuilder(),
         prompt_builder=LLMFeedbackPromptBuilder(),

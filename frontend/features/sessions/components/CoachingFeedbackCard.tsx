@@ -95,14 +95,18 @@ export function CoachingFeedbackCard({
     }
 
     setIsPreparingAudio(true);
-    setLoadingLabel("Generating voice guidance...");
+    setLoadingLabel("Checking saved voice guidance...");
     setAudioError(null);
+    const slowGenerationTimer = window.setTimeout(() => {
+      setLoadingLabel("Generating voice guidance...");
+    }, 650);
 
     try {
       const response = await generateSessionFeedbackTTS(sessionId, {
         feedback_item_key: feedbackItemKey,
         segments: ttsSegments
       });
+      window.clearTimeout(slowGenerationTimer);
       if (response.cached) {
         setLoadingLabel("Loading saved voice guidance...");
       }
@@ -148,6 +152,7 @@ export function CoachingFeedbackCard({
       setAudioCached(response.cached);
       await audio.play();
     } catch {
+      window.clearTimeout(slowGenerationTimer);
       setAudioError("Audio coaching is unavailable right now.");
       setIsAudioPlaying(false);
     } finally {

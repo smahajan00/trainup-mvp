@@ -2,14 +2,14 @@
 
 TrainUp - AI-Powered Multi-Sport Coaching and Performance Analysis.
 
-TrainUp is an AI-assisted multi-sport coaching and performance analysis platform. It combines uploaded or live movement capture, MediaPipe pose extraction, deterministic drill evaluation, advanced reasoning artifacts, local LLM wording refinement, Kokoro voice playback, and progress analytics.
+TrainUp is an AI-assisted multi-sport coaching and performance analysis platform. It combines uploaded or live movement capture, MediaPipe pose extraction, deterministic drill evaluation, advanced reasoning artifacts, Gemini wording refinement, Kokoro voice playback, and progress analytics.
 
-Deterministic evaluation and deterministic coaching remain the source of truth. The local LLM only refines coaching wording from supplied artifacts, and Kokoro TTS only speaks the final coaching text. TrainUp does not use voice cloning or require user voice uploads.
+Deterministic evaluation and deterministic coaching remain the source of truth. Gemini only refines coaching wording from compact supplied summaries, and Kokoro TTS only speaks the final coaching text. TrainUp does not use voice cloning or require user voice uploads.
 
 Repository description suggestion:
 
 ```text
-AI-powered multi-sport coaching and performance analysis system using pose estimation, deterministic reasoning, advanced cognitive layers, local LLM refinement, and Kokoro TTS.
+AI-powered multi-sport coaching and performance analysis system using pose estimation, deterministic reasoning, advanced cognitive layers, Gemini refinement, and Kokoro TTS.
 ```
 
 ## Product Overview
@@ -47,7 +47,7 @@ Supported demo sports and drills:
 - Ontology reasoning
 - Choquet aggregation
 - Temporal modeling
-- Local Qwen2.5 GGUF coaching refinement through llama.cpp
+- Gemini coaching refinement
 - Kokoro-82M TTS voice coaching with the `am_michael` voice
 - Click-to-play cached coaching audio
 - Progress dashboard and training analytics
@@ -73,7 +73,7 @@ Backend highlights:
 - MediaPipe pose extraction through the perception interface
 - Deterministic evaluation and feedback services
 - Advanced reasoning services: fuzzy, IT2 fuzzy, pedagogy, ontology, Choquet, temporal
-- Local Qwen GGUF refinement through llama.cpp
+- Gemini feedback refinement
 - Kokoro TTS for click-to-play coaching audio
 
 Frontend highlights:
@@ -196,7 +196,7 @@ Important groups:
 - Frontend API: `NEXT_PUBLIC_API_URL`
 - CORS: `BACKEND_CORS_ORIGINS`
 - Pose processing: `POSE_TARGET_FPS`, `POSE_MAX_WIDTH`, `POSE_CACHE_ENABLED`
-- LLM: `LLM_ENABLE_ENHANCEMENT`, `LLM_PROVIDER`, `LLM_MODEL_PATH`, `LLM_MODEL_REPO_ID`, `LLM_MODEL_FILENAME`
+- LLM: `LLM_ENABLE_ENHANCEMENT`, `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS`
 - TTS: `TTS_ENABLED`, `TTS_MODEL`, `TTS_VOICE`, `TTS_SEGMENT_PAUSE_MS`
 
 ## Analysis Pipeline Order
@@ -214,7 +214,7 @@ Upload/Live capture
 -> ontology reasoning
 -> Choquet aggregation
 -> temporal modeling
--> Qwen2.5 local coaching refinement
+-> Gemini coaching refinement
 -> Kokoro TTS voice guidance
 -> dashboard/progress analytics
 ```
@@ -232,7 +232,7 @@ Optional enrichment stages:
 - Ontology reasoning
 - Choquet aggregation
 - Temporal modeling
-- Local LLM feedback refinement
+- Gemini feedback refinement
 
 Required failures block analysis completion. Optional failures are surfaced as warnings and should not hide deterministic feedback.
 
@@ -265,35 +265,40 @@ Pose cache:
 - Upload pose extraction can reuse a session-local cached pose artifact when the uploaded file hash and processing settings match.
 - Changed files or changed processing settings force pose recomputation and clear stale downstream analysis artifacts.
 
-## Qwen GGUF Local LLM Setup
+## Gemini LLM Setup
 
-TrainUp uses local llama.cpp refinement when enabled. This is the current primary LLM setup. The GGUF model file is not committed to Git.
-
-Default model configuration:
-
-```text
-repo: bartowski/Qwen2.5-7B-Instruct-GGUF
-file: Qwen2.5-7B-Instruct-Q4_K_M.gguf
-path: backend/models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
-```
-
-The model must be available locally under `backend/models/` for local refinement. The service is configured for the repo and filename above and can reuse the local model file once present. `backend/models/*.gguf` is ignored by Git, while `backend/models/.gitkeep` remains trackable so the directory exists in the repository.
+TrainUp uses Gemini as the only LLM refinement provider for demo reliability. Deterministic feedback remains authoritative; Gemini receives compact coaching context and may only improve wording, prioritization, tone, and explanation clarity.
 
 Useful variables:
 
 ```bash
-LLM_ENABLE_ENHANCEMENT=false
-LLM_PROVIDER=llama_cpp
-LLM_MODEL=Qwen2.5-7B-Instruct-Q4_K_M.gguf
-LLM_MODEL_PATH=models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
-LLM_MODEL_REPO_ID=bartowski/Qwen2.5-7B-Instruct-GGUF
-LLM_MODEL_FILENAME=Qwen2.5-7B-Instruct-Q4_K_M.gguf
-LLM_WARMUP_ON_STARTUP=false
+LLM_ENABLE_ENHANCEMENT=true
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-2.5-flash
+GEMINI_API_KEY=your_gemini_api_key_here
+LLM_TIMEOUT_SECONDS=20
+LLM_MAX_TOKENS=220
+LLM_TEMPERATURE=0.2
 ```
 
-The LLM may refine coaching wording, prioritization, and clarity. It must not invent issues, override scores, or replace deterministic evaluation.
+Gemini context is intentionally compact:
 
-Optional legacy/external provider support may still be configured through OpenAI-compatible fields such as `LLM_API_KEY` and `LLM_BASE_URL`, but the documented default is local llama.cpp with Qwen2.5 GGUF.
+- Deterministic feedback
+- Top issue
+- Drill, sport, and skill level
+- Summaries from fuzzy, IT2 uncertainty, pedagogy, ontology, Choquet, and temporal layers
+
+TrainUp does not send video, raw pose landmarks, full `pose_sequence`, or full artifact JSON to Gemini. If Gemini is unavailable or misconfigured, TrainUp returns deterministic coaching feedback and does not fail analysis.
+
+Gemini smoke check:
+
+```bash
+cd backend
+source .venv/bin/activate
+python scripts/smoke_gemini.py
+```
+
+The smoke command uses `GEMINI_API_KEY` from the environment or `backend/.env`, sends a tiny JSON-only prompt, and prints the attempted model plus sanitized success/failure details.
 
 ## Kokoro TTS Setup
 
@@ -370,7 +375,7 @@ Intentional tracked media:
 - `frontend/public/videos/drills/*.mp4`
 - `backend/tests/assets/squat1.mov`
 
-The Qwen GGUF belongs in `backend/models/` locally and should stay ignored.
+Large local model files under `backend/models/` should stay ignored. TrainUp no longer requires a Qwen GGUF model for LLM refinement.
 
 ## Troubleshooting
 
@@ -392,10 +397,12 @@ Pose overlay missing:
 - Check browser network requests for MediaPipe task and wasm files.
 - Confirm the session has a valid `pose_sequence` artifact for upload overlay.
 
-Local LLM slow first use:
+Gemini refinement unavailable:
 
-- Confirm the GGUF file exists under `backend/models`.
-- Enable `LLM_WARMUP_ON_STARTUP=true` only when demo startup time is acceptable.
+- Confirm `LLM_ENABLE_ENHANCEMENT=true`.
+- Confirm `LLM_PROVIDER=gemini`.
+- Confirm `GEMINI_API_KEY` is set in `backend/.env` or the container environment.
+- Deterministic feedback remains available when Gemini fails.
 
 TTS slow first use:
 

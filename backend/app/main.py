@@ -8,9 +8,9 @@ from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import settings
-from app.services.llm_client import is_local_llm_provider, llm_enhancement_enabled
+from app.services.llm_client import llm_enhancement_enabled
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 def _build_validation_detail(errors: list[dict[str, object]]) -> str:
@@ -40,20 +40,20 @@ def create_application() -> FastAPI:
 
     @application.on_event("startup")
     async def warmup_optional_ai_services() -> None:
-        if (
-            settings.llm_warmup_on_startup
-            and llm_enhancement_enabled(settings)
-            and is_local_llm_provider(settings.llm_provider)
-        ):
-            def _warmup_llm() -> None:
-                try:
-                    from app.core.dependencies import get_local_llm_client
-
-                    get_local_llm_client().warmup()
-                except Exception as exc:
-                    logger.warning("Local LLM warmup failed", extra={"error": str(exc)})
-
-            threading.Thread(target=_warmup_llm, daemon=True).start()
+        llm_enabled = llm_enhancement_enabled(settings)
+        logger.info(
+            "TrainUp AI service configuration",
+            extra={
+                "llm_enabled": llm_enabled,
+                "llm_provider": settings.llm_provider,
+                "llm_model": settings.llm_model,
+                "gemini_api_key_configured": bool(
+                    settings.gemini_api_key or settings.llm_api_key
+                ),
+                "tts_enabled": settings.tts_enabled,
+                "tts_warmup_on_startup": settings.tts_warmup_on_startup,
+            },
+        )
 
         if not settings.tts_warmup_on_startup or not settings.tts_enabled:
             return
@@ -63,6 +63,7 @@ def create_application() -> FastAPI:
                 from app.core.dependencies import get_feedback_tts_service
 
                 get_feedback_tts_service().ensure_loaded()
+                logger.info("Kokoro TTS warmup completed")
             except Exception as exc:
                 logger.warning("Kokoro TTS warmup failed", extra={"error": str(exc)})
 
