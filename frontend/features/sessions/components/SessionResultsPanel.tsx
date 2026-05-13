@@ -115,21 +115,21 @@ function buildTTSSegments(
   feedbackItem: DeterministicFeedbackItem,
   mainCue: string,
   whatToFix: string,
-  nextAction: string,
-  isEnhanced: boolean
+  nextAction: string
 ): FeedbackTTSSegments {
-  const finalCue = whatToFix || feedbackItem.what_to_fix || feedbackItem.coaching_cue;
-  const finalNextCue =
+  const finalMainCue =
+    mainCue ||
+    feedbackItem.simple_coaching_phrase ||
+    feedbackItem.issue_title ||
+    feedbackItem.coaching_cue;
+  const finalFix = whatToFix || feedbackItem.what_to_fix || feedbackItem.coaching_cue;
+  const finalNextFocus =
     nextAction || feedbackItem.next_rep_cue || feedbackItem.improvement_suggestion;
 
   return {
-    segment_1: isEnhanced
-      ? mainCue || finalCue
-      : feedbackItem.simple_coaching_phrase ||
-        feedbackItem.issue_title ||
-        finalCue,
-    segment_2: feedbackItem.what_to_fix || finalCue,
-    segment_3: isEnhanced ? finalNextCue : feedbackItem.next_rep_cue || finalNextCue
+    segment_1: finalMainCue,
+    segment_2: finalFix,
+    segment_3: finalNextFocus
   };
 }
 
@@ -301,8 +301,7 @@ export function SessionResultsPanel({
         feedbackItem,
         mainCue,
         whatToFix,
-        nextAction,
-        isEnhanced
+        nextAction
       ),
       backupNote:
         llmItem && llmItem.llm_coaching_cue !== llmItem.deterministic_coaching_cue

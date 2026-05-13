@@ -1,6 +1,7 @@
 export type SessionInputType = "UPLOAD" | "LIVE";
 export type SessionStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 export type SeverityLevel = "MINOR" | "MODERATE" | "SEVERE";
+export type ProgressRange = "weekly" | "monthly" | "all_time";
 
 export type SummaryStrengthMetric = {
   name: string;
@@ -61,6 +62,13 @@ export type RecentMetricProgress = {
 };
 
 export type RecentProgressResponse = {
+  selected_range: ProgressRange;
+  total_analyzed_sessions: number;
+  average_score: number | null;
+  best_score: number | null;
+  trend_delta: number | null;
+  trend_label: string | null;
+  available_ranges: ProgressRange[];
   recent_sessions: RecentProgressSession[];
   recent_metrics: RecentMetricProgress[];
 };

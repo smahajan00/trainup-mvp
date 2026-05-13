@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_current_user, get_progress_service
 from app.models.user import User
-from app.schemas.progress import RecentProgressResponse
+from app.schemas.progress import ProgressRange, RecentProgressResponse
 from app.services.progress_service import ProgressService
 
 router = APIRouter(prefix="/progress", tags=["progress"])
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/progress", tags=["progress"])
 def get_recent_progress(
     session_limit: int = Query(default=5, ge=1, le=10),
     metric_limit: int = Query(default=20, ge=1, le=50),
+    progress_range: ProgressRange | None = Query(default=None, alias="range"),
     current_user: User = Depends(get_current_user),
     progress_service: ProgressService = Depends(get_progress_service),
 ) -> RecentProgressResponse:
@@ -21,4 +22,5 @@ def get_recent_progress(
         user_id=current_user.id,
         session_limit=session_limit,
         metric_limit=metric_limit,
+        progress_range=progress_range,
     )

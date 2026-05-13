@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -30,6 +30,8 @@ import type { CurrentUserResponse } from "../../../types/auth";
 import type { DrillListItem } from "../../../types/drills";
 import type { ProfileResponse } from "../../../types/profile";
 import type {
+  ProgressRange,
+  RecentProgressResponse,
   RecentMetricProgress,
   RecentProgressSession
 } from "../../../types/progress";
@@ -73,6 +75,47 @@ type NextTrainingFocus = {
 };
 
 const FILTER_SPORT_ORDER = ["Gym", "Basketball", "Football"];
+const RANGE_OPTIONS: { value: ProgressRange; label: string }[] = [
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "all_time", label: "All Time" }
+];
+const RANGE_LABELS: Record<
+  ProgressRange,
+  {
+    dataWindow: string;
+    sessionDescription: string;
+    averageDescription: string;
+    bestDescription: string;
+    emptyTitle: string;
+    emptyDescription: string;
+  }
+> = {
+  weekly: {
+    dataWindow: "Last 7 days",
+    sessionDescription: "Sessions this week",
+    averageDescription: "Average this week",
+    bestDescription: "Best this week",
+    emptyTitle: "No analyzed sessions this week yet.",
+    emptyDescription: "Complete an analyzed session this week to see weekly progress."
+  },
+  monthly: {
+    dataWindow: "Last 30 days",
+    sessionDescription: "Sessions this month",
+    averageDescription: "Average this month",
+    bestDescription: "Best this month",
+    emptyTitle: "No analyzed sessions this month yet.",
+    emptyDescription: "Complete an analyzed session this month to see monthly progress."
+  },
+  all_time: {
+    dataWindow: "All completed analysis",
+    sessionDescription: "Total analyzed sessions",
+    averageDescription: "All-time average",
+    bestDescription: "All-time best",
+    emptyTitle: "No analyzed sessions yet.",
+    emptyDescription: "Log a few analyzed sessions to unlock score trends, drill breakdowns, and recurring coaching intelligence."
+  }
+};
 
 function sortDashboardSports(sports: SportOption[]) {
   return [...sports].sort((left, right) => {
@@ -172,24 +215,31 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
   );
   const [recentSessions, setRecentSessions] = useState<RecentProgressSession[]>([]);
   const [recentMetrics, setRecentMetrics] = useState<RecentMetricProgress[]>([]);
+  const [rangeSummary, setRangeSummary] = useState<RecentProgressResponse | null>(null);
   const [artifactsBySessionId, setArtifactsBySessionId] = useState<
     Record<string, SessionArtifactsResponse>
   >({});
+  const [selectedRange, setSelectedRange] = useState<ProgressRange>("monthly");
   const [selectedSportId, setSelectedSportId] = useState("all");
   const [selectedDrillId, setSelectedDrillId] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingRange, setIsRefreshingRange] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const hasLoadedDashboardRef = useRef(false);
 
   useEffect(() => {
     let ignore = false;
 
     async function loadDashboard() {
       setDashboardError(null);
+      if (hasLoadedDashboardRef.current) {
+        setIsRefreshingRange(true);
+      }
 
       try {
         const [sports, progressResult] = await Promise.all([
           getSports(),
-          getRecentProgress(10, 50)
+          getRecentProgress(10, 50, selectedRange)
         ]);
 
         const orderedSports = sortDashboardSports(sports);
@@ -229,6 +279,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
         setDrillsBySport(nextDrillsBySport);
         setRecentSessions(progressResult.recent_sessions);
         setRecentMetrics(progressResult.recent_metrics);
+        setRangeSummary(progressResult);
         setArtifactsBySessionId(nextArtifacts);
       } catch (error) {
         if (!ignore) {
@@ -237,6 +288,8 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
       } finally {
         if (!ignore) {
           setIsLoading(false);
+          setIsRefreshingRange(false);
+          hasLoadedDashboardRef.current = true;
         }
       }
     }
@@ -246,7 +299,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [selectedRange]);
 
   useEffect(() => {
     setSelectedDrillId("all");
@@ -298,13 +351,39 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
   const drillComparisonData = buildDrillComparisonData(analyzedSessions);
   const recurringInsight = buildRecurringInsightSummary(analyzedSessions);
   const trendSummary = buildTrendSummary(analyzedSessions);
-  const averageScore = analyzedSessions.length
+  const selectedRangeLabels = RANGE_LABELS[selectedRange];
+  const rangeSessionCount = rangeSummary?.total_analyzed_sessions ?? recentSessions.length;
+  const hasActiveDetailFilter = Boolean(selectedSportName || selectedDrillName);
+  const filteredAverageScore = analyzedSessions.length
     ? analyzedSessions.reduce((total, session) => total + session.overall_accuracy, 0) /
       analyzedSessions.length
     : null;
-  const bestScore = analyzedSessions.length
+  const filteredBestScore = analyzedSessions.length
     ? Math.max(...analyzedSessions.map((session) => session.overall_accuracy))
     : null;
+  const averageScore = hasActiveDetailFilter
+    ? filteredAverageScore
+    : rangeSummary?.average_score ?? filteredAverageScore;
+  const bestScore = hasActiveDetailFilter
+    ? filteredBestScore
+    : rangeSummary?.best_score ?? filteredBestScore;
+  const displaySessionCount = hasActiveDetailFilter
+    ? analyzedSessions.length
+    : rangeSessionCount;
+  const rangeTrendDirection =
+    rangeSummary?.trend_delta === null || rangeSummary?.trend_delta === undefined
+      ? ("insufficient" as const)
+      : Math.abs(rangeSummary.trend_delta) < 1
+        ? ("flat" as const)
+        : rangeSummary.trend_delta > 0
+          ? ("up" as const)
+          : ("down" as const);
+  const displayTrendValue = hasActiveDetailFilter
+    ? trendSummary.value
+    : rangeSummary?.trend_label ?? trendSummary.value;
+  const displayTrendDirection = hasActiveDetailFilter
+    ? trendSummary.direction
+    : rangeTrendDirection;
   const mostCommonIssue = recurringInsight.mostCommonIssue;
   const activeScopeLabel =
     selectedSportName && selectedDrillName
@@ -312,7 +391,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
       : selectedSportName
         ? `${selectedSportName} / All drills`
         : "All Sports";
-  const hasAnySessions = recentSessions.length > 0;
+  const hasAnySessions = rangeSessionCount > 0;
   const hasFilteredSessions = analyzedSessions.length > 0;
   const nextTrainingFocus = buildNextTrainingFocus(
     analyzedSessions,
@@ -327,7 +406,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
   const coachReadItems = [
     {
       label: "Trend",
-      value: trendSummary.value
+      value: displayTrendValue
     },
     {
       label: "Key weakness",
@@ -427,14 +506,16 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
                 Sessions in view
               </p>
               <p className="mt-2 text-2xl font-bold text-white">
-                {analyzedSessions.length}
+                {displaySessionCount}
               </p>
             </div>
             <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                 Data window
               </p>
-              <p className="mt-2 text-sm font-semibold text-white">Up to 10 sessions</p>
+              <p className="mt-2 text-sm font-semibold text-white">
+                {selectedRangeLabels.dataWindow}
+              </p>
             </div>
           </div>
         </div>
@@ -453,13 +534,30 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
               <Badge variant="slate" className="max-w-full">
                 Data coverage
               </Badge>
-              <span>{recentSessions.length} sessions</span>
+              <span>{rangeSessionCount} in range</span>
+              <span>showing latest {recentSessions.length}</span>
               <span>{recentMetrics.length} metrics</span>
               <span>{availableDrills} drills</span>
+              {isRefreshingRange ? <span>Updating...</span> : null}
             </div>
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+              {RANGE_OPTIONS.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  size="sm"
+                  variant={selectedRange === option.value ? "default" : "ghost"}
+                  className="rounded-xl"
+                  onClick={() => setSelectedRange(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -528,8 +626,8 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
       {!hasAnySessions ? (
         <EmptyState
           icon={History}
-          title="No analyzed sessions yet"
-          description="Log a few analyzed sessions to unlock score trends, drill breakdowns, and recurring coaching intelligence."
+          title={selectedRangeLabels.emptyTitle}
+          description={selectedRangeLabels.emptyDescription}
           action={
             <CTAButton asChild>
               <Link href="/sports">Start With a Drill</Link>
@@ -563,31 +661,35 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <AnalyticsKpiCard
               label="Sessions"
-              value={String(analyzedSessions.length)}
-              description="Sessions analyzed"
+              value={String(displaySessionCount)}
+              description={selectedRangeLabels.sessionDescription}
               icon={ClipboardCheck}
               tone="accent"
             />
             <AnalyticsKpiCard
               label="Avg Score"
               value={formatScoreLabel(averageScore)}
-              description="Current view"
+              description={
+                hasActiveDetailFilter ? "Filtered view" : selectedRangeLabels.averageDescription
+              }
               icon={Gauge}
               tone="success"
             />
             <AnalyticsKpiCard
               label="Best"
               value={formatScoreLabel(bestScore)}
-              description="Top session"
+              description={
+                hasActiveDetailFilter ? "Top filtered session" : selectedRangeLabels.bestDescription
+              }
               icon={Trophy}
               tone="accent"
             />
             <AnalyticsKpiCard
               label="Trend"
-              value={trendSummary.value}
+              value={displayTrendValue}
               description="Updated"
-              icon={trendSummary.direction === "down" ? TrendingDown : TrendingUp}
-              tone={getTrendTone(trendSummary.direction)}
+              icon={displayTrendDirection === "down" ? TrendingDown : TrendingUp}
+              tone={getTrendTone(displayTrendDirection)}
             />
             <AnalyticsKpiCard
               label="Key Weakness"
@@ -835,7 +937,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
             <SectionTitle
               eyebrow="Sessions"
               title="Recent Sessions"
-              description="Open a session to revisit detailed coaching results."
+              description={`Recent sessions in selected range. Showing latest ${analyzedSessions.length}.`}
             />
 
             <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.03]">

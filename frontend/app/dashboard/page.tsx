@@ -34,6 +34,7 @@ import type { CurrentUserResponse } from "../../types/auth";
 import type { ProfileResponse } from "../../types/profile";
 import type {
   RecentMetricProgress,
+  RecentProgressResponse,
   RecentProgressSession
 } from "../../types/progress";
 import type { SportOption } from "../../types/sports";
@@ -100,6 +101,9 @@ function DashboardContent({
   const [sportsError, setSportsError] = useState<string | null>(null);
   const [recentSessions, setRecentSessions] = useState<RecentProgressSession[]>([]);
   const [recentMetrics, setRecentMetrics] = useState<RecentMetricProgress[]>([]);
+  const [monthlyProgress, setMonthlyProgress] = useState<RecentProgressResponse | null>(
+    null
+  );
   const [isLoadingProgress, setIsLoadingProgress] = useState(true);
   const [progressError, setProgressError] = useState<string | null>(null);
 
@@ -113,7 +117,7 @@ function DashboardContent({
       try {
         const [sports, progressResult] = await Promise.all([
           getSports(),
-          getRecentProgress(4, 20)
+          getRecentProgress(4, 20, "monthly")
         ]);
         const orderedSports = sortSportsByPresetOrder(sports);
         const drillCollections = await Promise.all(
@@ -132,6 +136,7 @@ function DashboardContent({
         );
         setRecentSessions(progressResult.recent_sessions);
         setRecentMetrics(progressResult.recent_metrics);
+        setMonthlyProgress(progressResult);
       } catch (error) {
         if (!ignore) {
           setSportsError(
@@ -163,9 +168,20 @@ function DashboardContent({
     0
   );
   const startTrainingHref = profile ? `/sports/${profile.sport_id}/drills` : "/profile";
-  const averageScore = useMemo(() => getAverageScore(recentSessions), [recentSessions]);
-  const bestScore = useMemo(() => getBestScore(recentSessions), [recentSessions]);
-  const trendLabel = useMemo(() => getTrendLabel(recentSessions), [recentSessions]);
+  const monthlySessionCount =
+    monthlyProgress?.total_analyzed_sessions ?? recentSessions.length;
+  const averageScore = useMemo(
+    () => monthlyProgress?.average_score ?? getAverageScore(recentSessions),
+    [monthlyProgress?.average_score, recentSessions]
+  );
+  const bestScore = useMemo(
+    () => monthlyProgress?.best_score ?? getBestScore(recentSessions),
+    [monthlyProgress?.best_score, recentSessions]
+  );
+  const trendLabel = useMemo(
+    () => monthlyProgress?.trend_label ?? getTrendLabel(recentSessions),
+    [monthlyProgress?.trend_label, recentSessions]
+  );
   const primaryFocus = useMemo(() => getPrimaryFocus(recentMetrics), [recentMetrics]);
   const firstName = getFirstName(user?.full_name);
 
@@ -213,7 +229,7 @@ function DashboardContent({
                 Dashboard
               </p>
               <p className="mt-3 line-clamp-2 break-words text-base font-semibold text-white">
-                {recentSessions.length} recent sessions logged
+                {monthlySessionCount} sessions this month
               </p>
             </div>
             <div className="min-h-[92px] min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
@@ -261,7 +277,7 @@ function DashboardContent({
         <SectionTitle
           eyebrow="Recent"
           title="Recent Sessions"
-          description="Your latest training reviews at a glance."
+          description="Showing latest 4 analyzed sessions this month."
         />
 
         {isLoadingProgress ? (
@@ -327,20 +343,20 @@ function DashboardContent({
             <StatCard
               label="Average Score"
               value={formatPercent(averageScore)}
-              description={`Last ${recentSessions.length || 0} sessions`}
+              description="Average this month"
               icon={Gauge}
             />
             <StatCard
               label="Best Score"
               value={formatPercent(bestScore)}
-              description="Top recent session"
+              description="Best this month"
               icon={Trophy}
               tone="success"
             />
             <StatCard
               label="Trend"
               value={trendLabel}
-              description="Compared with prior session"
+              description="Monthly trend"
               icon={LineChart}
               tone={trendLabel === "Watch" ? "warning" : "success"}
             />

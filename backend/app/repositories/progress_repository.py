@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.drill import Drill
+from app.models.enums import SessionStatus
 from app.models.metric_type import MetricType
 from app.models.progress_record import ProgressRecord
 from app.models.session_summary import SessionSummary
@@ -48,9 +49,12 @@ class ProgressRepository:
         *,
         user_id: UUID,
         limit: int,
+        since: datetime | None = None,
     ) -> list[ProgressRecord]:
         statement = (
             select(ProgressRecord)
+            .join(ProgressRecord.summary)
+            .join(SessionSummary.session)
             .options(
                 selectinload(ProgressRecord.metric_type),
                 selectinload(ProgressRecord.summary)
@@ -58,8 +62,15 @@ class ProgressRepository:
                 .selectinload(TrainingSession.drill)
                 .selectinload(Drill.sport),
             )
-            .where(ProgressRecord.user_id == user_id)
-            .order_by(ProgressRecord.date_recorded.desc(), ProgressRecord.created_at.desc())
-            .limit(limit)
+            .where(
+                ProgressRecord.user_id == user_id,
+                TrainingSession.status == SessionStatus.COMPLETED,
+            )
         )
+        if since is not None:
+            statement = statement.where(TrainingSession.start_time >= since)
+        statement = statement.order_by(
+            ProgressRecord.date_recorded.desc(),
+            ProgressRecord.created_at.desc(),
+        ).limit(limit)
         return list(self.db.scalars(statement))

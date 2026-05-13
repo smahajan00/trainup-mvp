@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
 from sqlalchemy import select
 
 from app.engines.perception_interface.perception_service import PerceptionService
 from app.models.drill import Drill
+from app.models.enums import SessionStatus
 from app.models.progress_record import ProgressRecord
 from app.models.session_summary import SessionSummary
+from app.models.training_session import TrainingSession
 from app.schemas.session import PoseSequenceResponse
 
 
@@ -66,6 +71,38 @@ def _build_pose_sequence(session_id: str) -> PoseSequenceResponse:
     )
 
 
+def _create_completed_summary(
+    client,
+    db_session,
+    token: str,
+    drill: Drill,
+    *,
+    days_ago: int,
+    score: float,
+    status: SessionStatus = SessionStatus.COMPLETED,
+) -> dict[str, str]:
+    upload_session = _create_upload_session(client, token, drill)
+    training_session = db_session.scalar(
+        select(TrainingSession).where(TrainingSession.id == upload_session["id"])
+    )
+    assert training_session is not None
+    training_session.status = status
+    training_session.start_time = datetime.now(UTC) - timedelta(days=days_ago)
+    training_session.end_time = training_session.start_time + timedelta(minutes=2)
+    db_session.add(
+        SessionSummary(
+            session_id=training_session.id,
+            summary_text=f"Score {score:.0f} summary",
+            overall_accuracy=Decimal(str(score)),
+            strengths={"metrics": []},
+            weaknesses={"issues": []},
+            recommendations={"actions": []},
+        )
+    )
+    db_session.commit()
+    return upload_session
+
+
 def test_recent_progress_endpoint_returns_empty_when_phase2_outputs_do_not_exist(
     client,
     db_session,
@@ -98,6 +135,79 @@ def test_recent_progress_endpoint_returns_empty_when_phase2_outputs_do_not_exist
     payload = response.json()
     assert payload["recent_sessions"] == []
     assert payload["recent_metrics"] == []
+    assert payload["total_analyzed_sessions"] == 0
+
+
+def test_recent_progress_range_aggregates_are_not_limited_by_recent_window(
+    client,
+    db_session,
+) -> None:
+    token = _register_user(
+        client,
+        full_name="Range User",
+        email="progress-range@example.com",
+    )
+    drill = _get_drill(db_session, "Defensive Stance")
+
+    _create_completed_summary(client, db_session, token, drill, days_ago=1, score=80)
+    _create_completed_summary(client, db_session, token, drill, days_ago=3, score=70)
+    _create_completed_summary(client, db_session, token, drill, days_ago=14, score=60)
+    _create_completed_summary(client, db_session, token, drill, days_ago=45, score=50)
+    _create_completed_summary(
+        client,
+        db_session,
+        token,
+        drill,
+        days_ago=2,
+        score=95,
+        status=SessionStatus.ABORTED,
+    )
+    _create_upload_session(client, token, drill)
+
+    weekly_response = client.get(
+        "/api/progress/recent?range=weekly&session_limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    monthly_response = client.get(
+        "/api/progress/recent?range=monthly&session_limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    all_time_response = client.get(
+        "/api/progress/recent?range=all_time&session_limit=1",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    compatible_response = client.get(
+        "/api/progress/recent?session_limit=2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert weekly_response.status_code == 200
+    weekly_payload = weekly_response.json()
+    assert weekly_payload["selected_range"] == "weekly"
+    assert weekly_payload["total_analyzed_sessions"] == 2
+    assert weekly_payload["average_score"] == 75.0
+    assert weekly_payload["best_score"] == 80.0
+    assert len(weekly_payload["recent_sessions"]) == 1
+
+    assert monthly_response.status_code == 200
+    monthly_payload = monthly_response.json()
+    assert monthly_payload["selected_range"] == "monthly"
+    assert monthly_payload["total_analyzed_sessions"] == 3
+    assert monthly_payload["average_score"] == 70.0
+    assert monthly_payload["best_score"] == 80.0
+
+    assert all_time_response.status_code == 200
+    all_time_payload = all_time_response.json()
+    assert all_time_payload["selected_range"] == "all_time"
+    assert all_time_payload["total_analyzed_sessions"] == 4
+    assert all_time_payload["average_score"] == 65.0
+    assert all_time_payload["best_score"] == 80.0
+
+    assert compatible_response.status_code == 200
+    compatible_payload = compatible_response.json()
+    assert compatible_payload["selected_range"] == "all_time"
+    assert compatible_payload["total_analyzed_sessions"] == 4
+    assert len(compatible_payload["recent_sessions"]) == 2
 
 
 def test_upload_does_not_create_summary_or_progress_until_phase2(

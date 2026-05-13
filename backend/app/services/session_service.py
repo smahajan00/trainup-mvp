@@ -25,7 +25,13 @@ from app.engines.perception_interface.perception_service import (
     PerceptionService,
 )
 from app.models.drill import Drill
-from app.models.enums import CameraView, InputType, SessionStatus, SeverityLevel
+from app.models.enums import (
+    CameraView,
+    ComputationStatus,
+    InputType,
+    SessionStatus,
+    SeverityLevel,
+)
 from app.models.metric_type import MetricType
 from app.models.training_session import TrainingSession
 from app.repositories.drill_repository import DrillRepository
@@ -770,7 +776,7 @@ class SessionService:
                 diagnostic_flags=["MISSING_EVALUATION_RESULT"],
                 summary="Feedback could not be generated because no evaluation result exists.",
             )
-            self._replace_feedback_outputs(session_id=session.id, result=result)
+            self._replace_feedback_outputs(session=session, result=result)
             self.db.commit()
             return result
 
@@ -784,14 +790,14 @@ class SessionService:
                 diagnostic_flags=["MALFORMED_EVALUATION_RESULT"],
                 summary="Feedback could not be generated because the evaluation result is malformed.",
             )
-            self._replace_feedback_outputs(session_id=session.id, result=result)
+            self._replace_feedback_outputs(session=session, result=result)
             self.db.commit()
             return result
 
         result = self.deterministic_feedback.generate(
             evaluation_result=evaluation_result,
         )
-        self._replace_feedback_outputs(session_id=session.id, result=result)
+        self._replace_feedback_outputs(session=session, result=result)
         self.db.commit()
         return result
 
@@ -1443,6 +1449,7 @@ class SessionService:
             }
         )
         self._persist_llm_feedback_result(session_id=session.id, result=result)
+        self._apply_llm_summary_to_progress_history(session_id=session.id, result=result)
         self.db.commit()
         return result
 
@@ -1820,21 +1827,29 @@ class SessionService:
                 ONTOLOGY_REASONING_ARTIFACT_TYPE,
             ],
         )
+        self._clear_progress_history(session_id=session_id)
+
+    def _clear_progress_history(self, *, session_id: UUID) -> None:
+        existing_summary = self.summaries.get_by_session_id(session_id=session_id)
+        if existing_summary is not None:
+            self.progress_records.delete_by_summary_id(summary_id=existing_summary.id)
+            self.summaries.delete_by_session_id(session_id=session_id)
 
     def _replace_feedback_outputs(
         self,
         *,
-        session_id: UUID,
+        session: TrainingSession,
         result: DeterministicFeedbackResult,
     ) -> None:
-        self._clear_feedback_outputs(session_id=session_id)
+        self._clear_feedback_outputs(session_id=session.id)
         for item in result.prioritized_feedback_items:
             self._create_feedback_row(
-                session_id=session_id,
+                session_id=session.id,
                 item=item,
                 feedback_version=result.feedback_version,
             )
-        self._persist_feedback_result(session_id=session_id, result=result)
+        self._persist_feedback_result(session_id=session.id, result=result)
+        self._persist_progress_history(session=session, result=result)
 
     def _create_feedback_row(
         self,
@@ -2111,6 +2126,170 @@ class SessionService:
             payload_json=result.model_dump(mode="json"),
         )
 
+    def _persist_progress_history(
+        self,
+        *,
+        session: TrainingSession,
+        result: DeterministicFeedbackResult,
+    ) -> None:
+        if result.status not in {"COMPLETED", "NO_ACTIONABLE_ISSUES"}:
+            return
+
+        evaluation_result = self._load_completed_evaluation_for_progress(
+            session_id=session.id
+        )
+        if evaluation_result is None:
+            return
+
+        if session.status != SessionStatus.COMPLETED:
+            session.status = SessionStatus.COMPLETED
+        if session.end_time is None:
+            session.end_time = datetime.now(UTC)
+        self.db.flush()
+
+        summary = self.summaries.upsert(
+            session_id=session.id,
+            summary_text=result.overall_feedback_summary,
+            overall_accuracy=self._score_to_percent_decimal(
+                evaluation_result.overall_score
+            ),
+            strengths={
+                "metrics": [
+                    {
+                        "name": metric.metric_name,
+                        "score": metric.score,
+                    }
+                    for metric in evaluation_result.strongest_metrics[:3]
+                ],
+            },
+            weaknesses={
+                "issues": [
+                    {
+                        "metric": item.metric_name,
+                        "severity": item.severity_level,
+                        "issue_label": item.issue_title,
+                    }
+                    for item in result.prioritized_feedback_items[:3]
+                ],
+            },
+            recommendations={
+                "actions": result.improvement_suggestions[:5],
+            },
+        )
+
+        metric_count = self._persist_progress_records_from_stored_metrics(
+            session=session,
+            summary_id=summary.id,
+        )
+        if metric_count == 0:
+            metric_count = self._persist_progress_records_from_evaluation(
+                session=session,
+                summary_id=summary.id,
+                evaluation_result=evaluation_result,
+            )
+
+        logger.info(
+            "Session persisted to progress history session_id=%s summary_id=%s metric_count=%s",
+            str(session.id),
+            str(summary.id),
+            metric_count,
+        )
+
+    def _load_completed_evaluation_for_progress(
+        self,
+        *,
+        session_id: UUID,
+    ) -> DeterministicEvaluationResult | None:
+        evaluation_artifact = self.artifacts.get_by_session_and_type(
+            session_id=session_id,
+            artifact_type=EVALUATION_ARTIFACT_TYPE,
+        )
+        if evaluation_artifact is None:
+            return None
+        try:
+            evaluation_result = DeterministicEvaluationResult(
+                **evaluation_artifact.payload_json
+            )
+        except Exception:
+            return None
+        if evaluation_result.status != "COMPLETED":
+            return None
+        return evaluation_result
+
+    def _persist_progress_records_from_stored_metrics(
+        self,
+        *,
+        session: TrainingSession,
+        summary_id: UUID,
+    ) -> int:
+        count = 0
+        date_recorded = (session.end_time or session.start_time).date()
+        for metric_result in self.metric_results.list_by_session_id(session_id=session.id):
+            if (
+                metric_result.computation_status != ComputationStatus.COMPUTED
+                or metric_result.normalized_score is None
+            ):
+                continue
+            self.progress_records.create(
+                user_id=session.user_id,
+                summary_id=summary_id,
+                metric_id=metric_result.metric_id,
+                metric_value=self._score_to_percent_decimal(
+                    metric_result.normalized_score
+                ),
+                date_recorded=date_recorded,
+            )
+            count += 1
+        return count
+
+    def _persist_progress_records_from_evaluation(
+        self,
+        *,
+        session: TrainingSession,
+        summary_id: UUID,
+        evaluation_result: DeterministicEvaluationResult,
+    ) -> int:
+        metric_results = [
+            metric
+            for phase in evaluation_result.phase_results
+            for metric in phase.metric_results
+            if (
+                metric.computation_status == ComputationStatus.COMPUTED
+                and metric.normalized_score is not None
+            )
+        ]
+        if not metric_results:
+            return 0
+
+        metric_types_by_name = {
+            metric.metric_name: metric
+            for metric in self.metric_types.list_by_names(
+                {metric.metric_name for metric in metric_results}
+            )
+        }
+        date_recorded = (session.end_time or session.start_time).date()
+        count = 0
+        for metric in metric_results:
+            metric_type = metric_types_by_name.get(metric.metric_name)
+            if metric_type is None:
+                continue
+            self.progress_records.create(
+                user_id=session.user_id,
+                summary_id=summary_id,
+                metric_id=metric_type.id,
+                metric_value=self._score_to_percent_decimal(metric.normalized_score),
+                date_recorded=date_recorded,
+            )
+            count += 1
+        return count
+
+    @staticmethod
+    def _score_to_percent_decimal(value: Decimal | float) -> Decimal:
+        decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+        if decimal_value <= Decimal("1"):
+            decimal_value *= Decimal("100")
+        return decimal_value.quantize(Decimal("0.01"))
+
     def _persist_fuzzy_interpretation_result(
         self,
         *,
@@ -2213,6 +2392,20 @@ class SessionService:
             payload_json=result.model_dump(mode="json"),
         )
 
+    def _apply_llm_summary_to_progress_history(
+        self,
+        *,
+        session_id: UUID,
+        result: LLMFeedbackResult,
+    ) -> None:
+        if result.enhanced_summary.fallback_used or not result.enhanced_summary.llm_summary:
+            return
+        summary = self.summaries.get_by_session_id(session_id=session_id)
+        if summary is None:
+            return
+        summary.summary_text = result.enhanced_summary.llm_summary
+        self.db.flush()
+
     def _load_evaluation_result_for_feedback(
         self,
         *,
@@ -2277,7 +2470,7 @@ class SessionService:
         feedback_result = self.deterministic_feedback.generate(
             evaluation_result=evaluation_result,
         )
-        self._replace_feedback_outputs(session_id=session.id, result=feedback_result)
+        self._replace_feedback_outputs(session=session, result=feedback_result)
         return feedback_result
 
     @staticmethod

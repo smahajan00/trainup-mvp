@@ -8,11 +8,15 @@ from sqlalchemy import select
 from app.models.drill import Drill
 from app.models.enums import ComputationStatus, SeverityLevel
 from app.models.feedback import Feedback
+from app.models.progress_record import ProgressRecord
 from app.models.session_artifact import SessionArtifact
+from app.models.session_summary import SessionSummary
+from app.models.training_session import TrainingSession
 from app.schemas.session import (
     DeterministicEvaluationIssueResponse,
     DeterministicEvaluationResult,
     EvaluationFrameRangeResponse,
+    MetricEvaluationResultResponse,
     PhaseEvaluationResultResponse,
     RankedMetricResponse,
 )
@@ -124,7 +128,27 @@ def _store_evaluation_artifact(
                     start_timestamp_ms=0.0,
                     end_timestamp_ms=33.3,
                 ),
-                metric_results=[],
+                metric_results=[
+                    MetricEvaluationResultResponse(
+                        metric_id=issue.metric_id,
+                        metric_name=issue.metric_name,
+                        phase_id=phase_id,
+                        raw_value=0.55,
+                        unit="score",
+                        ideal_min=0.0,
+                        ideal_max=1.0,
+                        deviation=issue.deviation,
+                        issue_direction=issue.issue_direction,
+                        severity_level=issue.severity_level,
+                        normalized_score=0.55,
+                        affected_body_part=issue.affected_body_part,
+                        computation_status=issue.computation_status,
+                        valid_frame_count=3,
+                        formula_version="test_v0",
+                    )
+                    for issue in issues
+                    if issue.phase_id == phase_id
+                ],
                 phase_score=0.75,
                 phase_severity=SeverityLevel.MODERATE,
                 detected_issues=[
@@ -241,12 +265,67 @@ def test_phase3a_generates_deterministic_feedback_for_all_drills(
     assert len(stored_feedback) == 1
     assert stored_feedback[0].technique_issue == payload["prioritized_feedback_items"][0]["issue_title"]
 
+    stored_summary = db_session.scalar(
+        select(SessionSummary).where(SessionSummary.session_id == session["id"])
+    )
+    assert stored_summary is not None
+    assert float(stored_summary.overall_accuracy) == 72.0
+    assert stored_summary.summary_text == payload["overall_feedback_summary"]
+    stored_progress = list(
+        db_session.scalars(
+            select(ProgressRecord).where(ProgressRecord.summary_id == stored_summary.id)
+        )
+    )
+    assert len(stored_progress) == 1
+    assert float(stored_progress[0].metric_value) == 55.0
+    stored_session = db_session.scalar(
+        select(TrainingSession).where(TrainingSession.id == session["id"])
+    )
+    assert stored_session is not None
+    assert stored_session.status.value == "COMPLETED"
+
     artifacts_response = client.get(
         f"/api/sessions/{session['id']}/artifacts",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert artifacts_response.status_code == 200
     assert artifacts_response.json()["feedback_result"]["feedback_version"] == "phase3a_v0_1_0"
+
+    progress_response = client.get(
+        "/api/progress/recent",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert progress_response.status_code == 200
+    progress_payload = progress_response.json()
+    assert progress_payload["recent_sessions"][0]["session_id"] == session["id"]
+    assert progress_payload["recent_sessions"][0]["overall_accuracy"] == 72.0
+    assert progress_payload["recent_metrics"][0]["session_id"] == session["id"]
+    assert progress_payload["total_analyzed_sessions"] == 1
+
+    rerun_response = client.post(
+        f"/api/sessions/{session['id']}/feedback",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert rerun_response.status_code == 200
+    db_session.expire_all()
+    stored_summary_after_rerun = db_session.scalar(
+        select(SessionSummary).where(SessionSummary.session_id == session["id"])
+    )
+    assert stored_summary_after_rerun is not None
+    stored_progress_after_rerun = list(
+        db_session.scalars(
+            select(ProgressRecord).where(
+                ProgressRecord.summary_id == stored_summary_after_rerun.id
+            )
+        )
+    )
+    assert len(stored_progress_after_rerun) == 1
+    progress_after_rerun = client.get(
+        "/api/progress/recent?range=monthly",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert progress_after_rerun.status_code == 200
+    assert progress_after_rerun.json()["total_analyzed_sessions"] == 1
 
 
 def test_phase3a_filters_minor_and_not_computable_issues(client, db_session) -> None:
@@ -373,3 +452,9 @@ def test_phase3a_missing_evaluation_artifact_returns_structured_failure(
     assert payload["status"] == "FAILED"
     assert payload["prioritized_feedback_items"] == []
     assert payload["diagnostic_flags"] == ["MISSING_EVALUATION_RESULT"]
+    assert (
+        db_session.scalar(
+            select(SessionSummary).where(SessionSummary.session_id == session["id"])
+        )
+        is None
+    )

@@ -21,14 +21,14 @@ export function ImprovementPlanCard({
 }: ImprovementPlanCardProps) {
   const primaryFocus = focusItems[0] ?? null;
   const coachCue = improvementSuggestions[0] ?? primaryFocus ?? null;
-  const nextReps = improvementSuggestions.slice(0, 3);
+  const nextSetFocusItems = improvementSuggestions.slice(0, 3);
 
   return (
     <InfoCard className="p-5 sm:p-6">
       <SectionTitle
         eyebrow="Plan"
         title="Improvement Plan"
-        description="Keep the next set simple: one focus, one correction, three cleaner reps."
+        description="Keep the next set simple: one focus, one correction, one clear cue."
       />
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -64,7 +64,7 @@ export function ImprovementPlanCard({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-              Drill correction
+              Coaching correction
             </p>
             <p className="mt-2 text-sm leading-6 text-white/85">
               {learningObjective ?? "Make the correction at a controlled pace before increasing intensity."}
@@ -73,7 +73,7 @@ export function ImprovementPlanCard({
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-              Progression
+              Next focus
             </p>
             <p className="mt-2 text-sm leading-6 text-white/85">
               {progressionAdvice ?? "Log a few more analyzed sessions to unlock progression guidance."}
@@ -93,23 +93,23 @@ export function ImprovementPlanCard({
 
       <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-          Next 3 reps
+          Next set focus
         </p>
-        {nextReps.length ? (
+        {nextSetFocusItems.length ? (
           <ul className="mt-3 grid gap-2 text-sm leading-6 text-white/85 lg:grid-cols-2">
-            {nextReps.map((suggestion, index) => (
+            {nextSetFocusItems.map((suggestion, index) => (
               <li
                 key={suggestion}
                 className="rounded-2xl border border-white/10 bg-background-dark/35 px-4 py-3"
               >
-                <span className="mr-2 font-semibold text-primary">Rep {index + 1}:</span>
+                <span className="mr-2 font-semibold text-primary">Focus {index + 1}:</span>
                 {suggestion}
               </li>
             ))}
           </ul>
         ) : (
           <p className="mt-3 text-sm leading-6 text-white/85">
-            Improvement suggestions will appear after coaching feedback is generated.
+            Next focus suggestions will appear after coaching feedback is generated.
           </p>
         )}
       </div>

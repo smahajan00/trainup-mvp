@@ -316,7 +316,7 @@ export function CoachingFeedbackCard({
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-            Next rep cue
+            Next set focus
           </p>
           <p className="mt-2 text-sm leading-6 text-white/85">{nextAction}</p>
         </div>
