@@ -366,7 +366,7 @@ export function buildDrillComparisonData(
           : trendDirection === "up"
             ? `Up ${delta.toFixed(0)} pts`
             : trendDirection === "down"
-              ? `Down ${Math.abs(delta).toFixed(0)} pts`
+              ? "Needs attention"
               : "Holding steady";
 
       return {
@@ -465,7 +465,7 @@ export function buildTrendSummary(sessions: DashboardAnalyzedSession[]) {
 
   if (delta < 0) {
     return {
-      value: `Down ${Math.abs(delta).toFixed(0)} pts`,
+      value: "Needs attention",
       direction: "down" as const,
       delta
     };

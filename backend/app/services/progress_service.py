@@ -31,7 +31,7 @@ def _trend_label(delta: float | None) -> str:
         return "Need data"
     if abs(delta) < 1:
         return "Stable"
-    return "Improving" if delta > 0 else "Watch"
+    return "Improving" if delta > 0 else "Needs attention"
 
 
 @dataclass

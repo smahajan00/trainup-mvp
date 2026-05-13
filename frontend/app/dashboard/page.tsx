@@ -76,7 +76,7 @@ function getTrendLabel(sessions: RecentProgressSession[]) {
     return "Stable";
   }
 
-  return delta > 0 ? "Improving" : "Watch";
+  return delta > 0 ? "Improving" : "Needs attention";
 }
 
 function getPrimaryFocus(metrics: RecentMetricProgress[]) {
@@ -358,7 +358,7 @@ function DashboardContent({
               value={trendLabel}
               description="Monthly trend"
               icon={LineChart}
-              tone={trendLabel === "Watch" ? "warning" : "success"}
+              tone={trendLabel === "Needs attention" ? "warning" : "success"}
             />
             <StatCard
               label="Key Focus"

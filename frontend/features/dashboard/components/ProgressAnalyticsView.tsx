@@ -306,10 +306,6 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
   }, [selectedSportId]);
 
   const startTrainingHref = profile ? `/sports/${profile.sport_id}/drills` : "/sports";
-  const availableDrills = sportSummaries.reduce(
-    (total, sport) => total + sport.drillCount,
-    0
-  );
   const selectedSport =
     selectedSportId === "all"
       ? null
@@ -522,7 +518,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
       </InfoCard>
 
       <InfoCard className="p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="grid gap-4 xl:grid-cols-[minmax(220px,0.65fr)_minmax(0,1.35fr)] xl:items-center">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
               Filters
@@ -530,19 +526,9 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
             <h2 className="mt-1 font-display text-2xl font-bold tracking-tight text-white">
               Focus your training view
             </h2>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-gray">
-              <Badge variant="slate" className="max-w-full">
-                Data coverage
-              </Badge>
-              <span>{rangeSessionCount} in range</span>
-              <span>showing latest {recentSessions.length}</span>
-              <span>{recentMetrics.length} metrics</span>
-              <span>{availableDrills} drills</span>
-              {isRefreshingRange ? <span>Updating...</span> : null}
-            </div>
           </div>
 
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 xl:justify-end">
             <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
               {RANGE_OPTIONS.map((option) => (
                 <Button
@@ -558,7 +544,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="sm"
@@ -618,6 +604,12 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
               >
                 Reset filters
               </Button>
+            ) : null}
+
+            {isRefreshingRange ? (
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-gray">
+                Updating
+              </span>
             ) : null}
           </div>
         </div>
@@ -870,21 +862,21 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
                     key={`${drill.sportName}-${drill.drillName}`}
                     className="flex min-w-0 flex-col rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-5"
                   >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-start justify-between gap-3">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-gray">
                           {drill.sportName}
                         </p>
-                        <h3 className="mt-2 break-words font-display text-2xl font-bold leading-tight text-white">
-                          {drill.drillName}
-                        </h3>
+                        <Badge
+                          variant={getTrendTone(drill.trendDirection)}
+                          className="max-w-[9rem] shrink-0 whitespace-normal px-2.5 py-1 text-center text-[10px] leading-4 tracking-[0.12em]"
+                        >
+                          {drill.trendLabel}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={getTrendTone(drill.trendDirection)}
-                        className="shrink-0 whitespace-nowrap"
-                      >
-                        {drill.trendLabel}
-                      </Badge>
+                      <h3 className="mt-3 whitespace-normal break-normal font-display text-[1.35rem] font-bold leading-tight text-white sm:text-2xl">
+                        {drill.drillName}
+                      </h3>
                     </div>
 
                     <div className="mt-5 grid grid-cols-3 gap-3">
