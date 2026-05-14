@@ -1,4 +1,4 @@
-# TrainUp: AI-Powered Multi-Sport Coaching and Performance Analysis System
+# TrainUp: AI-Powered Multi-Sport Coaching and Performance Analysis
 
 TrainUp is a bachelor project MVP for pose-based multi-sport coaching and performance analysis. The system combines uploaded or live movement capture, MediaPipe pose estimation, rule-based movement analysis, deterministic biomechanical evaluation, deterministic rep-cycle segmentation, set-level aggregation, advanced reasoning layers, optional Gemini-assisted coaching wording refinement, Kokoro text-to-speech feedback, and range-based progress analytics.
 
