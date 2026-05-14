@@ -3,6 +3,7 @@ from __future__ import annotations
 METRIC_TYPE_SEEDS = [
     {"metric_name": "posture_accuracy", "metric_unit": "percent"},
     {"metric_name": "knee_alignment_score", "metric_unit": "alignment_score"},
+    {"metric_name": "squat_depth", "metric_unit": "depth_score"},
     {"metric_name": "elbow_angle_consistency", "metric_unit": "consistency_index"},
     {"metric_name": "balance_stability", "metric_unit": "stability_score"},
     {"metric_name": "torso_alignment", "metric_unit": "alignment_score"},

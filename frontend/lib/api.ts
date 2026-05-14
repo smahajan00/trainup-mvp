@@ -1,7 +1,8 @@
 import { clearAuthToken, getAuthToken } from "./auth";
 
 function normalizeApiBaseUrl(url: string) {
-  return url.replace(/\/+$/, "");
+  const trimmedUrl = url.replace(/\/+$/, "");
+  return trimmedUrl.endsWith("/api") ? trimmedUrl : `${trimmedUrl}/api`;
 }
 
 function resolveApiBaseUrl() {
@@ -15,7 +16,7 @@ function resolveApiBaseUrl() {
     return `${protocol}//${window.location.hostname}:8000/api`;
   }
 
-  return "http://127.0.0.1:8000/api";
+  return "http://backend:8000/api";
 }
 
 export class ApiError extends Error {

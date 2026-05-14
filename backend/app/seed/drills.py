@@ -56,6 +56,7 @@ DRILL_SEEDS_BY_SPORT = {
             "target_metrics": _target_metrics(
                 "posture_accuracy",
                 "knee_alignment_score",
+                "squat_depth",
                 "torso_alignment",
                 "hip_stability",
                 "repetition_consistency",
@@ -111,6 +112,14 @@ DRILL_SEEDS_BY_SPORT = {
                         "coaching_cue": "Drive both knees over the middle toes and keep full-foot pressure.",
                     },
                     {
+                        "metric": "squat_depth",
+                        "condition": "below_threshold",
+                        "expected_min": 0.70,
+                        "severity_weight": 0.88,
+                        "issue_label": "Squat depth is too shallow",
+                        "coaching_cue": "Lower the hips slightly deeper while keeping control through the feet.",
+                    },
+                    {
                         "metric": "torso_alignment",
                         "condition": "below_threshold",
                         "expected_min": 0.80,
@@ -131,8 +140,8 @@ DRILL_SEEDS_BY_SPORT = {
                         "condition": "below_threshold",
                         "expected_min": 0.80,
                         "severity_weight": 0.74,
-                        "issue_label": "Depth and tempo changing between repetitions",
-                        "coaching_cue": "Use a steady tempo and finish every rep at the same controlled depth.",
+                        "issue_label": "Left and right knee path mismatch during the ascent",
+                        "coaching_cue": "Stand up with both knees tracking evenly through the same path.",
                     },
                 ],
                 positive_cues=[

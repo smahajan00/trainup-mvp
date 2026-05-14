@@ -17,6 +17,7 @@ class MetricEvaluationState(str, Enum):
 _AFFECTED_BODY_PARTS_BY_METRIC: dict[str, str] = {
     "posture_accuracy": "trunk",
     "knee_alignment_score": "knees",
+    "squat_depth": "lower_body",
     "elbow_angle_consistency": "elbows",
     "balance_stability": "balance",
     "torso_alignment": "trunk",

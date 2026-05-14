@@ -792,11 +792,6 @@ export function PoseOverlayPreview({
               <StatusIcon tone={statusTone} />
               <span className="min-w-0 break-words">{overlayStatus}</span>
             </div>
-            {mode === "upload" ? (
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
-                Muted visual preview
-              </span>
-            ) : null}
           </div>
 
           {mode === "upload" && controls ? (

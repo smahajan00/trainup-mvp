@@ -19,6 +19,8 @@ from app.schemas.session import (
     MetricEvaluationResultResponse,
     PhaseEvaluationResultResponse,
     RankedMetricResponse,
+    RepEvaluationSummaryResponse,
+    SetLevelEvaluationSummaryResponse,
 )
 
 
@@ -106,6 +108,10 @@ def _store_evaluation_artifact(
     drill: Drill,
     issues: list[DeterministicEvaluationIssueResponse],
     overall_severity: SeverityLevel = SeverityLevel.SEVERE,
+    detected_rep_count: int | None = None,
+    evaluated_rep_count: int | None = None,
+    rep_summaries: list[RepEvaluationSummaryResponse] | None = None,
+    set_level_summary: SetLevelEvaluationSummaryResponse | None = None,
 ) -> None:
     phase_ids = list(dict.fromkeys(issue.phase_id for issue in issues)) or ["setup"]
     weakest_metric_id = (
@@ -177,6 +183,10 @@ def _store_evaluation_artifact(
             )
         ],
         diagnostic_flags=[],
+        detected_rep_count=detected_rep_count,
+        evaluated_rep_count=evaluated_rep_count,
+        rep_summaries=rep_summaries or [],
+        set_level_summary=set_level_summary,
     )
     db_session.add(
         SessionArtifact(
@@ -326,6 +336,141 @@ def test_phase3a_generates_deterministic_feedback_for_all_drills(
     )
     assert progress_after_rerun.status_code == 200
     assert progress_after_rerun.json()["total_analyzed_sessions"] == 1
+
+
+def test_phase3a_squat_repetition_consistency_feedback_matches_bilateral_symmetry(
+    client,
+    db_session,
+) -> None:
+    token = _register_user(client, email="phase3a-squat-symmetry@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    session = _create_session(client, token, drill)
+    _store_evaluation_artifact(
+        db_session,
+        session_id=session["id"],
+        drill=drill,
+        issues=[
+            _issue(
+                phase_id="ascent",
+                metric_id="repetition_consistency",
+                severity_level=SeverityLevel.MODERATE,
+                affected_body_part="knees",
+            )
+        ],
+        overall_severity=SeverityLevel.MODERATE,
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['id']}/feedback",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["prioritized_feedback_items"][0]
+    assert item["metric_id"] == "repetition_consistency"
+    assert "left and right" in item["issue_title"].lower()
+    assert "reps changed" not in item["issue_title"].lower()
+    assert "both knees" in item["coaching_cue"].lower()
+    assert "ascent" in item["what_happened"].lower()
+    assert "both sides" in item["why_it_matters"].lower()
+
+
+def test_phase3a_squat_depth_feedback_matches_depth_issue(
+    client,
+    db_session,
+) -> None:
+    token = _register_user(client, email="phase3a-squat-depth@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    session = _create_session(client, token, drill)
+    _store_evaluation_artifact(
+        db_session,
+        session_id=session["id"],
+        drill=drill,
+        issues=[
+            _issue(
+                phase_id="descent",
+                metric_id="squat_depth",
+                severity_level=SeverityLevel.SEVERE,
+                affected_body_part="lower_body",
+            )
+        ],
+        overall_severity=SeverityLevel.SEVERE,
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['id']}/feedback",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["prioritized_feedback_items"][0]
+    assert item["metric_id"] == "squat_depth"
+    assert "depth" in item["issue_title"].lower()
+    assert "hips" in item["coaching_cue"].lower()
+    assert "feet rooted" in item["what_to_fix"].lower()
+    assert "controlled descent" in item["next_rep_cue"].lower()
+
+
+def test_phase3a_feedback_summary_uses_set_level_language(client, db_session) -> None:
+    token = _register_user(client, email="phase3a-set-level@example.com")
+    drill = _get_drill(db_session, "Bodyweight Squat")
+    session = _create_session(client, token, drill)
+    rep_summaries = [
+        RepEvaluationSummaryResponse(
+            rep_index=index,
+            start_frame_index=(index - 1) * 8,
+            end_frame_index=(index * 8) - 1,
+            start_timestamp_ms=(index - 1) * 266.0,
+            end_timestamp_ms=index * 266.0,
+            confidence=0.9,
+            overall_score=0.74 if index == 2 else 0.88,
+            overall_severity=SeverityLevel.MODERATE if index == 2 else SeverityLevel.MINOR,
+            issue_metric_ids=["squat_depth"] if index == 2 else [],
+        )
+        for index in range(1, 4)
+    ]
+    _store_evaluation_artifact(
+        db_session,
+        session_id=session["id"],
+        drill=drill,
+        issues=[
+            _issue(
+                phase_id="descent",
+                metric_id="squat_depth",
+                severity_level=SeverityLevel.MODERATE,
+                affected_body_part="lower_body",
+            )
+        ],
+        overall_severity=SeverityLevel.MODERATE,
+        detected_rep_count=3,
+        evaluated_rep_count=3,
+        rep_summaries=rep_summaries,
+        set_level_summary=SetLevelEvaluationSummaryResponse(
+            evaluation_mode="multi_rep",
+            average_score=0.83,
+            best_score=0.88,
+            worst_score=0.74,
+            consistency_score=0.70,
+            repeated_issue_metric_ids=["squat_depth"],
+            dominant_recurring_issue_metric_id="squat_depth",
+            consistency_warning=(
+                "Rep quality varied across the set; keep the same shape and control "
+                "on each repetition."
+            ),
+        ),
+    )
+
+    response = client.post(
+        f"/api/sessions/{session['id']}/feedback",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    summary = response.json()["overall_feedback_summary"]
+    assert "Across the set, 3 movement cycles were analyzed." in summary
+    assert "Rep quality varied across the set" in summary
+    assert "On the next rep" not in summary
+    assert "On the next set" in summary
 
 
 def test_phase3a_filters_minor_and_not_computable_issues(client, db_session) -> None:

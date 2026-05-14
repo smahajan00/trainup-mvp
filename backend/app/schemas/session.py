@@ -257,6 +257,29 @@ class PhaseEvaluationResultResponse(APIBaseModel):
     detected_issues: list[DeterministicEvaluationIssueResponse] = Field(default_factory=list)
 
 
+class RepEvaluationSummaryResponse(APIBaseModel):
+    rep_index: int = Field(ge=1)
+    start_frame_index: int = Field(ge=0)
+    end_frame_index: int = Field(ge=0)
+    start_timestamp_ms: float = Field(ge=0)
+    end_timestamp_ms: float = Field(ge=0)
+    confidence: float = Field(ge=0, le=1)
+    overall_score: float = Field(ge=0, le=1)
+    overall_severity: SeverityLevel
+    issue_metric_ids: list[str] = Field(default_factory=list)
+
+
+class SetLevelEvaluationSummaryResponse(APIBaseModel):
+    evaluation_mode: Literal["single_cycle", "multi_rep"]
+    average_score: float = Field(ge=0, le=1)
+    best_score: float = Field(ge=0, le=1)
+    worst_score: float = Field(ge=0, le=1)
+    consistency_score: float = Field(ge=0, le=1)
+    repeated_issue_metric_ids: list[str] = Field(default_factory=list)
+    dominant_recurring_issue_metric_id: str | None = None
+    consistency_warning: str | None = None
+
+
 class DeterministicEvaluationResult(APIBaseModel):
     evaluation_version: str = "phase2c_v0_1_0"
     status: EvaluationStatus
@@ -275,6 +298,10 @@ class DeterministicEvaluationResult(APIBaseModel):
     resolved_dominant_side: DominantSide | None = None
     dominant_side_confidence: float | None = Field(default=None, ge=0, le=1)
     dominant_side_diagnostic_flags: list[str] | None = None
+    detected_rep_count: int | None = Field(default=None, ge=0)
+    evaluated_rep_count: int | None = Field(default=None, ge=0)
+    rep_summaries: list[RepEvaluationSummaryResponse] = Field(default_factory=list)
+    set_level_summary: SetLevelEvaluationSummaryResponse | None = None
 
     @field_validator("strongest_metrics", "weakest_metrics", mode="before")
     @classmethod
@@ -302,9 +329,14 @@ class DeterministicEvaluationResult(APIBaseModel):
             "resolved_dominant_side",
             "dominant_side_confidence",
             "dominant_side_diagnostic_flags",
+            "detected_rep_count",
+            "evaluated_rep_count",
+            "set_level_summary",
         ):
             if payload.get(field_name) is None:
                 payload.pop(field_name, None)
+        if payload.get("rep_summaries") == []:
+            payload.pop("rep_summaries", None)
         return payload
 
 

@@ -30,6 +30,8 @@ from app.schemas.session import (
     PoseLandmarkCoordinate,
     PoseSequenceResponse,
     RankedMetricResponse,
+    RepEvaluationSummaryResponse,
+    SetLevelEvaluationSummaryResponse,
 )
 
 VISIBILITY_THRESHOLD = 0.50
@@ -48,6 +50,17 @@ class PhaseFrameRange:
 class Phase2AEvaluationComputation:
     result: DeterministicEvaluationResult
     metric_results: list[MetricEvaluationResultResponse]
+
+
+@dataclass(frozen=True)
+class RepCycleRange:
+    rep_index: int
+    start_frame_index: int
+    end_frame_index: int
+    start_timestamp_ms: float
+    end_timestamp_ms: float
+    confidence: float
+    detection_method: str
 
 
 class PhaseSegmentationError(ValueError):
@@ -96,19 +109,96 @@ class Phase2AEvaluator:
                 metric_results=[],
             )
 
+        rep_cycles = self._detect_rep_cycles(
+            contract=contract,
+            frames=pose_sequence.sequence_data,
+            dominant_side=effective_dominant_side,
+        )
+        rep_computations: list[tuple[RepCycleRange, Phase2AEvaluationComputation]] = []
+        if len(rep_cycles) >= 2:
+            for rep_cycle in rep_cycles:
+                rep_frames = self._frames_in_cycle(pose_sequence.sequence_data, rep_cycle)
+                rep_computation = self._evaluate_frame_window(
+                    session=session,
+                    contract=contract,
+                    frames=rep_frames,
+                    dominant_side=effective_dominant_side,
+                    diagnostic_flags=[],
+                    requested_dominant_side=requested_dominant_side,
+                    dominant_side_confidence=dominant_side_confidence,
+                    dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
+                )
+                if rep_computation.result.status == "COMPLETED":
+                    rep_computations.append((rep_cycle, rep_computation))
+
+        if len(rep_computations) >= 2:
+            return self._aggregate_rep_computations(
+                session=session,
+                contract=contract,
+                rep_computations=rep_computations,
+                detected_rep_count=len(rep_cycles),
+                dominant_side=effective_dominant_side,
+                requested_dominant_side=requested_dominant_side,
+                dominant_side_confidence=dominant_side_confidence,
+                dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
+            )
+
+        fallback = self._evaluate_frame_window(
+            session=session,
+            contract=contract,
+            frames=pose_sequence.sequence_data,
+            dominant_side=effective_dominant_side,
+            diagnostic_flags=[
+                "REP_DETECTION_FALLBACK_SINGLE_DOMINANT_CYCLE"
+                if len(rep_cycles) < 2
+                else "REP_EVALUATION_FALLBACK_SINGLE_DOMINANT_CYCLE"
+            ],
+            requested_dominant_side=requested_dominant_side,
+            dominant_side_confidence=dominant_side_confidence,
+            dominant_side_diagnostic_flags=dominant_side_diagnostic_flags,
+        )
+        if fallback.result.status == "COMPLETED":
+            rep_summary = self._build_fallback_rep_summary(result=fallback.result)
+            fallback.result.detected_rep_count = max(len(rep_cycles), 1)
+            fallback.result.evaluated_rep_count = 1
+            fallback.result.rep_summaries = [rep_summary]
+            fallback.result.set_level_summary = SetLevelEvaluationSummaryResponse(
+                evaluation_mode="single_cycle",
+                average_score=fallback.result.overall_score,
+                best_score=fallback.result.overall_score,
+                worst_score=fallback.result.overall_score,
+                consistency_score=1.0,
+                repeated_issue_metric_ids=[],
+                dominant_recurring_issue_metric_id=None,
+                consistency_warning=None,
+            )
+        return fallback
+
+    def _evaluate_frame_window(
+        self,
+        *,
+        session: TrainingSession,
+        contract: DrillPhase2AContract,
+        frames: list[PoseFrameResponse],
+        dominant_side: DominantSide | None,
+        diagnostic_flags: list[str],
+        requested_dominant_side: DominantSide | None,
+        dominant_side_confidence: float | None,
+        dominant_side_diagnostic_flags: list[str],
+    ) -> Phase2AEvaluationComputation:
         try:
             phase_ranges = self._segment_phases(
                 contract=contract,
-                frames=pose_sequence.sequence_data,
-                dominant_side=effective_dominant_side,
+                frames=frames,
+                dominant_side=dominant_side,
             )
         except PhaseSegmentationError as exc:
             return Phase2AEvaluationComputation(
                 result=self._failure_result(
                     session=session,
-                    diagnostic_flags=["PHASE_SEGMENTATION_FAILURE", str(exc)],
+                    diagnostic_flags=["PHASE_SEGMENTATION_FAILURE", str(exc), *diagnostic_flags],
                     requested_dominant_side=requested_dominant_side,
-                    resolved_dominant_side=effective_dominant_side,
+                    resolved_dominant_side=dominant_side,
                     dominant_side_confidence=dominant_side_confidence,
                     dominant_side_diagnostic_flags=dominant_side_diagnostic_flags or None,
                 ),
@@ -120,22 +210,18 @@ class Phase2AEvaluator:
         detected_issues: list[DeterministicEvaluationIssueResponse] = []
 
         for phase_range in phase_ranges:
-            phase_frames = self._frames_in_range(
-                pose_sequence.sequence_data,
-                phase_range,
-            )
+            phase_frames = self._frames_in_range(frames, phase_range)
             phase_metric_results = [
                 self._compute_metric_result(
                     metric_contract=metric_contract,
                     frames=phase_frames,
-                    dominant_side=effective_dominant_side,
+                    dominant_side=dominant_side,
                     level_factor=LEVEL_STRICTNESS_FACTORS[session.skill_level],
                 )
                 for metric_contract in contract.metric_contracts
                 if metric_contract.phase_id == phase_range.phase_id
             ]
             metric_results.extend(phase_metric_results)
-
             phase_issues = [
                 self._build_issue(metric_result)
                 for metric_result in phase_metric_results
@@ -178,17 +264,471 @@ class Phase2AEvaluator:
             diagnostic_flags=self._dedupe_strings(
                 [
                     *self._build_diagnostic_flags(metric_results),
+                    *diagnostic_flags,
                     *dominant_side_diagnostic_flags,
                 ]
             ),
             requested_dominant_side=requested_dominant_side,
-            resolved_dominant_side=effective_dominant_side,
+            resolved_dominant_side=dominant_side,
             dominant_side_confidence=dominant_side_confidence,
-            dominant_side_diagnostic_flags=(
-                dominant_side_diagnostic_flags or None
+            dominant_side_diagnostic_flags=(dominant_side_diagnostic_flags or None),
+        )
+        return Phase2AEvaluationComputation(result=result, metric_results=metric_results)
+
+    def _detect_rep_cycles(
+        self,
+        *,
+        contract: DrillPhase2AContract,
+        frames: list[PoseFrameResponse],
+        dominant_side: DominantSide | None,
+    ) -> list[RepCycleRange]:
+        side = self._dominant_prefix(dominant_side)
+        if contract.drill_id == "bodyweight_squat":
+            candidates = self._usable_frames(frames, SQUAT_REQUIRED_LANDMARKS)
+            values = [self._average_knee_angle(frame) for frame in candidates]
+            return self._detect_valley_cycles(
+                frames=candidates,
+                values=values,
+                min_amplitude=8.0,
+                min_cycle_frames=5,
+                detection_method="bilateral_knee_angle_cycle",
+            )
+        if contract.drill_id == "dumbbell_shoulder_press":
+            candidates = self._usable_frames(frames, SHOULDER_PRESS_REQUIRED_LANDMARKS)
+            values = [self._average_wrist_y(frame) for frame in candidates]
+            return self._detect_valley_cycles(
+                frames=candidates,
+                values=values,
+                min_amplitude=0.05,
+                min_cycle_frames=6,
+                detection_method="bilateral_wrist_height_cycle",
+            )
+        if contract.drill_id == "set_shot_form":
+            candidates = self._usable_frames(frames, SET_SHOT_REQUIRED_LANDMARKS)
+            wrist_name = f"{side}_wrist"
+            values = [frame.landmarks[wrist_name].y for frame in candidates]
+            return self._detect_valley_cycles(
+                frames=candidates,
+                values=values,
+                min_amplitude=0.08,
+                min_cycle_frames=6,
+                detection_method="dominant_wrist_release_cycle",
+            )
+        if contract.drill_id == "defensive_stance":
+            candidates = self._usable_frames(frames, DEFENSIVE_STANCE_REQUIRED_LANDMARKS)
+            values = [self._average_knee_angle(frame) for frame in candidates]
+            return self._detect_valley_cycles(
+                frames=candidates,
+                values=values,
+                min_amplitude=1.5,
+                min_cycle_frames=5,
+                detection_method="stance_knee_angle_dip_cycle",
+            )
+        if contract.drill_id == "instep_pass":
+            candidates = self._usable_frames(frames, FOOTBALL_KICK_REQUIRED_LANDMARKS)
+            values = [self._kicking_knee_angle(frame, side=side) for frame in candidates]
+            return self._detect_valley_cycles(
+                frames=candidates,
+                values=values,
+                min_amplitude=8.0,
+                min_cycle_frames=6,
+                detection_method="kicking_knee_pass_cycle",
+            )
+        if contract.drill_id == "basic_shooting_form":
+            candidates = self._usable_frames(frames, FOOTBALL_KICK_REQUIRED_LANDMARKS)
+            values = [self._kicking_knee_angle(frame, side=side) for frame in candidates]
+            return self._detect_valley_cycles(
+                frames=candidates,
+                values=values,
+                min_amplitude=8.0,
+                min_cycle_frames=6,
+                detection_method="kicking_knee_shot_cycle",
+            )
+        return []
+
+    def _detect_valley_cycles(
+        self,
+        *,
+        frames: list[PoseFrameResponse],
+        values: list[float],
+        min_amplitude: float,
+        min_cycle_frames: int,
+        detection_method: str,
+    ) -> list[RepCycleRange]:
+        if len(frames) < min_cycle_frames or len(frames) != len(values):
+            return []
+
+        min_distance = max(2, min_cycle_frames // 2)
+        prominence_window = max(min_distance, min_cycle_frames * 3)
+        raw_valleys: list[int] = []
+        for index in range(1, len(values) - 1):
+            valley_window_start = max(0, index - min_distance)
+            valley_window_end = min(len(values), index + min_distance + 1)
+            if values[index] > min(values[valley_window_start:valley_window_end]) + 1e-6:
+                continue
+            peak_window_start = max(0, index - prominence_window)
+            peak_window_end = min(len(values), index + prominence_window + 1)
+            left_peak = max(values[peak_window_start:index + 1])
+            right_peak = max(values[index:peak_window_end])
+            if min(left_peak - values[index], right_peak - values[index]) >= min_amplitude:
+                raw_valleys.append(index)
+
+        valleys: list[int] = []
+        for index in raw_valleys:
+            if valleys:
+                between_values = values[valleys[-1] : index + 1]
+                same_valley_region = (
+                    index - valleys[-1] < prominence_window
+                    and max(between_values) - min(between_values) < min_amplitude
+                )
+            else:
+                same_valley_region = False
+            if same_valley_region:
+                if values[index] < values[valleys[-1]]:
+                    valleys[-1] = index
+                continue
+            valleys.append(index)
+
+        cycles: list[RepCycleRange] = []
+        for valley_position, valley_index in enumerate(valleys):
+            previous_valley = valleys[valley_position - 1] if valley_position > 0 else 0
+            next_valley = (
+                valleys[valley_position + 1]
+                if valley_position + 1 < len(valleys)
+                else len(values) - 1
+            )
+            left_search_start = 0 if valley_position == 0 else previous_valley
+            right_search_end = len(values) - 1 if valley_position + 1 == len(valleys) else next_valley
+            left_peak_index = max(
+                range(left_search_start, valley_index + 1),
+                key=lambda candidate: values[candidate],
+            )
+            right_peak_index = max(
+                range(valley_index, right_search_end + 1),
+                key=lambda candidate: values[candidate],
+            )
+            if right_peak_index <= left_peak_index:
+                continue
+            if (right_peak_index - left_peak_index + 1) < min_cycle_frames:
+                continue
+
+            left_prominence = values[left_peak_index] - values[valley_index]
+            right_prominence = values[right_peak_index] - values[valley_index]
+            if min(left_prominence, right_prominence) < min_amplitude:
+                continue
+
+            confidence = self._clamp(min(left_prominence, right_prominence) / (min_amplitude * 2.0))
+            cycles.append(
+                RepCycleRange(
+                    rep_index=len(cycles) + 1,
+                    start_frame_index=frames[left_peak_index].frame_index,
+                    end_frame_index=frames[right_peak_index].frame_index,
+                    start_timestamp_ms=frames[left_peak_index].timestamp_ms,
+                    end_timestamp_ms=frames[right_peak_index].timestamp_ms,
+                    confidence=confidence,
+                    detection_method=detection_method,
+                )
+            )
+        return cycles
+
+    @staticmethod
+    def _frames_in_cycle(
+        frames: list[PoseFrameResponse],
+        rep_cycle: RepCycleRange,
+    ) -> list[PoseFrameResponse]:
+        return [
+            frame
+            for frame in frames
+            if rep_cycle.start_frame_index <= frame.frame_index <= rep_cycle.end_frame_index
+        ]
+
+    def _aggregate_rep_computations(
+        self,
+        *,
+        session: TrainingSession,
+        contract: DrillPhase2AContract,
+        rep_computations: list[tuple[RepCycleRange, Phase2AEvaluationComputation]],
+        detected_rep_count: int,
+        dominant_side: DominantSide | None,
+        requested_dominant_side: DominantSide | None,
+        dominant_side_confidence: float | None,
+        dominant_side_diagnostic_flags: list[str],
+    ) -> Phase2AEvaluationComputation:
+        level_factor = LEVEL_STRICTNESS_FACTORS[session.skill_level]
+        phase_results: list[PhaseEvaluationResultResponse] = []
+        metric_results: list[MetricEvaluationResultResponse] = []
+        detected_issues: list[DeterministicEvaluationIssueResponse] = []
+
+        for phase_id in contract.phases:
+            rep_phase_results = [
+                phase
+                for _, computation in rep_computations
+                for phase in computation.result.phase_results
+                if phase.phase_id == phase_id
+            ]
+            phase_metric_results: list[MetricEvaluationResultResponse] = []
+            for metric_contract in contract.metric_contracts:
+                if metric_contract.phase_id != phase_id:
+                    continue
+                rep_metric_results = [
+                    metric
+                    for phase in rep_phase_results
+                    for metric in phase.metric_results
+                    if (metric.metric_id or metric.metric_name) == metric_contract.metric_id
+                ]
+                phase_metric_results.append(
+                    self._aggregate_rep_metric_results(
+                        metric_contract=metric_contract,
+                        rep_metric_results=rep_metric_results,
+                        level_factor=level_factor,
+                    )
+                )
+            metric_results.extend(phase_metric_results)
+            phase_issues = [
+                self._build_issue(metric_result)
+                for metric_result in phase_metric_results
+                if self._is_actionable(metric_result)
+                or self._is_diagnostic_issue(metric_result)
+            ]
+            detected_issues.extend(phase_issues)
+            frame_range = self._aggregate_phase_frame_range(phase_id, rep_phase_results)
+            phase_results.append(
+                PhaseEvaluationResultResponse(
+                    phase_id=phase_id,
+                    frame_range=frame_range,
+                    metric_results=phase_metric_results,
+                    phase_score=self._aggregate_score(phase_metric_results),
+                    phase_severity=self._highest_severity(phase_metric_results),
+                    detected_issues=phase_issues,
+                )
+            )
+
+        rep_scores = [computation.result.overall_score for _, computation in rep_computations]
+        rep_summaries = [
+            self._build_rep_summary(rep_cycle=rep_cycle, result=computation.result)
+            for rep_cycle, computation in rep_computations
+        ]
+        repeated_issue_metric_ids, dominant_issue_metric_id = self._rep_issue_recurrence(
+            [computation.result for _, computation in rep_computations]
+        )
+        rep_results = [computation.result for _, computation in rep_computations]
+        consistency_score = self._rep_consistency_score(rep_scores, rep_results)
+        consistency_warning = (
+            "Rep quality varied across the set; keep the same shape and control on each repetition."
+            if consistency_score < 0.75
+            else None
+        )
+        diagnostic_flags = [
+            *self._build_diagnostic_flags(metric_results),
+            "MULTI_REP_EVALUATION",
+            f"DETECTED_REPS:{detected_rep_count}",
+            f"EVALUATED_REPS:{len(rep_computations)}",
+            *(
+                ["REP_CONSISTENCY_WARNING"]
+                if consistency_warning is not None
+                else []
+            ),
+            *dominant_side_diagnostic_flags,
+        ]
+        overall_score = self._round(mean(rep_scores))
+        result = DeterministicEvaluationResult(
+            evaluation_version=PHASE2A_EVALUATION_VERSION,
+            status="COMPLETED" if metric_results else "INSUFFICIENT_DATA",
+            session_id=session.id,
+            sport_id=session.drill.sport_id,
+            skill_level=session.skill_level,
+            drill_id=session.drill_id,
+            phase_results=phase_results,
+            overall_score=overall_score,
+            overall_severity=self._highest_phase_severity(phase_results),
+            detected_issues=detected_issues,
+            strongest_metrics=self._rank_metrics(metric_results, strongest=True),
+            weakest_metrics=self._rank_metrics(metric_results, strongest=False),
+            diagnostic_flags=self._dedupe_strings(diagnostic_flags),
+            requested_dominant_side=requested_dominant_side,
+            resolved_dominant_side=dominant_side,
+            dominant_side_confidence=dominant_side_confidence,
+            dominant_side_diagnostic_flags=(dominant_side_diagnostic_flags or None),
+            detected_rep_count=detected_rep_count,
+            evaluated_rep_count=len(rep_computations),
+            rep_summaries=rep_summaries,
+            set_level_summary=SetLevelEvaluationSummaryResponse(
+                evaluation_mode="multi_rep",
+                average_score=overall_score,
+                best_score=self._round(max(rep_scores)),
+                worst_score=self._round(min(rep_scores)),
+                consistency_score=consistency_score,
+                repeated_issue_metric_ids=repeated_issue_metric_ids,
+                dominant_recurring_issue_metric_id=dominant_issue_metric_id,
+                consistency_warning=consistency_warning,
             ),
         )
         return Phase2AEvaluationComputation(result=result, metric_results=metric_results)
+
+    def _aggregate_rep_metric_results(
+        self,
+        *,
+        metric_contract: MetricContract,
+        rep_metric_results: list[MetricEvaluationResultResponse],
+        level_factor: float,
+    ) -> MetricEvaluationResultResponse:
+        computed = [
+            metric
+            for metric in rep_metric_results
+            if metric.computation_status == ComputationStatus.COMPUTED
+            and metric.raw_value is not None
+        ]
+        if not computed:
+            return self._not_computable_metric_result(
+                metric_contract=metric_contract,
+                diagnostic_flags=self._dedupe_strings(
+                    [
+                        "NO_COMPUTED_REP_METRIC",
+                        *[
+                            flag
+                            for metric in rep_metric_results
+                            for flag in metric.diagnostic_flags
+                        ],
+                    ]
+                ),
+                valid_frame_count=sum(metric.valid_frame_count for metric in rep_metric_results),
+            )
+
+        raw_value = mean(metric.raw_value or 0.0 for metric in computed)
+        deviation, issue_direction = self._calculate_deviation(
+            raw_value=raw_value,
+            metric_contract=metric_contract,
+        )
+        severity = self._classify_severity(
+            deviation=deviation,
+            metric_contract=metric_contract,
+            level_factor=level_factor,
+        )
+        return MetricEvaluationResultResponse(
+            metric_id=metric_contract.metric_id,
+            metric_name=metric_contract.metric_name,
+            phase_id=metric_contract.phase_id,
+            raw_value=self._round(raw_value),
+            unit=metric_contract.unit,
+            ideal_min=metric_contract.ideal_min,
+            ideal_max=metric_contract.ideal_max,
+            deviation=self._round(deviation),
+            issue_direction=issue_direction,
+            severity_level=severity,
+            normalized_score=self._round(mean(metric.normalized_score or 0.0 for metric in computed)),
+            affected_body_part=metric_contract.affected_body_part,
+            computation_status=ComputationStatus.COMPUTED,
+            valid_frame_count=sum(metric.valid_frame_count for metric in computed),
+            formula_version=metric_contract.formula_version,
+            diagnostic_flags=[],
+        )
+
+    @staticmethod
+    def _aggregate_phase_frame_range(
+        phase_id: str,
+        phase_results: list[PhaseEvaluationResultResponse],
+    ) -> EvaluationFrameRangeResponse:
+        return EvaluationFrameRangeResponse(
+            phase_id=phase_id,
+            start_frame_index=min(phase.frame_range.start_frame_index for phase in phase_results),
+            end_frame_index=max(phase.frame_range.end_frame_index for phase in phase_results),
+            start_timestamp_ms=min(phase.frame_range.start_timestamp_ms for phase in phase_results),
+            end_timestamp_ms=max(phase.frame_range.end_timestamp_ms for phase in phase_results),
+            boundary_mode=PHASE_RANGE_BOUNDARY_MODE,
+        )
+
+    def _build_rep_summary(
+        self,
+        *,
+        rep_cycle: RepCycleRange,
+        result: DeterministicEvaluationResult,
+    ) -> RepEvaluationSummaryResponse:
+        return RepEvaluationSummaryResponse(
+            rep_index=rep_cycle.rep_index,
+            start_frame_index=rep_cycle.start_frame_index,
+            end_frame_index=rep_cycle.end_frame_index,
+            start_timestamp_ms=rep_cycle.start_timestamp_ms,
+            end_timestamp_ms=rep_cycle.end_timestamp_ms,
+            confidence=rep_cycle.confidence,
+            overall_score=result.overall_score,
+            overall_severity=result.overall_severity,
+            issue_metric_ids=self._issue_metric_ids(result.detected_issues),
+        )
+
+    def _build_fallback_rep_summary(
+        self,
+        *,
+        result: DeterministicEvaluationResult,
+    ) -> RepEvaluationSummaryResponse:
+        frame_ranges = [phase.frame_range for phase in result.phase_results]
+        return RepEvaluationSummaryResponse(
+            rep_index=1,
+            start_frame_index=min(frame.start_frame_index for frame in frame_ranges),
+            end_frame_index=max(frame.end_frame_index for frame in frame_ranges),
+            start_timestamp_ms=min(frame.start_timestamp_ms for frame in frame_ranges),
+            end_timestamp_ms=max(frame.end_timestamp_ms for frame in frame_ranges),
+            confidence=1.0,
+            overall_score=result.overall_score,
+            overall_severity=result.overall_severity,
+            issue_metric_ids=self._issue_metric_ids(result.detected_issues),
+        )
+
+    @staticmethod
+    def _issue_metric_ids(issues: list[DeterministicEvaluationIssueResponse]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                issue.metric_id or issue.metric_name
+                for issue in issues
+                if issue.computation_status == ComputationStatus.COMPUTED
+                and issue.severity_level in {SeverityLevel.MODERATE, SeverityLevel.SEVERE}
+            )
+        )
+
+    def _rep_issue_recurrence(
+        self,
+        rep_results: list[DeterministicEvaluationResult],
+    ) -> tuple[list[str], str | None]:
+        counts: dict[str, int] = {}
+        for result in rep_results:
+            for metric_id in self._issue_metric_ids(result.detected_issues):
+                counts[metric_id] = counts.get(metric_id, 0) + 1
+        if not counts:
+            return [], None
+        repeated_threshold = max(2, math.ceil(len(rep_results) / 2))
+        repeated = [
+            metric_id
+            for metric_id, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if count >= repeated_threshold
+        ]
+        dominant = max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+        return repeated, dominant
+
+    def _rep_consistency_score(
+        self,
+        rep_scores: list[float],
+        rep_results: list[DeterministicEvaluationResult],
+    ) -> float:
+        if len(rep_scores) <= 1:
+            return 1.0
+        overall_consistency = self._clamp(1.0 - (pstdev(rep_scores) / 0.25))
+        metric_values: dict[str, list[float]] = {}
+        for result in rep_results:
+            for phase in result.phase_results:
+                for metric in phase.metric_results:
+                    metric_id = metric.metric_id or metric.metric_name
+                    if (
+                        metric.computation_status == ComputationStatus.COMPUTED
+                        and metric.normalized_score is not None
+                    ):
+                        metric_values.setdefault(metric_id, []).append(metric.normalized_score)
+        metric_consistency_values = [
+            self._clamp(1.0 - (pstdev(values) / 0.45))
+            for values in metric_values.values()
+            if len(values) > 1
+        ]
+        if not metric_consistency_values:
+            return self._round(overall_consistency)
+        return self._round(min(overall_consistency, min(metric_consistency_values)))
 
     def _segment_phases(
         self,
@@ -700,6 +1240,20 @@ class Phase2AEvaluator:
             )
             for frame in frames
         )
+
+    def _score_squat_depth(
+        self,
+        metric_contract: MetricContract,
+        frames: list[PoseFrameResponse],
+        dominant_side: DominantSide | None,
+    ) -> float:
+        target_angle = self._metric_parameter(metric_contract, "target_knee_angle_deg")
+        shallow_angle = self._metric_parameter(metric_contract, "shallow_knee_angle_deg")
+        if shallow_angle <= target_angle:
+            raise ValueError("shallow_knee_angle_deg must be greater than target_knee_angle_deg.")
+
+        deepest_angle = min(self._average_knee_angle(frame) for frame in frames)
+        return self._clamp((shallow_angle - deepest_angle) / (shallow_angle - target_angle))
 
     def _score_torso_alignment(
         self,
@@ -1540,6 +2094,7 @@ SEGMENTATION_REGISTRY = {
 METRIC_CALCULATOR_REGISTRY = {
     "posture_accuracy": Phase2AEvaluator._score_posture_accuracy,
     "knee_alignment_score": Phase2AEvaluator._score_knee_alignment,
+    "squat_depth": Phase2AEvaluator._score_squat_depth,
     "torso_alignment": Phase2AEvaluator._score_torso_alignment,
     "hip_stability": Phase2AEvaluator._score_mid_hip_stability,
     "balance_stability": Phase2AEvaluator._score_mid_hip_stability,

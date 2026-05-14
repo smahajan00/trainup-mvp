@@ -205,6 +205,32 @@ BODYWEIGHT_SQUAT_CONTRACT = DrillPhase2AContract(
             base_severe_deviation=0.18,
         ),
         _score_metric(
+            metric_id="squat_depth",
+            metric_name="squat_depth",
+            phase_id="descent",
+            description="Conservative squat-depth score from the deepest bilateral knee angle.",
+            required_landmarks=(
+                "left_hip",
+                "right_hip",
+                "left_knee",
+                "right_knee",
+                "left_ankle",
+                "right_ankle",
+            ),
+            computation=(
+                "deepest_avg_knee_angle = min(mean(angle(hip,knee,ankle)) bilaterally); "
+                "score = clamp((shallow_knee_angle_deg - deepest_avg_knee_angle) / "
+                "(shallow_knee_angle_deg - target_knee_angle_deg), 0, 1)."
+            ),
+            parameters={
+                "target_knee_angle_deg": 115.0,
+                "shallow_knee_angle_deg": 165.0,
+            },
+            ideal_min=0.70,
+            base_moderate_deviation=0.12,
+            base_severe_deviation=0.25,
+        ),
+        _score_metric(
             metric_id="torso_alignment",
             metric_name="torso_alignment",
             phase_id="descent",
@@ -655,8 +681,8 @@ DEFENSIVE_STANCE_CONTRACT = DrillPhase2AContract(
     segmentation_parameters={
         "min_valid_frames": 3.0,
         "setup_window_frames": 5.0,
-        "min_knee_motion_delta_deg": 3.0,
-        "boundary_min_delta_deg": 5.0,
+        "min_knee_motion_delta_deg": 1.5,
+        "boundary_min_delta_deg": 1.5,
         "boundary_delta_ratio": 0.35,
         "hold_fallback_fraction": 0.33,
         "recovery_fallback_fraction": 0.33,

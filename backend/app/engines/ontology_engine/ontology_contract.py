@@ -116,6 +116,13 @@ ONTOLOGY_MAPPINGS_BY_METRIC_ID: dict[str, OntologyMetricMapping] = {
         movement_group="lower_body_pattern",
         phase_context="descent",
     ),
+    "squat_depth": OntologyMetricMapping(
+        metric_id="squat_depth",
+        body_part="knee",
+        concepts=("depth", "mobility"),
+        movement_group="lower_body_pattern",
+        phase_context="descent",
+    ),
     "knee_flexion": OntologyMetricMapping(
         metric_id="knee_flexion",
         body_part="knee",

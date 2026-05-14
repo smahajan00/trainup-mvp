@@ -68,6 +68,13 @@ FEEDBACK_TEMPLATE_REGISTRY: dict[FeedbackTemplateKey, FeedbackTemplate] = dict(
             "On the next rep, slow the descent and press the knees outward before standing.",
         ),
         _template(
+            "squat_depth",
+            "UNDER_RANGE",
+            "Your squat depth was too shallow",
+            "Lower your hips slightly deeper while keeping your feet rooted.",
+            "On the next set, use a controlled descent and reach the same depth target each time.",
+        ),
+        _template(
             "torso_alignment",
             "UNDER_RANGE",
             "Your torso position changed too much",
@@ -84,9 +91,9 @@ FEEDBACK_TEMPLATE_REGISTRY: dict[FeedbackTemplateKey, FeedbackTemplate] = dict(
         _template(
             "repetition_consistency",
             "UNDER_RANGE",
-            "Your reps changed shape between attempts",
-            "Use the same depth and tempo each rep.",
-            "On the next set, slow down and repeat the same target shape three times.",
+            "Your left and right side did not match through the ascent",
+            "Stand up with both knees moving through the same shape.",
+            "On the next set, slow the ascent and keep both knees tracking evenly.",
         ),
         _template(
             "balance_stability",
@@ -249,9 +256,10 @@ FEEDBACK_TEMPLATE_REGISTRY: dict[FeedbackTemplateKey, FeedbackTemplate] = dict(
 _WHY_IT_MATTERS_BY_METRIC = {
     "posture_accuracy": "Posture gives the rest of the movement a stable base. When it changes, every rep becomes harder to repeat.",
     "knee_alignment_score": "Knee tracking protects the lower body and keeps force moving cleanly through the feet.",
+    "squat_depth": "Enough depth makes the squat useful for strength and control while keeping the movement pattern honest.",
     "torso_alignment": "A steady torso helps your hips and legs do the work instead of losing balance through the upper body.",
     "hip_stability": "Stable hips keep pressure even through both sides so the movement does not drift or twist.",
-    "repetition_consistency": "Consistent reps make the pattern trainable and help TrainUp read the same movement target each time.",
+    "repetition_consistency": "Matching both sides during the ascent keeps the squat balanced and prevents one leg from doing more of the work.",
     "balance_stability": "Balance lets you finish the skill under control instead of leaking force at the end.",
     "elbow_angle_consistency": "A repeatable elbow path keeps the shot or press on the same line every rep.",
     "shooting_alignment": "Shot alignment keeps the ball moving toward the target instead of drifting off line.",
@@ -280,9 +288,10 @@ _WHY_IT_MATTERS_BY_METRIC = {
 _SIMPLE_PHRASE_BY_METRIC = {
     "posture_accuracy": "Stay tall and stacked.",
     "knee_alignment_score": "Knees over toes.",
+    "squat_depth": "Lower with control.",
     "torso_alignment": "Brace, then move.",
     "hip_stability": "Keep the hips centered.",
-    "repetition_consistency": "Same shape every rep.",
+    "repetition_consistency": "Even knees on the way up.",
     "balance_stability": "Own the finish.",
     "elbow_angle_consistency": "Same elbow slot.",
     "shooting_alignment": "Release on line.",
@@ -357,6 +366,7 @@ class DeterministicFeedbackService:
             if fallback_flag is not None:
                 diagnostic_flags.append(fallback_flag)
             explanation = self._build_item_explanation(issue=issue, template=template)
+            improvement_suggestion = _set_level_language(template.improvement_suggestion)
             feedback_items.append(
                 DeterministicFeedbackItemResponse(
                     phase_id=issue.phase_id,
@@ -367,11 +377,11 @@ class DeterministicFeedbackService:
                     issue_direction=issue.issue_direction,
                     issue_title=template.issue_title,
                     coaching_cue=template.coaching_cue,
-                    improvement_suggestion=template.improvement_suggestion,
+                    improvement_suggestion=improvement_suggestion,
                     what_happened=explanation["what_happened"],
                     why_it_matters=explanation["why_it_matters"],
                     what_to_fix=explanation["what_to_fix"],
-                    next_rep_cue=explanation["next_rep_cue"],
+                    next_rep_cue=_set_level_language(explanation["next_rep_cue"]),
                     simple_coaching_phrase=explanation["simple_coaching_phrase"],
                     priority_rank=priority_rank,
                     deviation=issue.deviation,
@@ -490,7 +500,9 @@ class DeterministicFeedbackService:
     ) -> str:
         if feedback_items:
             top_item = feedback_items[0]
-            top_focus = top_item.next_rep_cue or top_item.improvement_suggestion
+            top_focus = _set_level_language(
+                top_item.next_rep_cue or top_item.improvement_suggestion
+            )
             issue_sentence = (
                 f"Start with {top_item.issue_title.lower()} during the "
                 f"{_humanize(top_item.phase_id)} phase."
@@ -513,8 +525,34 @@ class DeterministicFeedbackService:
             SeverityLevel.MODERATE: "Overall, this session showed solid effort with technique details to clean up.",
             SeverityLevel.SEVERE: "Overall, this session needs focused technique work before increasing difficulty.",
         }[evaluation_result.overall_severity]
+        set_sentence = DeterministicFeedbackService._build_set_level_summary_sentence(
+            evaluation_result=evaluation_result
+        )
 
-        return f"{overall_sentence} {strongest_sentence} {issue_sentence} Next focus: {top_focus}"
+        return f"{overall_sentence} {set_sentence}{strongest_sentence} {issue_sentence} Next focus: {top_focus}"
+
+    @staticmethod
+    def _build_set_level_summary_sentence(
+        *,
+        evaluation_result: DeterministicEvaluationResult,
+    ) -> str:
+        set_summary = evaluation_result.set_level_summary
+        if set_summary is None or not evaluation_result.evaluated_rep_count:
+            return ""
+        if evaluation_result.evaluated_rep_count <= 1:
+            return "One valid movement cycle was analyzed. "
+
+        pieces = [
+            f"Across the set, {evaluation_result.evaluated_rep_count} movement cycles were analyzed."
+        ]
+        if set_summary.consistency_warning:
+            pieces.append(set_summary.consistency_warning)
+        elif set_summary.repeated_issue_metric_ids:
+            readable_issue = _humanize(set_summary.repeated_issue_metric_ids[0])
+            pieces.append(f"{readable_issue.capitalize()} appeared repeatedly across the set.")
+        else:
+            pieces.append("Rep-to-rep consistency stayed within the expected prototype range.")
+        return " ".join(pieces) + " "
 
     @staticmethod
     def _build_improvement_suggestions(
@@ -534,3 +572,13 @@ class DeterministicFeedbackService:
 
 def _humanize(value: str) -> str:
     return value.replace("_", " ")
+
+
+def _set_level_language(value: str) -> str:
+    return (
+        value.replace("On the next rep,", "On the next set,")
+        .replace("on the next rep,", "on the next set,")
+        .replace("On the next shot,", "On the next set,")
+        .replace("on the next shot,", "on the next set,")
+        .replace("before each rep", "before each movement")
+    )

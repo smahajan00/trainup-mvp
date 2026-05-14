@@ -318,11 +318,14 @@ def _store_artifact(
 
 
 def test_phase4c_mapping_coverage_is_complete() -> None:
-    assert len(PHASE2_SUPPORTED_METRIC_IDS) == 27
+    assert len(PHASE2_SUPPORTED_METRIC_IDS) == 28
     assert set(PHASE2_SUPPORTED_METRIC_IDS) == set(ONTOLOGY_MAPPINGS_BY_METRIC_ID)
     knee_mapping = ONTOLOGY_MAPPINGS_BY_METRIC_ID["knee_alignment_score"]
     assert knee_mapping.body_part == "knee"
     assert "alignment" in knee_mapping.concepts
+    depth_mapping = ONTOLOGY_MAPPINGS_BY_METRIC_ID["squat_depth"]
+    assert depth_mapping.body_part == "knee"
+    assert "depth" in depth_mapping.concepts
 
 
 def test_phase4c_groups_multiple_metrics_into_same_concept(db_session) -> None:

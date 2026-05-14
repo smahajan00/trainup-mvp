@@ -1,6 +1,6 @@
-# TrainUp — AI-Assisted Multi-Sport Coaching and Performance Analysis
+# TrainUp: AI-Powered Multi-Sport Coaching and Performance Analysis System
 
-TrainUp is a bachelor project MVP for pose-based multi-sport coaching and performance analysis. The system combines uploaded or live movement capture, MediaPipe pose extraction, deterministic biomechanical evaluation, advanced reasoning layers, optional Gemini-assisted coaching wording refinement, Kokoro text-to-speech feedback, and range-based progress analytics.
+TrainUp is a bachelor project MVP for pose-based multi-sport coaching and performance analysis. The system combines uploaded or live movement capture, MediaPipe pose estimation, rule-based movement analysis, deterministic biomechanical evaluation, deterministic rep-cycle segmentation, set-level aggregation, advanced reasoning layers, optional Gemini-assisted coaching wording refinement, Kokoro text-to-speech feedback, and range-based progress analytics.
 
 The project is designed around an academically defensible boundary: deterministic evaluation and deterministic feedback remain the source of truth. The language model is used only to improve the wording, prioritization, and clarity of coaching feedback from compact supplied summaries. Kokoro TTS only reads the final coaching text. TrainUp does not perform medical diagnosis, does not use voice cloning, and does not require user voice uploads.
 
@@ -12,6 +12,7 @@ The project is designed around an academically defensible boundary: deterministi
 - MediaPipe pose extraction and real pose overlay for uploaded and live movement
 - Optimized pose extraction with frame downsampling, inference resizing, and pose cache reuse
 - Drill-specific deterministic evaluation for six supported drills
+- Deterministic rep-cycle segmentation and set-level aggregation for uploaded drill sets
 - Deterministic coaching feedback and improvement plans
 - Fuzzy interpretation and interval type-2 fuzzy uncertainty interpretation
 - Pedagogical reasoning for skill-level-appropriate coaching tone and intensity
@@ -24,13 +25,13 @@ The project is designed around an academically defensible boundary: deterministi
 
 Supported sports and drills:
 
-- Gym: Bodyweight Squat, Dumbbell Shoulder Press
-- Basketball: Set Shot Form, Defensive Stance
+- Gym: Squat, Shoulder Press
+- Basketball: Basketball Set Shot, Defensive Stance
 - Football: Instep Pass, Basic Shooting Form
 
 ## Academic Overview
 
-TrainUp evaluates sport and exercise movements from pose landmarks rather than from raw video semantics. Uploaded or live sessions produce a `pose_sequence`, which is analyzed by deterministic drill evaluators. The deterministic layer computes movement quality, issues, severity, scores, and base feedback. Advanced reasoning layers then provide interpretation context, such as uncertainty, pedagogical style, linked issues, and movement timing.
+TrainUp evaluates sport and exercise movements from pose landmarks rather than from raw video semantics. Uploaded or live sessions produce a `pose_sequence`, which is analyzed by deterministic drill evaluators. The deterministic layer computes movement quality, issues, severity, scores, and base feedback. For set-style uploads, the evaluator attempts deterministic rep-cycle segmentation, evaluates valid cycles independently, and aggregates the result into one set-level coaching verdict. Advanced reasoning layers then provide interpretation context, such as uncertainty, pedagogical style, linked issues, and movement timing.
 
 Gemini is optional and bounded. It receives compact deterministic and advanced-reasoning summaries, not raw video, full pose sequences, or raw landmark streams. Its role is wording refinement only. If Gemini is unavailable, the system continues with deterministic coaching feedback. Kokoro TTS then speaks the visible final coaching text only after the user clicks Listen.
 
@@ -41,7 +42,9 @@ User profile
 -> Sport/drill selection
 -> Upload or live capture
 -> pose_sequence
+-> deterministic rep-cycle segmentation
 -> deterministic evaluation
+-> set-level aggregation
 -> fuzzy interpretation
 -> IT2 fuzzy interpretation
 -> deterministic feedback
@@ -57,6 +60,8 @@ User profile
 ## System Boundaries
 
 - Deterministic evaluation remains the authoritative source of scores and issues.
+- Evaluation thresholds are heuristic prototype thresholds and are not clinically validated biomechanical cutoffs.
+- 2D pose estimation cannot reliably measure pressure, true 3D rotation, ball contact, load, or camera-calibrated angles.
 - Gemini only refines visible coaching language from supplied summaries.
 - Gemini does not receive raw video, full pose sequences, or raw pose landmark data.
 - Kokoro TTS only reads the final coaching text.
