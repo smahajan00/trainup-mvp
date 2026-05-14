@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
+import { CTAButton } from "../../../components/ui/cta-button";
 import { InfoCard } from "../../app-shell/components/InfoCard";
 import { SectionTitle } from "../../app-shell/components/SectionTitle";
 import type { SkillLevel } from "../../../types/profile";
@@ -42,6 +43,7 @@ type SessionResultsPanelProps = {
   analysisError?: string | null;
   analysisWarnings?: SessionAnalysisWarning[];
   showAnalysisWarningBanner?: boolean;
+  onStartNewSession?: () => void;
 };
 
 function buildFallbackWhyText(
@@ -231,7 +233,8 @@ export function SessionResultsPanel({
   analysisState,
   analysisError,
   analysisWarnings = [],
-  showAnalysisWarningBanner = true
+  showAnalysisWarningBanner = true,
+  onStartNewSession
 }: SessionResultsPanelProps) {
   const evaluationResult = artifacts?.evaluation_result ?? null;
   const feedbackResult = artifacts?.feedback_result ?? null;
@@ -472,7 +475,7 @@ export function SessionResultsPanel({
 
       <ResultsOverviewCard
         overallScore={formatScorePercent(evaluationResult?.overall_score ?? null)}
-        severity={evaluationResult?.overall_severity ?? null}
+        overallScoreValue={evaluationResult?.overall_score ?? null}
         strongestArea={strongestArea}
         mainLimitation={mainLimitation}
         poseQualitySummary={
@@ -619,6 +622,24 @@ export function SessionResultsPanel({
           <p className="mt-3">
             {pedagogyResult.learning_objective}
           </p>
+        </div>
+      ) : null}
+
+      {onStartNewSession ? (
+        <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] px-5 py-5 sm:flex sm:items-center sm:justify-between sm:gap-5">
+          <div>
+            <p className="text-sm font-semibold text-white">Ready for another set?</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">
+              Start a clean session for this drill without changing saved progress history.
+            </p>
+          </div>
+          <CTAButton
+            type="button"
+            className="mt-4 w-full sm:mt-0 sm:w-auto"
+            onClick={onStartNewSession}
+          >
+            Start New Session
+          </CTAButton>
         </div>
       ) : null}
     </div>

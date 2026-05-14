@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ChangeEvent, DragEvent, useEffect, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -226,6 +226,7 @@ function UploadSessionContent({
   const searchParams = useSearchParams();
   const setupFlowEnabled = searchParams.get("setup") === "1";
   const wasReplaced = searchParams.get("replaced") === "1";
+  const resultsRef = useRef<HTMLDivElement | null>(null);
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [drill, setDrill] = useState<DrillDetail | null>(null);
   const [artifactSnapshot, setArtifactSnapshot] =
@@ -261,6 +262,7 @@ function UploadSessionContent({
   } = useSessionAnalysis(sessionId, (artifacts) => {
     setArtifactSnapshot(artifacts);
   });
+  const previousAnalysisStateRef = useRef(analysisState);
 
   useEffect(() => {
     let ignore = false;
@@ -315,6 +317,25 @@ function UploadSessionContent({
       URL.revokeObjectURL(previewUrl);
     };
   }, [selectedFile]);
+
+  useEffect(() => {
+    const previousAnalysisState = previousAnalysisStateRef.current;
+    previousAnalysisStateRef.current = analysisState;
+
+    if (
+      previousAnalysisState === "RUNNING" &&
+      (analysisState === "COMPLETED" ||
+        analysisState === "COMPLETED_WITH_WARNINGS" ||
+        analysisState === "FAILED")
+    ) {
+      window.requestAnimationFrame(() => {
+        resultsRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start"
+        });
+      });
+    }
+  }, [analysisState]);
 
   const currentPoseSequence =
     selectedFile && !uploadResult ? null : artifactSnapshot?.pose_sequence ?? null;
@@ -546,6 +567,15 @@ function UploadSessionContent({
 
   async function handleAnalyzeSession() {
     await runAnalysis();
+  }
+
+  function handleStartNewSession() {
+    if (session?.drill_id) {
+      router.push(`/drills/${session.drill_id}`);
+      return;
+    }
+
+    router.push("/sports");
   }
 
   if (isLoading) {
@@ -1035,14 +1065,17 @@ function UploadSessionContent({
         ) : null}
       </InfoCard>
 
-      <SessionResultsPanel
-        session={session}
-        artifacts={artifactSnapshot}
-        analysisState={analysisState}
-        analysisError={analysisError}
-        analysisWarnings={analysisWarnings}
-        showAnalysisWarningBanner={false}
-      />
+      <div ref={resultsRef}>
+        <SessionResultsPanel
+          session={session}
+          artifacts={artifactSnapshot}
+          analysisState={analysisState}
+          analysisError={analysisError}
+          analysisWarnings={analysisWarnings}
+          showAnalysisWarningBanner={false}
+          onStartNewSession={handleStartNewSession}
+        />
+      </div>
     </div>
   );
 }

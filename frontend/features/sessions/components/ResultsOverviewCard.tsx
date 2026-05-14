@@ -3,26 +3,53 @@ import { Activity, AlertTriangle, Gauge, Sparkles } from "lucide-react";
 import { Badge } from "../../../components/ui/badge";
 import { InfoCard } from "../../app-shell/components/InfoCard";
 import { SectionTitle } from "../../app-shell/components/SectionTitle";
-import type { SeverityLevel } from "../../../types/sessions";
-import { getSeverityVariant } from "./session-results-utils";
+
+type OverviewStatus = {
+  label: string;
+  variant: "success" | "warning" | "danger";
+};
 
 type ResultsOverviewCardProps = {
   overallScore: string;
-  severity?: SeverityLevel | null;
+  overallScoreValue?: number | null;
   strongestArea: string;
   mainLimitation: string;
   poseQualitySummary: string;
   movementConcept?: string | null;
 };
 
+function buildOverviewStatus(score?: number | null): OverviewStatus | null {
+  if (score === undefined || score === null) {
+    return null;
+  }
+
+  const scorePercent = score <= 1 ? score * 100 : score;
+
+  if (scorePercent >= 85) {
+    return { label: "STRONG", variant: "success" };
+  }
+
+  if (scorePercent >= 70) {
+    return { label: "GOOD", variant: "success" };
+  }
+
+  if (scorePercent >= 50) {
+    return { label: "NEEDS WORK", variant: "warning" };
+  }
+
+  return { label: "HIGH PRIORITY", variant: "danger" };
+}
+
 export function ResultsOverviewCard({
   overallScore,
-  severity,
+  overallScoreValue,
   strongestArea,
   mainLimitation,
   poseQualitySummary,
   movementConcept
 }: ResultsOverviewCardProps) {
+  const overviewStatus = buildOverviewStatus(overallScoreValue);
+
   return (
     <InfoCard>
       <SectionTitle
@@ -32,8 +59,8 @@ export function ResultsOverviewCard({
       />
 
       <div className="mt-6 flex flex-wrap gap-2">
-        {severity ? (
-          <Badge variant={getSeverityVariant(severity)}>{severity}</Badge>
+        {overviewStatus ? (
+          <Badge variant={overviewStatus.variant}>{overviewStatus.label}</Badge>
         ) : null}
         {movementConcept ? <Badge variant="slate">{movementConcept}</Badge> : null}
       </div>

@@ -95,6 +95,7 @@ function LiveSessionContent({
   const searchParams = useSearchParams();
   const setupFlowEnabled = searchParams.get("setup") === "1";
   const wasReplaced = searchParams.get("replaced") === "1";
+  const resultsRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
@@ -130,6 +131,7 @@ function LiveSessionContent({
   } = useSessionAnalysis(sessionId, (artifacts) => {
     setArtifactSnapshot(artifacts);
   });
+  const previousAnalysisStateRef = useRef(analysisState);
 
   useEffect(() => {
     let ignore = false;
@@ -181,6 +183,25 @@ function LiveSessionContent({
       streamRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const previousAnalysisState = previousAnalysisStateRef.current;
+    previousAnalysisStateRef.current = analysisState;
+
+    if (
+      previousAnalysisState === "RUNNING" &&
+      (analysisState === "COMPLETED" ||
+        analysisState === "COMPLETED_WITH_WARNINGS" ||
+        analysisState === "FAILED")
+    ) {
+      window.requestAnimationFrame(() => {
+        resultsRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start"
+        });
+      });
+    }
+  }, [analysisState]);
 
   function startCaptureClock() {
     if (captureIntervalRef.current !== null) {
@@ -342,6 +363,15 @@ function LiveSessionContent({
 
   async function handleAnalyzeSession() {
     await runAnalysis();
+  }
+
+  function handleStartNewSession() {
+    if (session?.drill_id) {
+      router.push(`/drills/${session.drill_id}`);
+      return;
+    }
+
+    router.push("/sports");
   }
 
   if (isLoading) {
@@ -716,13 +746,16 @@ function LiveSessionContent({
         />
       </div>
 
-      <SessionResultsPanel
-        session={session}
-        artifacts={artifactSnapshot}
-        analysisState={analysisState}
-        analysisError={analysisError}
-        analysisWarnings={analysisWarnings}
-      />
+      <div ref={resultsRef}>
+        <SessionResultsPanel
+          session={session}
+          artifacts={artifactSnapshot}
+          analysisState={analysisState}
+          analysisError={analysisError}
+          analysisWarnings={analysisWarnings}
+          onStartNewSession={handleStartNewSession}
+        />
+      </div>
     </div>
   );
 }
