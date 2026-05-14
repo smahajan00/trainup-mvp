@@ -277,6 +277,29 @@ export type PhaseEvaluationResult = {
   detected_issues: DeterministicEvaluationIssue[];
 };
 
+export type RepEvaluationSummary = {
+  rep_index: number;
+  start_frame_index: number;
+  end_frame_index: number;
+  start_timestamp_ms: number;
+  end_timestamp_ms: number;
+  confidence: number;
+  overall_score: number;
+  overall_severity: SeverityLevel;
+  issue_metric_ids: string[];
+};
+
+export type SetLevelEvaluationSummary = {
+  evaluation_mode: "single_cycle" | "multi_rep";
+  average_score: number;
+  best_score: number;
+  worst_score: number;
+  consistency_score: number;
+  repeated_issue_metric_ids: string[];
+  dominant_recurring_issue_metric_id?: string | null;
+  consistency_warning?: string | null;
+};
+
 export type DeterministicEvaluationResult = {
   evaluation_version: string;
   status: "COMPLETED" | "FAILED" | "INSUFFICIENT_DATA";
@@ -295,6 +318,10 @@ export type DeterministicEvaluationResult = {
   resolved_dominant_side?: StoredDominantSide | null;
   dominant_side_confidence?: number | null;
   dominant_side_diagnostic_flags?: string[] | null;
+  detected_rep_count?: number | null;
+  evaluated_rep_count?: number | null;
+  rep_summaries?: RepEvaluationSummary[];
+  set_level_summary?: SetLevelEvaluationSummary | null;
 };
 
 export type FeedbackGenerationStatus =

@@ -69,7 +69,7 @@ export function buildPoseQualitySummary(poseSequence?: PoseSequence | null) {
       ? "Pose quality looks strong."
       : validRatio >= 0.65
         ? "Pose quality is usable."
-        : "Pose quality was limited.";
+        : "Pose tracking quality was limited, so feedback may be less reliable.";
   const primaryFlag = poseSequence.diagnostic_flags[0];
 
   return `${qualityLead} ${poseSequence.valid_frame_count} of ${poseSequence.frame_count} frames were usable.${

@@ -1,4 +1,4 @@
-import { AlertTriangle, Sparkles } from "lucide-react";
+import { AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { InfoCard } from "../../app-shell/components/InfoCard";
@@ -111,6 +111,70 @@ function buildFeedbackItemKey(feedbackItem: DeterministicFeedbackItem) {
   return `${feedbackItem.phase_id}:${feedbackItem.metric_name}:${feedbackItem.priority_rank}`;
 }
 
+function severityRank(severity?: string | null) {
+  if (severity === "SEVERE") {
+    return 3;
+  }
+
+  if (severity === "MODERATE") {
+    return 2;
+  }
+
+  if (severity === "MINOR") {
+    return 1;
+  }
+
+  return 0;
+}
+
+function normalizeIssueKey(value?: string | null) {
+  return value?.toLowerCase().replace(/[_\s-]+/g, "_") ?? "";
+}
+
+function feedbackMetricKey(feedbackItem: DeterministicFeedbackItem) {
+  return normalizeIssueKey(feedbackItem.metric_id ?? feedbackItem.metric_name);
+}
+
+function scoreFeedbackPriority(
+  feedbackItem: DeterministicFeedbackItem,
+  evaluationResult: SessionArtifactsResponse["evaluation_result"] | null
+) {
+  const metricKey = feedbackMetricKey(feedbackItem);
+  const setSummary = evaluationResult?.set_level_summary;
+  const isDominantRecurring =
+    normalizeIssueKey(setSummary?.dominant_recurring_issue_metric_id) === metricKey;
+  const isRepeated =
+    isDominantRecurring ||
+    Boolean(
+      setSummary?.repeated_issue_metric_ids.some(
+        (metricId) => normalizeIssueKey(metricId) === metricKey
+      )
+    );
+
+  return {
+    severity: severityRank(feedbackItem.severity_level),
+    recurrence: isDominantRecurring ? 2 : isRepeated ? 1 : 0,
+    impact: feedbackItem.deviation ?? 0,
+    deterministicPriority: -feedbackItem.priority_rank
+  };
+}
+
+function compareFeedbackItems(
+  a: DeterministicFeedbackItem,
+  b: DeterministicFeedbackItem,
+  evaluationResult: SessionArtifactsResponse["evaluation_result"] | null
+) {
+  const aScore = scoreFeedbackPriority(a, evaluationResult);
+  const bScore = scoreFeedbackPriority(b, evaluationResult);
+
+  return (
+    bScore.severity - aScore.severity ||
+    bScore.recurrence - aScore.recurrence ||
+    bScore.impact - aScore.impact ||
+    bScore.deterministicPriority - aScore.deterministicPriority
+  );
+}
+
 function buildTTSSegments(
   feedbackItem: DeterministicFeedbackItem,
   mainCue: string,
@@ -131,6 +195,17 @@ function buildTTSSegments(
     segment_2: finalFix,
     segment_3: finalNextFocus
   };
+}
+
+function buildCameraGuidance(session: TrainingSession) {
+  if (
+    session.drill_name.toLowerCase().includes("squat") &&
+    session.camera_view === "FRONTAL"
+  ) {
+    return "For squats, side view gives the most reliable analysis.";
+  }
+
+  return null;
 }
 
 function cleanAdvancedDetail(value: string | null | undefined) {
@@ -246,7 +321,9 @@ export function SessionResultsPanel({
     feedbackResult?.improvement_suggestions ?? []
   );
   const llmItems = llmFeedbackResult?.enhanced_feedback_items ?? [];
-  const feedbackItems = feedbackResult?.prioritized_feedback_items.slice(0, 3) ?? [];
+  const feedbackItems = [...(feedbackResult?.prioritized_feedback_items ?? [])].sort(
+    (a, b) => compareFeedbackItems(a, b, evaluationResult)
+  );
   const coachingCards = feedbackItems.map((feedbackItem) => {
     const llmItem = findMatchingLLMItem(feedbackItem, llmItems);
     const uncertaintyItem = findMatchingUncertainty(
@@ -309,6 +386,9 @@ export function SessionResultsPanel({
           : null
     };
   });
+  const primaryCoachingCard = coachingCards[0] ?? null;
+  const secondaryObservations = coachingCards.slice(1, 3);
+  const cameraGuidance = buildCameraGuidance(session);
 
   const advancedItems = [
     fuzzyResult
@@ -395,7 +475,9 @@ export function SessionResultsPanel({
         severity={evaluationResult?.overall_severity ?? null}
         strongestArea={strongestArea}
         mainLimitation={mainLimitation}
-        poseQualitySummary={poseQualitySummary}
+        poseQualitySummary={
+          cameraGuidance ? `${poseQualitySummary} ${cameraGuidance}` : poseQualitySummary
+        }
         movementConcept={
           ontologyResult?.primary_concept
             ? formatMetricLabel(ontologyResult.primary_concept)
@@ -408,7 +490,7 @@ export function SessionResultsPanel({
           <SectionTitle
             eyebrow="Coaching"
             title="Coaching Feedback"
-            description="Clear guidance on what happened, why it happened, what to fix, and what to do next."
+            description="Focus on the main correction first, then review smaller adjustments if needed."
           />
 
           {llmFeedbackResult?.status === "COMPLETED" &&
@@ -418,29 +500,60 @@ export function SessionResultsPanel({
             </div>
           )}
 
-          {coachingCards.length ? (
-            <div
-              className={`mt-5 grid gap-5 ${
-                coachingCards.length > 1 ? "2xl:grid-cols-2" : ""
-              }`}
-            >
-              {coachingCards.map((card) => (
+          {primaryCoachingCard ? (
+            <div className="mt-5 space-y-4">
+              <div>
                 <CoachingFeedbackCard
-                  key={card.key}
+                  key={primaryCoachingCard.key}
                   sessionId={session.id}
-                  feedbackItemKey={card.feedbackItemKey}
-                  title={card.title}
-                  severity={card.severity}
-                  whatHappened={card.whatHappened}
-                  whyItHappened={card.whyItHappened}
-                  whatToFix={card.whatToFix}
-                  nextAction={card.nextAction}
-                  simpleCue={card.simpleCue}
-                  isEnhanced={card.isEnhanced}
-                  backupNote={card.backupNote}
-                  ttsSegments={card.ttsSegments}
+                  feedbackItemKey={primaryCoachingCard.feedbackItemKey}
+                  title={primaryCoachingCard.title}
+                  severity={primaryCoachingCard.severity}
+                  whatHappened={primaryCoachingCard.whatHappened}
+                  whyItHappened={primaryCoachingCard.whyItHappened}
+                  whatToFix={primaryCoachingCard.whatToFix}
+                  nextAction={primaryCoachingCard.nextAction}
+                  simpleCue={primaryCoachingCard.simpleCue}
+                  isEnhanced={primaryCoachingCard.isEnhanced}
+                  backupNote={primaryCoachingCard.backupNote}
+                  ttsSegments={primaryCoachingCard.ttsSegments}
                 />
-              ))}
+              </div>
+
+              {secondaryObservations.length ? (
+                <details className="group rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white marker:hidden">
+                    <span>Also noticed</span>
+                    <span className="flex items-center gap-2 text-xs font-medium text-white/50">
+                      {secondaryObservations.length} smaller adjustment
+                      {secondaryObservations.length === 1 ? "" : "s"}
+                      <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+                    </span>
+                  </summary>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {secondaryObservations.map((card) => (
+                      <div
+                        key={card.key}
+                        className="rounded-2xl border border-white/10 bg-black/15 p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <p className="text-sm font-semibold leading-5 text-white">
+                            {card.title}
+                          </p>
+                          {card.severity ? (
+                            <Badge variant={getSeverityVariant(card.severity)}>
+                              {card.severity}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-3 text-xs leading-5 text-white/65">
+                          {card.whatToFix}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </div>
           ) : feedbackResult?.status === "NO_ACTIONABLE_ISSUES" ? (
             <div className="mt-6 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4 text-sm leading-7 text-emerald-100">
