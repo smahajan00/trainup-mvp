@@ -17,6 +17,13 @@ export type PoseOverlayDrawResult = {
   fullBodyDetected: boolean;
 };
 
+export type PoseFrameLookupResult = {
+  frame: PoseFrame | null;
+  timestampDeltaMs: number | null;
+  interpolated: boolean;
+  sourceTimestampMs: number | null;
+};
+
 export type VideoRenderBox = {
   left: number;
   top: number;
@@ -244,6 +251,140 @@ export function findClosestPoseFrame(
   }
 
   return closest;
+}
+
+function sameLandmarkKeys(left: PoseFrame, right: PoseFrame) {
+  const leftKeys = Object.keys(left.landmarks);
+  const rightKeys = Object.keys(right.landmarks);
+
+  return (
+    leftKeys.length > 0 &&
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Object.hasOwn(right.landmarks, key))
+  );
+}
+
+function canInterpolateLandmarkPair(
+  left: PoseOverlayLandmark | undefined,
+  right: PoseOverlayLandmark | undefined
+) {
+  return Boolean(
+    left &&
+      right &&
+      Number.isFinite(left.x) &&
+      Number.isFinite(left.y) &&
+      Number.isFinite(right.x) &&
+      Number.isFinite(right.y)
+  );
+}
+
+function interpolatePoseFrame(
+  left: PoseFrame,
+  right: PoseFrame,
+  timestampMs: number,
+  toleranceMs: number
+): PoseFrame | null {
+  const gapMs = right.timestamp_ms - left.timestamp_ms;
+
+  if (
+    gapMs <= 0 ||
+    gapMs > toleranceMs ||
+    timestampMs < left.timestamp_ms ||
+    timestampMs > right.timestamp_ms ||
+    !sameLandmarkKeys(left, right)
+  ) {
+    return null;
+  }
+
+  const ratio = (timestampMs - left.timestamp_ms) / gapMs;
+  const landmarks: PoseFrame["landmarks"] = {};
+
+  for (const [name, leftLandmark] of Object.entries(left.landmarks)) {
+    const rightLandmark = right.landmarks[name];
+
+    if (!canInterpolateLandmarkPair(leftLandmark, rightLandmark)) {
+      return null;
+    }
+
+    landmarks[name] = {
+      x: leftLandmark.x + (rightLandmark.x - leftLandmark.x) * ratio,
+      y: leftLandmark.y + (rightLandmark.y - leftLandmark.y) * ratio,
+      visibility:
+        leftLandmark.visibility +
+        (rightLandmark.visibility - leftLandmark.visibility) * ratio
+    };
+  }
+
+  return {
+    ...left,
+    frame_index:
+      timestampMs - left.timestamp_ms <= right.timestamp_ms - timestampMs
+        ? left.frame_index
+        : right.frame_index,
+    timestamp_ms: timestampMs,
+    landmarks,
+    frame_valid: true,
+    diagnostic_flags: [
+      ...new Set([...left.diagnostic_flags, ...right.diagnostic_flags])
+    ]
+  };
+}
+
+export function findPoseFrameForTimestamp(
+  frames: PoseFrame[],
+  timestampMs: number,
+  toleranceMs = getPoseFrameToleranceMs(frames)
+): PoseFrameLookupResult {
+  if (!frames.length) {
+    return {
+      frame: null,
+      timestampDeltaMs: null,
+      interpolated: false,
+      sourceTimestampMs: null
+    };
+  }
+
+  let low = 0;
+  let high = frames.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (frames[middle].timestamp_ms < timestampMs) {
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  const nextFrame = frames[low] ?? null;
+  const previousFrame = frames[low - 1] ?? null;
+
+  if (previousFrame && nextFrame) {
+    const interpolatedFrame = interpolatePoseFrame(
+      previousFrame,
+      nextFrame,
+      timestampMs,
+      toleranceMs
+    );
+
+    if (interpolatedFrame) {
+      return {
+        frame: interpolatedFrame,
+        timestampDeltaMs: 0,
+        interpolated: true,
+        sourceTimestampMs: timestampMs
+      };
+    }
+  }
+
+  const closest = findClosestPoseFrame(frames, timestampMs, toleranceMs);
+
+  return {
+    frame: closest,
+    timestampDeltaMs: closest ? closest.timestamp_ms - timestampMs : null,
+    interpolated: false,
+    sourceTimestampMs: closest?.timestamp_ms ?? null
+  };
 }
 
 function getCanvasPoint(

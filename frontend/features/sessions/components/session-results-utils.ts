@@ -23,6 +23,22 @@ export function getSeverityVariant(severity?: SeverityLevel | null) {
   return "slate" as const;
 }
 
+export function formatSeverityLabel(severity?: SeverityLevel | null) {
+  if (severity === "SEVERE") {
+    return "High Priority";
+  }
+
+  if (severity === "MODERATE") {
+    return "Moderate Priority";
+  }
+
+  if (severity === "MINOR") {
+    return "Minor Adjustment";
+  }
+
+  return "Priority";
+}
+
 export function formatScorePercent(score?: number | null) {
   if (score === null || score === undefined || Number.isNaN(score)) {
     return "Pending";
@@ -173,4 +189,141 @@ export function normalizeMetricName(value?: string | null) {
   }
 
   return value.toLowerCase().replace(/[_\s-]+/g, " ").trim();
+}
+
+const COACHING_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "before",
+  "by",
+  "during",
+  "for",
+  "from",
+  "in",
+  "into",
+  "is",
+  "it",
+  "keep",
+  "maintain",
+  "next",
+  "of",
+  "on",
+  "or",
+  "set",
+  "session",
+  "the",
+  "this",
+  "through",
+  "to",
+  "try",
+  "with",
+  "your"
+]);
+
+export function normalizeCoachingText(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\b(rep|reps|repetition|repetitions)\b/g, "rep")
+    .replace(/\b(correct|correction|fix|improve|improving)\b/g, "improve")
+    .replace(/\b(aligned|alignment|tracking|track)\b/g, "alignment")
+    .replace(/\b(stable|stability|control|controlled)\b/g, "control")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function professionalizeCoachingCopy(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .replace(/\bnext\s+rep\b/gi, "next set")
+    .replace(/\bnext\s+repetition\b/gi, "next set")
+    .replace(/\bwhat\s+to\s+fix\b/gi, "corrective focus")
+    .replace(/\bwhat\s+happened\b/gi, "movement observation")
+    .replace(/\bwhy\s+it\s+matters\b/gi, "performance impact")
+    .replace(/\bmain\s+coaching\s+cue\b/gi, "primary performance focus")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function coachingTokens(value?: string | null) {
+  return normalizeCoachingText(value)
+    .split(" ")
+    .filter((token) => token.length > 2 && !COACHING_STOP_WORDS.has(token));
+}
+
+export function areCoachingTextsSimilar(
+  first?: string | null,
+  second?: string | null
+) {
+  const firstNormalized = normalizeCoachingText(first);
+  const secondNormalized = normalizeCoachingText(second);
+
+  if (!firstNormalized || !secondNormalized) {
+    return false;
+  }
+
+  if (firstNormalized === secondNormalized) {
+    return true;
+  }
+
+  if (
+    firstNormalized.length > 18 &&
+    secondNormalized.length > 18 &&
+    (firstNormalized.includes(secondNormalized) ||
+      secondNormalized.includes(firstNormalized))
+  ) {
+    return true;
+  }
+
+  const firstTokens = new Set(coachingTokens(firstNormalized));
+  const secondTokens = new Set(coachingTokens(secondNormalized));
+
+  if (firstTokens.size < 3 || secondTokens.size < 3) {
+    return false;
+  }
+
+  const overlap = [...firstTokens].filter((token) => secondTokens.has(token)).length;
+  const overlapRatio = overlap / Math.min(firstTokens.size, secondTokens.size);
+
+  return overlap >= 3 && overlapRatio >= 0.68;
+}
+
+export function dedupeCoachingTexts(
+  items: (string | null | undefined)[],
+  existing: (string | null | undefined)[] = []
+) {
+  const accepted: string[] = [];
+
+  items.forEach((item) => {
+    const normalized = item?.replace(/\s+/g, " ").trim();
+
+    if (!normalized) {
+      return;
+    }
+
+    const duplicatesExisting = existing.some((existingItem) =>
+      areCoachingTextsSimilar(normalized, existingItem)
+    );
+    const duplicatesAccepted = accepted.some((acceptedItem) =>
+      areCoachingTextsSimilar(normalized, acceptedItem)
+    );
+
+    if (!duplicatesExisting && !duplicatesAccepted) {
+      accepted.push(normalized);
+    }
+  });
+
+  return accepted;
 }

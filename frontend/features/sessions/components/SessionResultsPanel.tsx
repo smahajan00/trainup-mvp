@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { CTAButton } from "../../../components/ui/cta-button";
@@ -22,18 +22,22 @@ import { ImprovementPlanCard } from "./ImprovementPlanCard";
 import { MiniProgressPreview } from "./MiniProgressPreview";
 import { ResultsOverviewCard } from "./ResultsOverviewCard";
 import {
+  areCoachingTextsSimilar,
   buildConfidenceLabel,
   buildPoseQualitySummary,
+  dedupeCoachingTexts,
   formatCorrectionIntensity,
   formatMetricLabel,
   formatMetricSummary,
   formatPhaseLabel,
   formatScorePercent,
+  formatSeverityLabel,
   formatTeachingStrategy,
   formatTemporalStateLabel,
   formatToneProfile,
   getSeverityVariant,
-  getSkillFocusLimit
+  getSkillFocusLimit,
+  professionalizeCoachingCopy
 } from "./session-results-utils";
 
 type SessionResultsPanelProps = {
@@ -137,6 +141,42 @@ function feedbackMetricKey(feedbackItem: DeterministicFeedbackItem) {
   return normalizeIssueKey(feedbackItem.metric_id ?? feedbackItem.metric_name);
 }
 
+function coachingFaultKey(feedbackItem: DeterministicFeedbackItem) {
+  const combined = normalizeIssueKey(
+    `${feedbackItem.metric_id ?? feedbackItem.metric_name} ${feedbackItem.affected_body_part}`
+  );
+
+  if (/knee|valgus|tracking|alignment/.test(combined)) {
+    return "knee_alignment";
+  }
+
+  if (/torso|trunk|spine|lean|posture/.test(combined)) {
+    return "torso_control";
+  }
+
+  if (/hip|depth|squat_depth/.test(combined)) {
+    return "depth_control";
+  }
+
+  if (/balance|stability|base|stance/.test(combined)) {
+    return "balance_control";
+  }
+
+  if (/wrist|follow|release/.test(combined)) {
+    return "release_follow_through";
+  }
+
+  if (/elbow|shoulder|lockout|press/.test(combined)) {
+    return "upper_body_alignment";
+  }
+
+  if (/plant|ankle|contact|swing|kick/.test(combined)) {
+    return "kicking_mechanics";
+  }
+
+  return feedbackMetricKey(feedbackItem) || normalizeIssueKey(feedbackItem.affected_body_part);
+}
+
 function scoreFeedbackPriority(
   feedbackItem: DeterministicFeedbackItem,
   evaluationResult: SessionArtifactsResponse["evaluation_result"] | null
@@ -191,11 +231,27 @@ function buildTTSSegments(
   const finalFix = whatToFix || feedbackItem.what_to_fix || feedbackItem.coaching_cue;
   const finalNextFocus =
     nextAction || feedbackItem.next_rep_cue || feedbackItem.improvement_suggestion;
+  const fallbackFix = areCoachingTextsSimilar(finalFix, finalMainCue)
+    ? "Control this correction consistently across the set."
+    : finalFix;
+  const fallbackNextFocus =
+    areCoachingTextsSimilar(finalNextFocus, finalMainCue) ||
+    areCoachingTextsSimilar(finalNextFocus, fallbackFix)
+      ? "Hold this focus across the next set before adding pace."
+      : finalNextFocus;
+  const segments = dedupeCoachingTexts([
+    finalMainCue,
+    fallbackFix,
+    fallbackNextFocus
+  ]);
 
   return {
-    segment_1: finalMainCue,
-    segment_2: finalFix,
-    segment_3: finalNextFocus
+    segment_1: segments[0] ?? finalMainCue,
+    segment_2: segments[1] ?? fallbackFix,
+    segment_3:
+      segments[2] ??
+      fallbackNextFocus ??
+      "Apply this correction consistently across the next set."
   };
 }
 
@@ -339,30 +395,43 @@ export function SessionResultsPanel({
         : null;
 
     const isEnhanced = Boolean(llmItem && !llmItem.fallback_used);
-    const mainCue =
+    const rawMainCue =
       isEnhanced
         ? llmItem?.llm_main_coaching_cue || llmItem?.llm_coaching_cue || feedbackItem.issue_title
         : feedbackItem.issue_title || formatMetricLabel(feedbackItem.metric_name);
-    const whatToFix =
+    const mainCue = professionalizeCoachingCopy(rawMainCue);
+    const rawWhatToFix =
       llmItem && !llmItem.fallback_used
         ? llmItem.llm_what_to_fix || llmItem.llm_coaching_cue
         : feedbackItem.what_to_fix || feedbackItem.coaching_cue;
-    const nextAction =
+    const whatToFix = professionalizeCoachingCopy(rawWhatToFix);
+    const rawNextAction =
       llmItem && !llmItem.fallback_used
         ? llmItem.llm_next_session_cue || llmItem.llm_improvement_suggestion
         : feedbackItem.next_rep_cue || feedbackItem.improvement_suggestion;
+    const nextAction = professionalizeCoachingCopy(rawNextAction);
+    const displayWhatToFix = areCoachingTextsSimilar(whatToFix, mainCue)
+      ? professionalizeCoachingCopy(feedbackItem.coaching_cue) || whatToFix
+      : whatToFix;
+    const displayNextAction =
+      areCoachingTextsSimilar(nextAction, mainCue) ||
+      areCoachingTextsSimilar(nextAction, displayWhatToFix)
+        ? "Hold this focus across the next set before adding pace or complexity."
+        : nextAction;
 
     return {
       key: `${feedbackItem.phase_id}-${feedbackItem.metric_name}-${feedbackItem.priority_rank}`,
       title: mainCue,
       severity: feedbackItem.severity_level,
+      faultKey: coachingFaultKey(feedbackItem),
       feedbackItemKey: buildFeedbackItemKey(feedbackItem),
-      whatHappened:
+      whatHappened: professionalizeCoachingCopy(
         (llmItem && !llmItem.fallback_used ? llmItem.llm_what_happened : null) ||
         feedbackItem.what_happened ||
         feedbackItem.issue_title ||
-        "This rep showed one movement pattern to clean up first.",
-      whyItHappened:
+        "This set showed one movement pattern to clean up first."
+      ),
+      whyItHappened: professionalizeCoachingCopy(
         (llmItem && !llmItem.fallback_used ? llmItem.llm_why_it_matters : null) ||
         feedbackItem.why_it_matters ||
         buildFallbackWhyText(
@@ -373,15 +442,16 @@ export function SessionResultsPanel({
           null,
           uncertaintyNote
         ),
-      whatToFix,
-      nextAction,
-      simpleCue: feedbackItem.simple_coaching_phrase || null,
+      ),
+      whatToFix: displayWhatToFix,
+      nextAction: displayNextAction,
+      simpleCue: professionalizeCoachingCopy(feedbackItem.simple_coaching_phrase) || null,
       isEnhanced,
       ttsSegments: buildTTSSegments(
         feedbackItem,
         mainCue,
-        whatToFix,
-        nextAction
+        displayWhatToFix,
+        displayNextAction
       ),
       backupNote:
         llmItem && llmItem.llm_coaching_cue !== llmItem.deterministic_coaching_cue
@@ -390,7 +460,43 @@ export function SessionResultsPanel({
     };
   });
   const primaryCoachingCard = coachingCards[0] ?? null;
-  const secondaryObservations = coachingCards.slice(1, 3);
+  const primaryCoachingTexts = primaryCoachingCard
+    ? [
+        primaryCoachingCard.title,
+        primaryCoachingCard.whatHappened,
+        primaryCoachingCard.whyItHappened,
+        primaryCoachingCard.whatToFix,
+        primaryCoachingCard.nextAction,
+        primaryCoachingCard.simpleCue
+      ].filter((item): item is string => Boolean(item))
+    : [];
+  const seenSecondaryFaults = new Set<string>();
+  const secondaryObservations = coachingCards
+    .slice(1)
+    .filter((card) => {
+      if (primaryCoachingCard && card.faultKey === primaryCoachingCard.faultKey) {
+        return false;
+      }
+
+      if (seenSecondaryFaults.has(card.faultKey)) {
+        return false;
+      }
+
+      const cardTexts = [card.title, card.whatToFix, card.simpleCue];
+      const repeatsPrimary = cardTexts.some((cardText) =>
+        primaryCoachingTexts.some((primaryText) =>
+          areCoachingTextsSimilar(cardText, primaryText)
+        )
+      );
+
+      if (repeatsPrimary) {
+        return false;
+      }
+
+      seenSecondaryFaults.add(card.faultKey);
+      return true;
+    })
+    .slice(0, 2);
   const cameraGuidance = buildCameraGuidance(session);
 
   const advancedItems = [
@@ -492,14 +598,14 @@ export function SessionResultsPanel({
         <InfoCard>
           <SectionTitle
             eyebrow="Coaching"
-            title="Coaching Feedback"
-            description="Focus on the main correction first, then review smaller adjustments if needed."
+            title="Performance Coaching"
+            description="Review the primary correction first, then secondary observations if needed."
           />
 
           {llmFeedbackResult?.status === "COMPLETED" &&
           !llmFeedbackResult.fallback_used ? null : (
-            <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
-              Showing core rule-based coaching. Wording enhancement is unavailable right now.
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-xs leading-5 text-white/60">
+              Rule-based coaching shown. AI wording refinement is unavailable right now.
             </div>
           )}
 
@@ -526,9 +632,9 @@ export function SessionResultsPanel({
               {secondaryObservations.length ? (
                 <details className="group rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white marker:hidden">
-                    <span>Also noticed</span>
+                    <span>Secondary Observations</span>
                     <span className="flex items-center gap-2 text-xs font-medium text-white/50">
-                      {secondaryObservations.length} smaller adjustment
+                      {secondaryObservations.length} supporting note
                       {secondaryObservations.length === 1 ? "" : "s"}
                       <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
                     </span>
@@ -545,7 +651,7 @@ export function SessionResultsPanel({
                           </p>
                           {card.severity ? (
                             <Badge variant={getSeverityVariant(card.severity)}>
-                              {card.severity}
+                              {formatSeverityLabel(card.severity)}
                             </Badge>
                           ) : null}
                         </div>
@@ -583,6 +689,7 @@ export function SessionResultsPanel({
         )}
         improvementSuggestions={feedbackResult?.improvement_suggestions ?? []}
         skillLevelLabel={session.skill_level}
+        excludedTexts={primaryCoachingTexts}
       />
 
       <MiniProgressPreview
@@ -607,24 +714,6 @@ export function SessionResultsPanel({
             temporalResult
         )}
       />
-
-      {pedagogyResult?.selected_focus_items.length ? (
-        <div className="rounded-[1.5rem] border border-primary/15 bg-primary/10 px-5 py-4 text-sm leading-7 text-white/85">
-          <div className="flex flex-wrap items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="font-semibold text-white">
-              Coaching focus
-            </span>
-            <Badge variant={getSeverityVariant(leadIssue?.severity_level ?? null)}>
-              {formatTeachingStrategy(pedagogyResult.teaching_strategy)}
-            </Badge>
-          </div>
-          <p className="mt-3">
-            {pedagogyResult.learning_objective}
-          </p>
-        </div>
-      ) : null}
-
       {onStartNewSession ? (
         <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] px-5 py-5 sm:flex sm:items-center sm:justify-between sm:gap-5">
           <div>

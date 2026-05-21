@@ -5,7 +5,11 @@ import { Badge } from "../../../components/ui/badge";
 import { InfoCard } from "../../app-shell/components/InfoCard";
 import { generateSessionFeedbackTTS } from "../../../services/sessions";
 import type { FeedbackTTSSegments, SeverityLevel } from "../../../types/sessions";
-import { getSeverityVariant } from "./session-results-utils";
+import {
+  areCoachingTextsSimilar,
+  formatSeverityLabel,
+  getSeverityVariant
+} from "./session-results-utils";
 
 const AUDIO_PLAY_EVENT = "trainup-feedback-audio-play";
 
@@ -193,34 +197,44 @@ export function CoachingFeedbackCard({
 
   const audioProgress =
     audioDuration > 0 ? Math.min(100, (audioCurrentTime / audioDuration) * 100) : 0;
+  const displaySimpleCue =
+    simpleCue &&
+    !areCoachingTextsSimilar(simpleCue, title) &&
+    !areCoachingTextsSimilar(simpleCue, whatToFix)
+      ? simpleCue
+      : null;
+  const displayBackupNote =
+    backupNote &&
+    !areCoachingTextsSimilar(backupNote, title) &&
+    !areCoachingTextsSimilar(backupNote, whatToFix) &&
+    !areCoachingTextsSimilar(backupNote, nextAction)
+      ? backupNote
+      : null;
 
   return (
     <InfoCard className="h-full border-white/10 p-5 sm:p-6">
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-            Main coaching cue
+            Primary Performance Focus
           </p>
           <h3 className="mt-2 break-words font-display text-2xl font-bold leading-tight text-white">
             {title}
           </h3>
-          {simpleCue ? (
+          {displaySimpleCue ? (
             <p className="mt-3 inline-flex rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              {simpleCue}
+              {displaySimpleCue}
             </p>
           ) : null}
-          <p className="mt-3 text-xs leading-5 text-white/50">
-            {isEnhanced
-              ? "Generated using AI-assisted coaching refinement"
-              : "Using deterministic coaching feedback"}
-          </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:justify-end">
           <Badge variant={isEnhanced ? "success" : "slate"}>
-            {isEnhanced ? "Refined" : "Deterministic"}
+            {isEnhanced ? "AI refined" : "Rule-based"}
           </Badge>
           {severity ? (
-            <Badge variant={getSeverityVariant(severity)}>{severity}</Badge>
+            <Badge variant={getSeverityVariant(severity)}>
+              {formatSeverityLabel(severity)}
+            </Badge>
           ) : null}
         </div>
       </div>
@@ -229,7 +243,7 @@ export function CoachingFeedbackCard({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-[0.2em] text-primary">
-              Audio coach
+              Voice guidance
             </p>
             <p className="mt-1 text-xs text-white/60">Voice: Coach</p>
           </div>
@@ -298,34 +312,34 @@ export function CoachingFeedbackCard({
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-            What happened
+            Movement Observation
           </p>
           <p className="mt-2 text-sm leading-6 text-white/85">{whatHappened}</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-            Why it matters
+            Performance Impact
           </p>
           <p className="mt-2 text-sm leading-6 text-white/85">{whyItHappened}</p>
         </div>
         <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4">
           <p className="text-[10px] uppercase tracking-[0.2em] text-primary">
-            Fix this
+            Corrective Focus
           </p>
           <p className="mt-2 text-sm leading-6 text-white/90">{whatToFix}</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <p className="text-[10px] uppercase tracking-[0.2em] text-muted-gray">
-            Next set focus
+            Next Set Objective
           </p>
           <p className="mt-2 text-sm leading-6 text-white/85">{nextAction}</p>
         </div>
       </div>
 
-      {backupNote ? (
+      {displayBackupNote ? (
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-xs leading-5 text-white/60">
-          <span className="font-semibold text-white">Baseline cue:</span>{" "}
-          {backupNote}
+          <span className="font-semibold text-white">Technical Baseline:</span>{" "}
+          {displayBackupNote}
         </div>
       ) : null}
     </InfoCard>
