@@ -60,7 +60,7 @@ def _build_service(pose_sequence: PoseSequenceResponse | None) -> SessionService
 def _cache_key(*, file_hash: str = "abc123") -> PoseProcessingCacheKey:
     return PoseProcessingCacheKey(
         file_hash=file_hash,
-        target_pose_fps=12.0,
+        target_pose_fps=20.0,
         max_inference_width=720,
         preprocessing_version=PREPROCESSING_VERSION,
         pose_model=POSE_MODEL_NAME,

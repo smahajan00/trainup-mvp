@@ -19,7 +19,7 @@ import {
   clearPoseCanvas,
   drawPoseDebugMarker,
   drawPoseSkeleton,
-  findClosestPoseFrame,
+  findPoseFrameForTimestamp,
   getContainedVideoRenderBox,
   getPoseFrameToleranceMs,
   getValidPoseFrames,
@@ -45,6 +45,7 @@ type PoseOverlayPreviewProps = {
   emptyDescription: string;
   statusText?: string;
   debugOverlay?: boolean;
+  overlaySyncOffsetMs?: number;
   className?: string;
 };
 
@@ -54,6 +55,16 @@ const MEDIAPIPE_WASM_PATH = "/mediapipe/tasks-vision/wasm";
 const POSE_MODEL_PATH = "/mediapipe/models/pose_landmarker_lite.task";
 const POSE_WASM_CHECK_PATH = `${MEDIAPIPE_WASM_PATH}/vision_wasm_internal.wasm`;
 const LIVE_DETECTION_INTERVAL_MS = 90;
+const DEFAULT_UPLOAD_OVERLAY_SYNC_OFFSET_MS = Number(
+  process.env.NEXT_PUBLIC_POSE_OVERLAY_SYNC_OFFSET_MS ?? "0"
+);
+
+type UploadSyncDebugInfo = {
+  videoTimestampMs: number;
+  poseTimestampMs: number | null;
+  deltaMs: number | null;
+  interpolated: boolean;
+};
 
 function formatVideoTime(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
@@ -221,6 +232,9 @@ export function PoseOverlayPreview({
   emptyDescription,
   statusText,
   debugOverlay = true,
+  overlaySyncOffsetMs = Number.isFinite(DEFAULT_UPLOAD_OVERLAY_SYNC_OFFSET_MS)
+    ? DEFAULT_UPLOAD_OVERLAY_SYNC_OFFSET_MS
+    : 0,
   className
 }: PoseOverlayPreviewProps) {
   const internalVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -229,6 +243,7 @@ export function PoseOverlayPreview({
   const liveAnimationRef = useRef<number | null>(null);
   const uploadAnimationRef = useRef<number | null>(null);
   const lastLiveDetectionRef = useRef(0);
+  const lastUploadSyncDebugUpdateRef = useRef(0);
   const hasLoggedLiveDimensionsRef = useRef(false);
   const [overlayStatus, setOverlayStatus] = useState(
     statusText ??
@@ -239,10 +254,14 @@ export function PoseOverlayPreview({
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [uploadSyncDebugInfo, setUploadSyncDebugInfo] =
+    useState<UploadSyncDebugInfo | null>(null);
 
   const hasVideo = mode === "live" ? Boolean(stream && isActive) : Boolean(videoSrc);
   const forceMutedPreview = mode === "upload";
   const effectiveMuted = forceMutedPreview || muted;
+  const showUploadSyncDebug =
+    mode === "upload" && debugOverlay && process.env.NODE_ENV === "development";
   const validUploadFrames = useMemo(
     () => getValidPoseFrames(poseSequence),
     [poseSequence]
@@ -442,14 +461,31 @@ export function PoseOverlayPreview({
       if (!hasVideo || baseStatus !== "Pose overlay active") {
         clearPoseCanvas(canvasElement);
         setOverlayStatus(baseStatus);
+        setUploadSyncDebugInfo(null);
         return;
       }
 
-      const poseFrame = findClosestPoseFrame(
+      const videoTimestampMs = videoElement.currentTime * 1000;
+      const lookupTimestampMs = videoTimestampMs + overlaySyncOffsetMs;
+      const poseLookup = findPoseFrameForTimestamp(
         validUploadFrames,
-        videoElement.currentTime * 1000,
+        lookupTimestampMs,
         uploadFrameToleranceMs
       );
+      const poseFrame = poseLookup.frame;
+
+      if (showUploadSyncDebug) {
+        const now = window.performance.now();
+        if (now - lastUploadSyncDebugUpdateRef.current > 250) {
+          lastUploadSyncDebugUpdateRef.current = now;
+          setUploadSyncDebugInfo({
+            videoTimestampMs,
+            poseTimestampMs: poseLookup.sourceTimestampMs,
+            deltaMs: poseLookup.timestampDeltaMs,
+            interpolated: poseLookup.interpolated
+          });
+        }
+      }
 
       if (!poseFrame) {
         clearPoseCanvas(canvasElement);
@@ -510,7 +546,9 @@ export function PoseOverlayPreview({
     hasVideo,
     mirrored,
     mode,
+    overlaySyncOffsetMs,
     poseSequence,
+    showUploadSyncDebug,
     uploadFrameToleranceMs,
     validUploadFrames
   ]);
@@ -850,6 +888,20 @@ export function PoseOverlayPreview({
               >
                 <Maximize2 className="h-4 w-4" />
               </button>
+            </div>
+          ) : null}
+
+          {showUploadSyncDebug && uploadSyncDebugInfo ? (
+            <div className="mt-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-white/45">
+              Video {Math.round(uploadSyncDebugInfo.videoTimestampMs)}ms · Pose{" "}
+              {uploadSyncDebugInfo.poseTimestampMs === null
+                ? "none"
+                : `${Math.round(uploadSyncDebugInfo.poseTimestampMs)}ms`}{" "}
+              · Delta{" "}
+              {uploadSyncDebugInfo.deltaMs === null
+                ? "n/a"
+                : `${Math.round(uploadSyncDebugInfo.deltaMs)}ms`}{" "}
+              · {uploadSyncDebugInfo.interpolated ? "Interpolated" : "Sampled"}
             </div>
           ) : null}
         </div>

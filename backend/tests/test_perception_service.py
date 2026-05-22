@@ -140,7 +140,7 @@ def test_extract_pose_sequence_success_applies_ema_smoothing(monkeypatch) -> Non
     assert result.processing_metadata is not None
     assert result.processing_metadata.original_frame_count == 2
     assert result.processing_metadata.processed_frame_count == 2
-    assert result.processing_metadata.target_pose_fps == 12.0
+    assert result.processing_metadata.target_pose_fps == 20.0
     assert result.processing_metadata.sampling_stride == 1
 
 
@@ -163,7 +163,7 @@ def test_extract_pose_sequence_downsamples_high_fps_video(monkeypatch) -> None:
                 },
                 diagnostic_flags=[],
             )
-            for _ in range(4)
+            for _ in range(5)
         ]
     )
 
@@ -176,21 +176,22 @@ def test_extract_pose_sequence_downsamples_high_fps_video(monkeypatch) -> None:
     )
 
     assert result.status == "COMPLETED"
-    assert result.frame_count == 4
-    assert result.valid_frame_count == 4
-    assert [frame.frame_index for frame in result.sequence_data] == [0, 3, 6, 9]
+    assert result.frame_count == 5
+    assert result.valid_frame_count == 5
+    assert [frame.frame_index for frame in result.sequence_data] == [0, 2, 4, 6, 8]
     assert [frame.timestamp_ms for frame in result.sequence_data] == [
         0.0,
-        100.0,
+        66.667,
+        133.333,
         200.0,
-        300.0,
+        266.667,
     ]
     assert result.processing_metadata is not None
     assert result.processing_metadata.original_fps == 30.0
-    assert result.processing_metadata.target_pose_fps == 12.0
-    assert result.processing_metadata.sampling_stride == 3
+    assert result.processing_metadata.target_pose_fps == 20.0
+    assert result.processing_metadata.sampling_stride == 2
     assert result.processing_metadata.original_frame_count == 10
-    assert result.processing_metadata.processed_frame_count == 4
+    assert result.processing_metadata.processed_frame_count == 5
 
 
 def test_extract_pose_sequence_resizes_large_frames_before_inference(monkeypatch) -> None:

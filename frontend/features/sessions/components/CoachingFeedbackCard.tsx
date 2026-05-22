@@ -222,7 +222,7 @@ export function CoachingFeedbackCard({
             {title}
           </h3>
           {displaySimpleCue ? (
-            <p className="mt-3 inline-flex rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <p className="mt-3 inline-flex max-w-full whitespace-normal break-words rounded-2xl border border-primary/20 bg-primary/10 px-3 py-1.5 text-left text-xs font-semibold leading-5 text-primary">
               {displaySimpleCue}
             </p>
           ) : null}

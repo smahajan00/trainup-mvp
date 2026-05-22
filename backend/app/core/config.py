@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     llm_debug_response_shape: bool = False
     fuzzy_interpretation_enabled: bool = True
     it2_fuzzy_enabled: bool = True
-    pose_target_fps: float = 12.0
+    pose_target_fps: float = 20.0
     pose_max_width: int = 720
     pose_cache_enabled: bool = True
     tts_model: str = "hexgrad/Kokoro-82M"
