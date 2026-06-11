@@ -39,5 +39,8 @@ alembic upgrade head
 echo "Refreshing seed data..."
 python -m app.scripts.seed_data
 
+echo "Refreshing athlete history data..."
+python scripts/seed_demo_athlete.py
+
 echo "Starting backend server..."
 exec "$@"

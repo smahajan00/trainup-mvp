@@ -75,6 +75,8 @@ type NextTrainingFocus = {
 };
 
 const FILTER_SPORT_ORDER = ["Gym", "Basketball", "Football"];
+const DASHBOARD_SESSION_LIMIT = 90;
+const DASHBOARD_METRIC_LIMIT = 400;
 const RANGE_OPTIONS: { value: ProgressRange; label: string }[] = [
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
@@ -239,7 +241,7 @@ export function ProgressAnalyticsView({ profile }: ProgressAnalyticsViewProps) {
       try {
         const [sports, progressResult] = await Promise.all([
           getSports(),
-          getRecentProgress(10, 50, selectedRange)
+          getRecentProgress(DASHBOARD_SESSION_LIMIT, DASHBOARD_METRIC_LIMIT, selectedRange)
         ]);
 
         const orderedSports = sortDashboardSports(sports);

@@ -112,6 +112,9 @@ export function ResultsOverviewCard({
           </p>
         </div>
       </div>
+      <p className="mt-3 text-[10px] leading-4 text-white/40">
+        Results depend on pose tracking quality.
+      </p>
     </InfoCard>
   );
 }

@@ -622,7 +622,7 @@ function UploadSessionContent({
               {session.drill_name}
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-gray sm:text-base">
-              Upload one clean rep and analyze movement quality.
+              Upload one clean set and analyze movement quality.
             </p>
           </div>
 
@@ -761,12 +761,15 @@ function UploadSessionContent({
             <SectionTitle
               eyebrow="Step 1"
               title="Upload clip"
-              description="One rep. Full body in frame. Stable camera."
+              description="One clean set. Stable camera."
             />
             <Badge variant={displayErrors.length ? "danger" : "slate"}>
               {uploadReadinessLabel}
             </Badge>
           </div>
+          <p className="mt-2 text-[10px] leading-4 text-white/40">
+            Best results with clear full-body visibility.
+          </p>
 
           {canUpload ? (
             <>
@@ -991,7 +994,7 @@ function UploadSessionContent({
               isActive={Boolean(videoPreviewUrl)}
               controls
               emptyTitle="Preview clip"
-              emptyDescription="Choose one clean rep. The pose overlay appears after processing."
+              emptyDescription="Choose one clean set. The pose overlay appears after processing."
               className="border-white/12 bg-black/50 shadow-[0_24px_72px_rgba(0,0,0,0.32)]"
             />
           </div>

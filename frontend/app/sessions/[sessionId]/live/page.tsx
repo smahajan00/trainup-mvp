@@ -13,13 +13,10 @@ import { AppShell } from "../../../../features/app-shell/components/AppShell";
 import { EmptyState } from "../../../../features/app-shell/components/EmptyState";
 import { InfoCard } from "../../../../features/app-shell/components/InfoCard";
 import { SectionTitle } from "../../../../features/app-shell/components/SectionTitle";
-import { AnalysisProgressCard } from "../../../../features/sessions/components/AnalysisProgressCard";
 import { PoseOverlayPreview } from "../../../../features/sessions/components/PoseOverlayPreview";
-import { SessionResultsPanel } from "../../../../features/sessions/components/SessionResultsPanel";
 import { SessionSetupCard } from "../../../../features/sessions/components/SessionSetupCard";
 import { SessionInputModeToggle } from "../../../../features/sessions/components/SessionInputModeToggle";
 import { SessionStatusBadge } from "../../../../features/sessions/components/SessionStatusBadge";
-import { useSessionAnalysis } from "../../../../features/sessions/hooks/useSessionAnalysis";
 import {
   buildReplacementSessionPayload,
   resolveCameraView,
@@ -95,7 +92,6 @@ function LiveSessionContent({
   const searchParams = useSearchParams();
   const setupFlowEnabled = searchParams.get("setup") === "1";
   const wasReplaced = searchParams.get("replaced") === "1";
-  const resultsRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
@@ -120,18 +116,6 @@ function LiveSessionContent({
   const [selectedCameraView, setSelectedCameraView] = useState<CameraView | "">("");
   const [selectedDominantSide, setSelectedDominantSide] =
     useState<DominantSide>("AUTO");
-  const {
-    analysisError,
-    analysisState,
-    analysisSteps,
-    analysisWarnings,
-    currentStep,
-    resetAnalysis,
-    runAnalysis
-  } = useSessionAnalysis(sessionId, (artifacts) => {
-    setArtifactSnapshot(artifacts);
-  });
-  const previousAnalysisStateRef = useRef(analysisState);
 
   useEffect(() => {
     let ignore = false;
@@ -184,25 +168,6 @@ function LiveSessionContent({
     };
   }, []);
 
-  useEffect(() => {
-    const previousAnalysisState = previousAnalysisStateRef.current;
-    previousAnalysisStateRef.current = analysisState;
-
-    if (
-      previousAnalysisState === "RUNNING" &&
-      (analysisState === "COMPLETED" ||
-        analysisState === "COMPLETED_WITH_WARNINGS" ||
-        analysisState === "FAILED")
-    ) {
-      window.requestAnimationFrame(() => {
-        resultsRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start"
-        });
-      });
-    }
-  }, [analysisState]);
-
   function startCaptureClock() {
     if (captureIntervalRef.current !== null) {
       window.clearInterval(captureIntervalRef.current);
@@ -251,7 +216,6 @@ function LiveSessionContent({
 
   async function handleStartCamera() {
     setActionError(null);
-    resetAnalysis();
 
     if (setupHasChanges) {
       setSetupError("Apply setup changes before starting the camera.");
@@ -361,19 +325,6 @@ function LiveSessionContent({
     }
   }
 
-  async function handleAnalyzeSession() {
-    await runAnalysis();
-  }
-
-  function handleStartNewSession() {
-    if (session?.drill_id) {
-      router.push(`/drills/${session.drill_id}`);
-      return;
-    }
-
-    router.push("/sports");
-  }
-
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -418,9 +369,6 @@ function LiveSessionContent({
   const setupHasChanges =
     selectedCameraView !== resolveCameraView(drill, session.camera_view) ||
     selectedDominantSide !== resolveDominantSide(session.dominant_side);
-  const canAnalyze =
-    Boolean(artifactSnapshot?.pose_sequence) ||
-    (session.input_type === "LIVE" && session.status === "COMPLETED");
 
   async function handleApplySetupChanges() {
     if (!session) {
@@ -487,7 +435,7 @@ function LiveSessionContent({
               {session.drill_name}
             </h2>
             <p className="mt-4 text-sm text-muted-gray sm:text-base">
-              Start the camera, control the rep, then break down performance in one flow.
+              Check camera setup, framing, and pose visibility before recording your set.
             </p>
           </div>
 
@@ -520,9 +468,7 @@ function LiveSessionContent({
         <SessionInputModeToggle
           mode="LIVE"
           sessionDrillId={session.drill_id}
-          secondaryActionLabel="Choose Upload Video"
-          secondaryActionHref={`/drills/${session.drill_id}`}
-          helperText="This session is locked to live camera. Go back to the drill launcher if the next rep is already recorded."
+          helperText="This session stays locked to live camera while you check setup and framing."
         />
       </InfoCard>
 
@@ -562,8 +508,8 @@ function LiveSessionContent({
         <InfoCard className="relative overflow-hidden">
           <SectionTitle
             eyebrow="Input"
-            title="Live camera capture"
-            description="Stay in the same session while you start, pause, resume, and finish the rep."
+            title="Live pose preview"
+            description="Use the camera controls to check pose tracking, framing, and readiness."
           />
 
           <div className="mt-6">
@@ -577,7 +523,7 @@ function LiveSessionContent({
               autoPlay
               muted
               emptyTitle="Live pose overlay"
-              emptyDescription="Start the camera to capture movement. The pose overlay runs locally in your browser."
+              emptyDescription="Start the camera to check framing and pose visibility. The pose overlay runs locally in your browser."
             />
           </div>
 
@@ -628,7 +574,7 @@ function LiveSessionContent({
           <SectionTitle
             eyebrow="Preview"
             title="Capture status"
-            description="Keep the camera state, capture flow, and rep timing clear while you record."
+            description="Keep camera readiness, preview state, and timing clear during the setup check."
           />
 
           {actionError ? (
@@ -675,25 +621,23 @@ function LiveSessionContent({
             <ul className="mt-3 space-y-2 text-sm text-white/85">
               <li>
                 {session.input_type === "LIVE"
-                  ? "Start the camera to capture movement."
+                  ? "Start the camera to check framing and pose visibility."
                   : "This session was created for upload video, so live capture is unavailable on this page."}
               </li>
               <li>
                 {captureState === "STOPPED"
-                  ? "Capture finalized. Analyze Performance is now available."
-                  : "Stop the camera before running analysis."}
+                  ? "Camera check complete. Record your set, then continue to Upload Video."
+                  : "Use the pose overlay to confirm readiness before recording your set."}
               </li>
               <li>
                 {frameBatchResult
-                  ? `Accepted frames: ${frameBatchResult.frame_count}`
+                  ? `Preview timing samples submitted: ${frameBatchResult.frame_count}`
                   : captureState === "STOPPED"
-                    ? "Local capture is finalized. Backend frame sync will appear here after stop processing completes."
-                    : "No live frame batch submitted yet."}
+                    ? "Preview timing check complete."
+                    : "No preview timing samples submitted yet."}
               </li>
               <li>
-                {captureState === "CAPTURING"
-                  ? "Camera preview is running locally in the browser."
-                  : "Camera preview will use your browser only until capture is finalized."}
+                Camera preview runs locally in your browser.
               </li>
             </ul>
           </div>
@@ -709,53 +653,28 @@ function LiveSessionContent({
         </InfoCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <InfoCard>
-          <SectionTitle
-            eyebrow="Action"
-            title="Analyze performance"
-            description="Run the full backend pipeline after live capture has been finalized and synced."
-          />
-
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-          <CTAButton
-            type="button"
-            onClick={handleAnalyzeSession}
-            disabled={!canAnalyze || analysisState === "RUNNING"}
-          >
-              {analysisState === "RUNNING" ? "Analyzing performance" : "Analyze Performance"}
-          </CTAButton>
-            <Badge variant="slate">
-              {canAnalyze
-                ? "Ready to analyze"
-                : captureState === "IDLE"
-                  ? "Start camera to capture movement"
-                  : captureState === "STOPPED"
-                    ? "Capture is syncing before analysis"
-                    : "Stop the camera before analysis"}
-            </Badge>
+      <InfoCard className="p-5 sm:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-gray">
+              Next Step
+            </p>
+            <h2 className="mt-2 font-display text-2xl font-bold text-white">
+              Ready to analyse?
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">
+              Record your set, then use the upload flow to generate saved performance
+              results and coaching feedback.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-muted-gray">
+              Live camera is used here for pose preview and setup checking.
+            </p>
           </div>
-        </InfoCard>
-
-        <AnalysisProgressCard
-          analysisError={analysisError}
-          analysisState={analysisState}
-          analysisSteps={analysisSteps}
-          analysisWarnings={analysisWarnings}
-          currentStep={currentStep}
-        />
-      </div>
-
-      <div ref={resultsRef}>
-        <SessionResultsPanel
-          session={session}
-          artifacts={artifactSnapshot}
-          analysisState={analysisState}
-          analysisError={analysisError}
-          analysisWarnings={analysisWarnings}
-          onStartNewSession={handleStartNewSession}
-        />
-      </div>
+          <CTAButton asChild className="w-full shrink-0 sm:w-auto">
+            <Link href={`/drills/${session.drill_id}`}>Go to Upload Video</Link>
+          </CTAButton>
+        </div>
+      </InfoCard>
     </div>
   );
 }
@@ -767,7 +686,7 @@ export default function LiveSessionPage() {
     <AppShell
       eyebrow="Live Session"
       title="Training input"
-      description="Use the camera, lock the rep, and analyze the performance when capture is done."
+      description="Use the browser-side camera preview to check setup, framing, and readiness."
       capsule="Input"
       actions={
         <CTAButton asChild>

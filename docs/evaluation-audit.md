@@ -6,8 +6,8 @@ This audit reviews the current TrainUp movement-analysis pipeline as an interpre
 
 ## Pipeline Overview
 
-1. Upload or live capture produces video frames.
-2. `PerceptionService` extracts a `pose_sequence` with MediaPipe Pose landmarks, frame timestamps, validity flags, and preprocessing metadata.
+1. Upload capture produces video frames for persisted backend analysis. Live capture currently provides browser-side pose overlay/readiness scaffolding and does not yet persist a backend `pose_sequence`.
+2. `PerceptionService` extracts an uploaded-video `pose_sequence` with MediaPipe Pose landmarks, frame timestamps, validity flags, and preprocessing metadata.
 3. `SessionService.evaluate_session` loads the `pose_sequence`, normalizes left sagittal views into the canonical right-facing orientation, auto-detects dominant side when needed, and calls `Phase2AEvaluator`.
 4. `Phase2AEvaluator` attempts deterministic rep-cycle segmentation. When multiple confident cycles are detected, it evaluates each cycle independently, aggregates set-level scores, and persists backward-compatible `evaluation_result` metadata. When rep detection is weak, it falls back to the existing single dominant-cycle phase evaluation.
 5. Fuzzy interpretation converts metric scores into linguistic movement severity.

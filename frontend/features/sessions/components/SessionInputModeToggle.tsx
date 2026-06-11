@@ -51,7 +51,7 @@ export function SessionInputModeToggle({
       <p className="text-sm leading-6 text-muted-gray">
         {helperText
           ? helperText
-          : "This session stays locked to its current input mode. Start a fresh session if you want to switch how you capture the next rep."}
+          : "This session stays locked to its current input mode. Start a fresh session if you want to switch how you capture the next set."}
       </p>
     </div>
   );

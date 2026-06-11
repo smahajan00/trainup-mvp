@@ -12,8 +12,8 @@ router = APIRouter(prefix="/progress", tags=["progress"])
 
 @router.get("/recent", response_model=RecentProgressResponse)
 def get_recent_progress(
-    session_limit: int = Query(default=5, ge=1, le=10),
-    metric_limit: int = Query(default=20, ge=1, le=50),
+    session_limit: int = Query(default=5, ge=1, le=100),
+    metric_limit: int = Query(default=20, ge=1, le=500),
     progress_range: ProgressRange | None = Query(default=None, alias="range"),
     current_user: User = Depends(get_current_user),
     progress_service: ProgressService = Depends(get_progress_service),

@@ -2,6 +2,7 @@ import { Loader2, Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "../../../components/ui/badge";
+import { ApiError, getErrorMessage } from "../../../lib/api";
 import { InfoCard } from "../../app-shell/components/InfoCard";
 import { generateSessionFeedbackTTS } from "../../../services/sessions";
 import type { FeedbackTTSSegments, SeverityLevel } from "../../../types/sessions";
@@ -38,6 +39,23 @@ function formatAudioTime(value: number) {
     .toString()
     .padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function getAudioErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return "Your login session expired. Sign in again and retry audio coaching.";
+    }
+    if (error.status === 404) {
+      return "This session could not be found for audio coaching. Open a current session and try again.";
+    }
+    if (error.status === 503) {
+      return "Audio coaching is unavailable right now.";
+    }
+    return getErrorMessage(error);
+  }
+
+  return "Voice guidance was generated, but the browser could not start playback. Tap Listen to coaching again.";
 }
 
 export function CoachingFeedbackCard({
@@ -155,9 +173,9 @@ export function CoachingFeedbackCard({
       loadedAudioKeyRef.current = audioKey;
       setAudioCached(response.cached);
       await audio.play();
-    } catch {
+    } catch (error) {
       window.clearTimeout(slowGenerationTimer);
-      setAudioError("Audio coaching is unavailable right now.");
+      setAudioError(getAudioErrorMessage(error));
       setIsAudioPlaying(false);
     } finally {
       setIsPreparingAudio(false);
@@ -177,8 +195,8 @@ export function CoachingFeedbackCard({
     if (audioRef.current.paused) {
       try {
         await audioRef.current.play();
-      } catch {
-        setAudioError("Audio coaching is unavailable right now.");
+      } catch (error) {
+        setAudioError(getAudioErrorMessage(error));
       }
       return;
     }

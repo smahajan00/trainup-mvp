@@ -6,7 +6,7 @@ from app.schemas.base import APIBaseModel
 from app.schemas.user import UserResponse
 from app.utils.normalization import normalize_email
 
-DEMO_ATHLETE_EMAIL = "demo.athlete@trainup.local"
+DEMO_ATHLETE_EMAIL = "subrata@trainup.ai"
 EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 

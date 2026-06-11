@@ -313,7 +313,7 @@ function SessionCreationContent({
           description={
             isModePreselected
               ? "Your capture mode is locked in. Confirm the remaining setup details, then start training."
-              : "Pick the capture flow that fits the rep you want to review."
+              : "Pick the capture flow that fits the set you want to review."
           }
         />
         {isModePreselected ? (
@@ -344,7 +344,7 @@ function SessionCreationContent({
               description="Use your camera for a guided real-time rep capture."
               badge="Camera"
               eyebrow="Live"
-              detail="Open the camera, control the rep, and review it when you stop."
+              detail="Open the camera, control the set, and review it when you stop."
               ctaLabel="Choose Live Camera"
               icon={PlayCircle}
               isSelected={selectedInputType === "LIVE"}

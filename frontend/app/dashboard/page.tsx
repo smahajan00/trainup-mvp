@@ -200,7 +200,7 @@ function DashboardContent({
                 : "Build your next breakthrough."}
             </h1>
             <p className="mt-5 line-clamp-3 max-w-2xl break-words text-sm leading-relaxed text-neutral-300 md:text-base">
-              Start a training flow, review recent reps, and jump into the performance dashboard whenever you want the deeper story.
+              Start a training flow, review recent sets, and jump into the performance dashboard whenever you want the deeper story.
             </p>
             <div className="mt-5 inline-flex max-w-full rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
               <span className="line-clamp-1 break-words">
@@ -221,7 +221,7 @@ function DashboardContent({
             <div className="min-h-[92px] min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">Focus</p>
               <p className="mt-3 line-clamp-2 break-words text-base font-semibold text-white">
-                Launch your next rep
+                Launch your next set
               </p>
             </div>
             <div className="min-h-[92px] min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">

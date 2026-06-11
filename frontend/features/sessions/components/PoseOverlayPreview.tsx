@@ -231,7 +231,7 @@ export function PoseOverlayPreview({
   emptyTitle,
   emptyDescription,
   statusText,
-  debugOverlay = true,
+  debugOverlay = false,
   overlaySyncOffsetMs = Number.isFinite(DEFAULT_UPLOAD_OVERLAY_SYNC_OFFSET_MS)
     ? DEFAULT_UPLOAD_OVERLAY_SYNC_OFFSET_MS
     : 0,
@@ -667,7 +667,7 @@ export function PoseOverlayPreview({
                   ? "No pose detected"
                   : drawResult.fullBodyDetected
                   ? "Pose detected"
-                  : "Full body not detected - step back for complete analysis."
+                  : "Full body not detected - step back for a clearer pose preview."
               );
               if (debugOverlay) {
                 drawPoseDebugMarker(canvasElement);

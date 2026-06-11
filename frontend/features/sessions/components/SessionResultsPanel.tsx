@@ -673,6 +673,9 @@ export function SessionResultsPanel({
               Coaching feedback is still unavailable. Results overview is shown from the current evaluation data.
             </div>
           )}
+          <p className="mt-3 text-[10px] leading-4 text-white/40">
+            Educational coaching support only.
+          </p>
         </InfoCard>
       </div>
 

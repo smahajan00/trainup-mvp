@@ -51,12 +51,21 @@ from app.schemas.session import (
 )
 from app.scripts.seed_data import seed_drills, seed_metric_types, seed_sports
 
-DEMO_EMAIL = "demo.athlete@trainup.local"
-DEMO_PASSWORD = "DemoPass123!"
-DEMO_NAME = "Demo Athlete"
-DEMO_SESSION_COUNT = 60
-DEMO_FLAG = "SYNTHETIC_DEMO_DATA"
+DEMO_EMAIL = "subrata@trainup.ai"
+DEMO_PASSWORD = "subrata123"
+DEMO_NAME = "Subrata Mahajan"
+DEMO_SESSION_COUNT = 84
+DEMO_FLAG = "TRAINUP_HISTORY_DATA"
 RNG_SEED = 20260430
+DEMO_WEIGHTED_DRILL_SEQUENCE = [
+    ("Gym", "Bodyweight Squat"),
+    ("Gym", "Bodyweight Squat"),
+    ("Gym", "Dumbbell Shoulder Press"),
+    ("Basketball", "Set Shot Form"),
+    ("Basketball", "Defensive Stance"),
+    ("Football", "Instep Pass"),
+    ("Football", "Basic Shooting Form"),
+]
 
 
 @dataclass(frozen=True)
@@ -193,6 +202,18 @@ def _score_window(index: int) -> float:
     return 0.70 + (((index - 40) / 19) * 0.17)
 
 
+def _score_window_for_occurrence(index: int, total_occurrences: int) -> float:
+    progress_ratio = index / max(total_occurrences - 1, 1)
+    if progress_ratio < (1 / 3):
+        local_ratio = progress_ratio / (1 / 3)
+        return 0.52 + (local_ratio * 0.07)
+    if progress_ratio < (2 / 3):
+        local_ratio = (progress_ratio - (1 / 3)) / (1 / 3)
+        return 0.64 + (local_ratio * 0.08)
+    local_ratio = (progress_ratio - (2 / 3)) / (1 / 3)
+    return 0.78 + (local_ratio * 0.10)
+
+
 def _severity_for_score(score: float) -> str:
     if score < 0.60:
         return SeverityLevel.SEVERE.value
@@ -267,7 +288,13 @@ def _score_for_metric(
     return _clamp(target_score + rng.uniform(-0.045, 0.075), 0.42, 0.96)
 
 
-def _target_score_for_session(index: int, drill_name: str, rng: random.Random) -> float:
+def _target_score_for_session(
+    index: int,
+    drill_name: str,
+    drill_occurrence_index: int,
+    drill_occurrence_count: int,
+    rng: random.Random,
+) -> float:
     drill_offsets = {
         "Bodyweight Squat": -0.015,
         "Dumbbell Shoulder Press": 0.005,
@@ -276,21 +303,13 @@ def _target_score_for_session(index: int, drill_name: str, rng: random.Random) -
         "Set Shot Form": 0.010,
         "Defensive Stance": -0.010,
     }
-    weak_session_penalties = {
-        7: 0.08,
-        18: 0.06,
-        31: 0.07,
-        44: 0.08,
-        53: 0.05,
-    }
-    wave = (math.sin(index * 0.82) * 0.030) + (math.sin(index * 0.27) * 0.018)
-    jitter = rng.uniform(-0.022, 0.022)
+    wave = (math.sin(index * 0.82) * 0.014) + (math.sin(index * 0.27) * 0.010)
+    jitter = rng.uniform(-0.014, 0.014)
     score = (
-        _score_window(index)
+        _score_window_for_occurrence(drill_occurrence_index, drill_occurrence_count)
         + drill_offsets.get(drill_name, 0.0)
         + wave
         + jitter
-        - weak_session_penalties.get(index, 0.0)
     )
     return _clamp(score, 0.42, 0.91)
 
@@ -355,7 +374,7 @@ def _build_metric_payloads(
                 ],
                 "computation_status": ComputationStatus.COMPUTED.value,
                 "valid_frame_count": 84 + ((session_index + metric_index) % 48),
-                "formula_version": "synthetic_demo_v1",
+                "formula_version": "trainup_history_v1",
                 "diagnostic_flags": [DEMO_FLAG],
             }
         )
@@ -477,7 +496,7 @@ def _build_evaluation_payload(
     return _model_payload(
         DeterministicEvaluationResult,
         {
-            "evaluation_version": "synthetic_demo_phase2_v1",
+            "evaluation_version": "trainup_history_phase2_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "sport_id": sport.id,
@@ -493,7 +512,7 @@ def _build_evaluation_payload(
             "resolved_dominant_side": training_session.dominant_side,
             "dominant_side_confidence": 0.92 if training_session.dominant_side else None,
             "dominant_side_diagnostic_flags": (
-                [DEMO_FLAG, "DEMO_DOMINANT_SIDE_ASSIGNED"]
+                [DEMO_FLAG, "DOMINANT_SIDE_ASSIGNED"]
                 if training_session.dominant_side
                 else None
             ),
@@ -525,14 +544,12 @@ def _build_feedback_payload(
             }
         )
     suggestions = [item["improvement_suggestion"] for item in feedback_items]
-    summary = (
-        "Synthetic demo coaching: focus on the top movement constraint while preserving the improving trend."
-    )
+    summary = "Coaching focus: address the top movement constraint while preserving the improving trend."
     return (
         _model_payload(
             DeterministicFeedbackResult,
             {
-                "feedback_version": "synthetic_demo_phase3_v1",
+                "feedback_version": "trainup_history_phase3_v1",
                 "status": "COMPLETED",
                 "session_id": training_session.id,
                 "overall_feedback_summary": summary,
@@ -595,7 +612,7 @@ def _build_fuzzy_payload(
     return _model_payload(
         FuzzyInterpretationResult,
         {
-            "fuzzy_version": "synthetic_demo_phase4a_v1",
+            "fuzzy_version": "trainup_history_phase4a_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "drill_id": drill.id,
@@ -686,7 +703,7 @@ def _build_it2_payload(
     return _model_payload(
         IT2FuzzyInterpretationResult,
         {
-            "it2_fuzzy_version": "synthetic_demo_phase4e_v1",
+            "it2_fuzzy_version": "trainup_history_phase4e_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "sport_id": sport.id,
@@ -707,7 +724,7 @@ def _build_it2_payload(
                     "metric_id": highest_metric["metric_id"],
                     "uncertainty_width": highest_width,
                 },
-                "summary_text": "Synthetic demo uncertainty narrows as recent scores improve.",
+                "summary_text": "Uncertainty narrows as recent scores improve.",
             },
             "diagnostic_flags": [DEMO_FLAG],
         },
@@ -735,14 +752,14 @@ def _build_pedagogy_payload(
                 "dominant_label_confidence": 0.78,
                 "affected_body_part": item["affected_body_part"],
                 "priority_rank": item["priority_rank"],
-                "teaching_reason": "Synthetic demo priority selected to show dashboard coaching focus.",
+                "teaching_reason": "Priority selected to show the main dashboard coaching focus.",
                 "recommended_message_style": "specific cue plus one repeatable action",
             }
         )
     return _model_payload(
         PedagogicalDecisionResult,
         {
-            "pedagogical_version": "synthetic_demo_phase4b_v1",
+            "pedagogical_version": "trainup_history_phase4b_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "sport_id": sport.id,
@@ -787,7 +804,7 @@ def _build_ontology_payload(
     return _model_payload(
         OntologyReasoningResult,
         {
-            "ontology_version": "synthetic_demo_phase4c_v1",
+            "ontology_version": "trainup_history_phase4c_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "sport_id": sport.id,
@@ -819,7 +836,7 @@ def _build_ontology_payload(
                 }
             },
             "reasoning_summary": (
-                "Synthetic demo ontology: recent coaching signals cluster around "
+                "Recent coaching signals cluster around "
                 f"{focus_category.replace('_', ' ')}."
             ),
             "diagnostic_flags": [DEMO_FLAG],
@@ -847,14 +864,14 @@ def _build_choquet_payload(
         "choquet_score": choquet_score,
         "interaction_detected": True,
         "explanation": (
-            "Synthetic demo interaction: the same weakness appears across related metrics, "
-            "so the dashboard can show a combined coaching pattern."
+            "The same weakness appears across related metrics, so the dashboard can "
+            "show a combined coaching pattern."
         ),
     }
     return _model_payload(
         ChoquetAggregationResult,
         {
-            "choquet_version": "synthetic_demo_phase4d_v1",
+            "choquet_version": "trainup_history_phase4d_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "sport_id": sport.id,
@@ -911,7 +928,7 @@ def _build_temporal_payload(
     return _model_payload(
         TemporalModelingResult,
         {
-            "temporal_model_version": "synthetic_demo_phase4f_v1",
+            "temporal_model_version": "trainup_history_phase4f_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
             "sport_id": sport.id,
@@ -921,7 +938,7 @@ def _build_temporal_payload(
             "transition_results": transitions,
             "overall_temporal_state": temporal_state,
             "temporal_summary": (
-                "Synthetic demo timing summary: tempo control improves across the training history "
+                "Tempo control improves across the training history "
                 f"with the latest state marked {temporal_state.lower()}."
             ),
             "diagnostic_flags": [DEMO_FLAG],
@@ -956,30 +973,30 @@ def _build_llm_payload(
     return _model_payload(
         LLMFeedbackResult,
         {
-            "llm_feedback_version": "synthetic_demo_phase3b_v1",
+            "llm_feedback_version": "trainup_history_phase3b_v1",
             "status": "COMPLETED",
             "session_id": training_session.id,
-            "provider": "synthetic_demo",
-            "model": "deterministic-demo-fallback-v1",
+            "provider": "training_history",
+            "model": "deterministic-feedback-fallback-v1",
             "fallback_used": True,
             "advanced_context_used": True,
             "advanced_context_sources": [
-                "synthetic_demo_evaluation",
-                "synthetic_demo_pedagogy",
-                "synthetic_demo_temporal",
+                "training_history_evaluation",
+                "training_history_pedagogy",
+                "training_history_temporal",
             ],
             "context_diagnostic_flags": [DEMO_FLAG],
             "enhanced_feedback_items": enhanced_items,
             "enhanced_summary": {
                 "deterministic_summary": feedback_payload["overall_feedback_summary"],
                 "llm_summary": (
-                    "Synthetic demo fallback summary: coaching text is generated from seeded "
-                    "deterministic feedback, not an external model or real study."
+                    "Coaching text is generated from grounded deterministic feedback "
+                    "for this session."
                 ),
                 "grounding_fields_used": ["overall_feedback_summary", "prioritized_feedback_items"],
                 "fallback_used": True,
             },
-            "diagnostic_flags": [DEMO_FLAG, "LLM_FALLBACK_SYNTHETIC_DEMO"],
+            "diagnostic_flags": [DEMO_FLAG, "LLM_FALLBACK_TRAINING_HISTORY"],
         },
     )
 
@@ -1005,7 +1022,7 @@ def _create_session_summary(
     summary = SessionSummary(
         session_id=session.id,
         summary_text=(
-            f"Synthetic demo session for {sport.sport_name} · {drill.drill_name}: "
+            f"Training session for {sport.sport_name} · {drill.drill_name}: "
             f"overall score {round(overall_score * 100)} with coaching focus on "
             f"{feedback_items[0]['metric_name'].replace('_', ' ')}."
         ),
@@ -1033,12 +1050,20 @@ def _create_demo_session(
     sport: Sport,
     metric_types_by_name: dict[str, MetricType],
     session_index: int,
+    drill_occurrence_index: int,
+    drill_occurrence_count: int,
     start_time: datetime,
     rng: random.Random,
 ) -> DemoCounts:
     focus_sequence = DRILL_FOCUS_SEQUENCE.get(drill.drill_name, ["posture"])
     focus_category = focus_sequence[(session_index // len(focus_sequence)) % len(focus_sequence)]
-    target_score = _target_score_for_session(session_index, drill.drill_name, rng)
+    target_score = _target_score_for_session(
+        session_index,
+        drill.drill_name,
+        drill_occurrence_index,
+        drill_occurrence_count,
+        rng,
+    )
     metric_payloads = _build_metric_payloads(
         drill=drill,
         metric_types_by_name=metric_types_by_name,
@@ -1051,12 +1076,11 @@ def _create_demo_session(
         sum(metric["normalized_score"] for metric in metric_payloads) / len(metric_payloads),
         4,
     )
-    input_type = InputType.LIVE if session_index % 5 == 2 else InputType.UPLOAD
     end_time = start_time + timedelta(minutes=8 + (session_index % 7))
     training_session = TrainingSession(
         user_id=user.id,
         drill_id=drill.id,
-        input_type=input_type,
+        input_type=InputType.UPLOAD,
         skill_level=SkillLevel.INTERMEDIATE,
         camera_view=_camera_view_for_drill(drill),
         dominant_side=DominantSide.RIGHT
@@ -1200,10 +1224,10 @@ def _create_demo_session(
             Feedback(
                 session_id=training_session.id,
                 severity_level=SeverityLevel(item["severity_level"]),
-                technique_issue=f"Synthetic demo: {item['issue_title']}",
+                technique_issue=item["issue_title"],
                 coaching_cue=item["coaching_cue"],
                 metric_snapshot={
-                    "synthetic_demo": True,
+                    "training_history": True,
                     "metric_name": item["metric_name"],
                     "phase_id": item["phase_id"],
                     "priority_rank": item["priority_rank"],
@@ -1247,14 +1271,7 @@ def _load_seeded_references(db) -> tuple[dict[str, Sport], list[tuple[Sport, Dri
         .unique()
         .all()
     )
-    drill_order = [
-        ("Gym", "Bodyweight Squat"),
-        ("Gym", "Dumbbell Shoulder Press"),
-        ("Basketball", "Set Shot Form"),
-        ("Basketball", "Defensive Stance"),
-        ("Football", "Instep Pass"),
-        ("Football", "Basic Shooting Form"),
-    ]
+    drill_order = list(dict.fromkeys(DEMO_WEIGHTED_DRILL_SEQUENCE))
     drills_by_key = {(drill.sport.sport_name, drill.drill_name): drill for drill in drills}
     selected_drills: list[tuple[Sport, Drill]] = []
     for sport_name, drill_name in drill_order:
@@ -1279,6 +1296,22 @@ def _load_seeded_references(db) -> tuple[dict[str, Sport], list[tuple[Sport, Dri
     if missing_metrics:
         raise RuntimeError(f"Missing seeded metric types: {', '.join(missing_metrics)}")
     return sports_by_name, selected_drills, metric_types_by_name
+
+
+def _build_demo_session_plan(
+    selected_drills: list[tuple[Sport, Drill]],
+) -> list[tuple[Sport, Drill]]:
+    drills_by_key = {
+        (sport.sport_name, drill.drill_name): (sport, drill)
+        for sport, drill in selected_drills
+    }
+    plan: list[tuple[Sport, Drill]] = []
+    while len(plan) < DEMO_SESSION_COUNT:
+        for key in DEMO_WEIGHTED_DRILL_SEQUENCE:
+            plan.append(drills_by_key[key])
+            if len(plan) == DEMO_SESSION_COUNT:
+                return plan
+    return plan
 
 
 def seed_demo_athlete() -> DemoCounts:
@@ -1316,15 +1349,23 @@ def seed_demo_athlete() -> DemoCounts:
                     weight_kg=Decimal("72.50"),
                     skill_level=SkillLevel.INTERMEDIATE,
                     injury_notes=(
-                        "Synthetic demo profile: multi-sport trainee history for supervisor "
-                        "dashboard demonstrations only. Not real athlete or validation data."
+                        "Multi-sport trainee profile for dashboard walkthroughs."
                     ),
                     created_at=anchor - timedelta(days=95),
                 )
             )
 
-            for index in range(DEMO_SESSION_COUNT):
-                sport, drill = selected_drills[index % len(selected_drills)]
+            demo_plan = _build_demo_session_plan(selected_drills)
+            occurrence_counts: dict[str, int] = {}
+            occurrence_indexes: dict[str, int] = {}
+            for _, drill in demo_plan:
+                occurrence_counts[drill.drill_name] = (
+                    occurrence_counts.get(drill.drill_name, 0) + 1
+                )
+
+            for index, (sport, drill) in enumerate(demo_plan):
+                drill_occurrence_index = occurrence_indexes.get(drill.drill_name, 0)
+                occurrence_indexes[drill.drill_name] = drill_occurrence_index + 1
                 days_ago = round(88 - ((index / (DEMO_SESSION_COUNT - 1)) * 88))
                 start_time = anchor - timedelta(
                     days=days_ago,
@@ -1338,6 +1379,8 @@ def seed_demo_athlete() -> DemoCounts:
                     sport=sport,
                     metric_types_by_name=metric_types_by_name,
                     session_index=index,
+                    drill_occurrence_index=drill_occurrence_index,
+                    drill_occurrence_count=occurrence_counts[drill.drill_name],
                     start_time=start_time,
                     rng=rng,
                 )
@@ -1352,16 +1395,16 @@ def seed_demo_athlete() -> DemoCounts:
 
 def main() -> None:
     counts = seed_demo_athlete()
-    print("Synthetic TrainUp demo athlete seeded.")
-    print("This data is synthetic/demo only and is not validation or user-study data.")
-    print(f"Demo login: {DEMO_EMAIL} / {DEMO_PASSWORD}")
+    print("TrainUp athlete history seeded.")
+    print("This history is for dashboard walkthroughs and is not validation or user-study data.")
+    print(f"Login: {DEMO_EMAIL} / {DEMO_PASSWORD}")
     print(f"sessions: {counts.sessions}")
     print(f"session summaries: {counts.summaries}")
     print(f"progress records: {counts.progress_records}")
     print(f"metric results: {counts.metric_results}")
     print(f"session artifacts: {counts.artifacts}")
     print(f"feedback rows: {counts.feedback_rows}")
-    print("Run again any time to reset and recreate only this demo athlete dataset.")
+    print("Run again any time to reset and recreate this athlete history.")
 
 
 if __name__ == "__main__":

@@ -69,13 +69,13 @@ def test_login_success(client) -> None:
     assert payload["user"]["email"] == "taylor@example.com"
 
 
-def test_demo_local_email_login_is_allowed(client) -> None:
+def test_demo_credentials_login_is_allowed(client) -> None:
     register_response = client.post(
         "/api/auth/register",
         json={
-            "full_name": "Demo Athlete",
-            "email": " demo.athlete@trainup.local ",
-            "password": "DemoPass123!",
+            "full_name": "Subrata Mahajan",
+            "email": " subrata@trainup.ai ",
+            "password": "subrata123",
         },
     )
     assert register_response.status_code == 201
@@ -83,13 +83,13 @@ def test_demo_local_email_login_is_allowed(client) -> None:
     login_response = client.post(
         "/api/auth/login",
         json={
-            "email": "DEMO.ATHLETE@TRAINUP.LOCAL",
-            "password": "DemoPass123!",
+            "email": "SUBRATA@TRAINUP.AI",
+            "password": "subrata123",
         },
     )
 
     assert login_response.status_code == 200
-    assert login_response.json()["user"]["email"] == "demo.athlete@trainup.local"
+    assert login_response.json()["user"]["email"] == "subrata@trainup.ai"
 
 
 def test_non_demo_local_email_rejected(client) -> None:

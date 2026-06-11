@@ -515,7 +515,7 @@ function DrillDetailContent({
         <SectionTitle
           eyebrow="Capture Setup"
           title="Capture protocol"
-          description="Set the camera, framing, and active side before you log the rep."
+          description="Set the camera, framing, and active side before you log the set."
         />
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
